@@ -1,0 +1,78 @@
+{
+  "name": "@ironflow/browser",
+  "version": "0.22.5-mirror.6",
+  "description": "Browser client for Ironflow event-driven backend platform - real-time subscriptions, workflow triggers, and event emission",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --build tsconfig.build.json",
+    "build:bundle": "tsc --build tsconfig.build.json && node scripts/bundle.mjs",
+    "dev": "tsc --build tsconfig.build.json --watch",
+    "test": "pnpm typecheck && vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist dist-bundle tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pack:local": "pnpm build:bundle && cd dist-bundle && pnpm pack --pack-destination /tmp/ironflow-packs"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^2.12.0",
+    "@connectrpc/connect": "^2.1.1",
+    "@connectrpc/connect-web": "^2.1.1",
+    "@ironflow/core": "workspace:^",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.18",
+    "esbuild": "^0.27.7",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ironflow",
+    "workflow",
+    "browser",
+    "client",
+    "real-time",
+    "subscriptions"
+  ],
+  "author": "Ironflow",
+  "license": "LicenseRef-Ironflow-EULA",
+  "homepage": "https://ironflow.run",
+  "bugs": {
+    "url": "https://github.com/sahina/ironflow-js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sahina/ironflow-js.git",
+    "directory": "packages/browser"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,114 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish (e.g., v0.22.5)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Publish all packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # All untrusted inputs routed through env vars; never interpolate
+      # ${{ github.* }} directly into a `run:` block (workflow-injection
+      # hardening — see github.blog/security/...workflow-injections).
+      INPUT_TAG: ${{ github.event.inputs.tag }}
+      REF_NAME: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.0.0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r --workspace-concurrency=1 build
+
+      - name: Resolve version + npm tag
+        id: resolve
+        run: |
+          set -eu
+          REF="${INPUT_TAG:-$REF_NAME}"
+          # Validate tag shape before downstream use.
+          if ! [[ "$REF" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Error: invalid tag/ref: $REF"
+            exit 1
+          fi
+          VERSION="${REF#v}"
+          NPM_TAG=latest
+          if [[ "$VERSION" == *-* ]]; then
+            NPM_TAG=beta
+          fi
+          # Pre-release verification tag (e.g., v0.22.5-mirror.1) gets its
+          # own dist-tag so smoke tests do not bump `latest`.
+          if [[ "$VERSION" == *-mirror* ]]; then
+            NPM_TAG=mirror
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "npm_tag=$NPM_TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved: version=$VERSION npm_tag=$NPM_TAG"
+
+      - name: Verify package versions match tag
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -eu
+          for pkg in core node browser langgraph; do
+            file="packages/${pkg}/package.json"
+            pkg_version=$(node -p "require('./${file}').version")
+            if [ "$pkg_version" != "$VERSION" ]; then
+              echo "Error: ${file} version ($pkg_version) does not match tag ($VERSION)"
+              exit 1
+            fi
+          done
+
+      # Publish order matches dep graph: core first, then leaves.
+      # Halt on first failure. "already in registry" treated as success
+      # so manual re-runs are idempotent.
+      - name: Publish packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TAG: ${{ steps.resolve.outputs.npm_tag }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -eu
+          for pkg in core node browser langgraph; do
+            dir="packages/${pkg}"
+            echo "==> Publishing @ironflow/${pkg} from ${dir}"
+            log=$(mktemp)
+            if (cd "$dir" && pnpm publish --tag "$NPM_TAG" --provenance --no-git-checks --access public) 2>&1 | tee "$log"; then
+              rm -f "$log"
+              continue
+            fi
+            if grep -qiE "(already exists|cannot publish over)" "$log"; then
+              echo "Note: @ironflow/${pkg}@${VERSION} already in registry; skipping."
+              rm -f "$log"
+              continue
+            fi
+            echo "Error: publish failed for @ironflow/${pkg}"
+            rm -f "$log"
+            exit 1
+          done

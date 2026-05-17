@@ -1,0 +1,88 @@
+{
+  "name": "@ironflow/core",
+  "version": "0.22.5-mirror.6",
+  "description": "Core types, schemas, and protocol definitions for Ironflow SDK",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js",
+      "default": "./dist/schemas.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js",
+      "default": "./dist/protocol.js"
+    },
+    "./gen": {
+      "types": "./dist/gen/index.d.ts",
+      "import": "./dist/gen/index.js",
+      "default": "./dist/gen/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc --build tsconfig.build.json",
+    "dev": "tsc --build tsconfig.build.json --watch",
+    "test": "pnpm typecheck && vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@bufbuild/protobuf": "^2.12.0",
+    "@connectrpc/connect": "^2.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.18",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ironflow",
+    "workflow",
+    "serverless",
+    "types",
+    "schemas"
+  ],
+  "author": "Ironflow",
+  "license": "LicenseRef-Ironflow-EULA",
+  "homepage": "https://ironflow.run",
+  "bugs": {
+    "url": "https://github.com/sahina/ironflow-js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sahina/ironflow-js.git",
+    "directory": "packages/core"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

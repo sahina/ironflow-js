@@ -1,0 +1,18 @@
+{
+  // Editor + CI typecheck config. Covers src + tests INCLUDING test files so
+  // editors give live diagnostics and `pnpm typecheck` catches type rot in
+  // tests. Emit lives in tsconfig.build.json.
+  //
+  // Drift-detection guard: src/internal/typecheck-gate.test.ts asserts the
+  // effective include set covers every test file on disk.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@ironflow/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist", "dist-bundle"]
+}

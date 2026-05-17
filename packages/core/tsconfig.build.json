@@ -1,0 +1,18 @@
+{
+  // Emit config used by `pnpm build` and `pnpm dev` (watch mode).
+  //
+  // EXCLUDES test files on purpose so dist/ stays production-only. Test
+  // type rot is gated separately by:
+  //   1. Editor TS server reading tsconfig.json (live diagnostics)
+  //   2. `pnpm test` running `pnpm typecheck` (CI-authoritative)
+  //
+  // `pnpm dev --watch` is for emit, not test typecheck.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}

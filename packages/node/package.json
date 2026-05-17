@@ -1,0 +1,107 @@
+{
+  "name": "@ironflow/node",
+  "version": "0.22.5-mirror.6",
+  "description": "Node.js SDK for Ironflow event-driven backend platform - workers, serve handlers, and step execution",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./serve": {
+      "types": "./dist/serve.d.ts",
+      "import": "./dist/serve.js",
+      "default": "./dist/serve.js"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js",
+      "default": "./dist/worker.js"
+    },
+    "./worker-streaming": {
+      "types": "./dist/worker-streaming.d.ts",
+      "import": "./dist/worker-streaming.js",
+      "default": "./dist/worker-streaming.js"
+    },
+    "./test": {
+      "types": "./dist/test/index.d.ts",
+      "import": "./dist/test/index.js",
+      "default": "./dist/test/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js",
+      "default": "./dist/agent/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/sync-version.mjs",
+    "build": "tsc --build tsconfig.build.json",
+    "build:bundle": "node scripts/sync-version.mjs && tsc --build tsconfig.build.json && node scripts/bundle.mjs",
+    "predev": "node scripts/sync-version.mjs",
+    "dev": "tsc --build tsconfig.build.json --watch",
+    "pretest": "node scripts/sync-version.mjs",
+    "test": "pnpm typecheck && vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "clean": "rm -rf dist dist-bundle tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:test": "tsc -p tsconfig.json --noEmit",
+    "pack:local": "pnpm build:bundle && cd dist-bundle && pnpm pack --pack-destination /tmp/ironflow-packs"
+  },
+  "dependencies": {
+    "@ironflow/core": "workspace:^",
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@bufbuild/protobuf": "^2.12.0",
+    "@connectrpc/connect": "^2.1.1",
+    "@connectrpc/connect-node": "^2.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.18",
+    "esbuild": "^0.27.7",
+    "typescript": "^5.9.3",
+    "vitest": "^2.1.9"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "ironflow",
+    "workflow",
+    "serverless",
+    "worker",
+    "step-functions"
+  ],
+  "author": "Ironflow",
+  "license": "LicenseRef-Ironflow-EULA",
+  "homepage": "https://ironflow.run",
+  "bugs": {
+    "url": "https://github.com/sahina/ironflow-js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sahina/ironflow-js.git",
+    "directory": "packages/node"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

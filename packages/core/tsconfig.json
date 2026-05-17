@@ -1,0 +1,14 @@
+{
+  // Editor + CI typecheck config. Covers src/**/* INCLUDING test files so
+  // editors give live diagnostics and `pnpm typecheck` catches type rot in
+  // tests. Emit lives in tsconfig.build.json.
+  //
+  // Drift-detection guard: src/internal/typecheck-gate.test.ts asserts the
+  // effective include set covers every test file on disk.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
