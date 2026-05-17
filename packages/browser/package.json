@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/browser",
-  "version": "0.22.5-mirror.7",
+  "version": "0.22.5",
   "description": "Browser client for Ironflow event-driven backend platform - real-time subscriptions, workflow triggers, and event emission",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/node",
-  "version": "0.22.5-mirror.7",
+  "version": "0.22.5",
   "description": "Node.js SDK for Ironflow event-driven backend platform - workers, serve handlers, and step execution",
   "type": "module",
   "main": "./dist/index.js",
