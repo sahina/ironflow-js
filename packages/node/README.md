@@ -10,7 +10,7 @@ Published as a public npm package under a commercial license — see [LICENSE](h
 npm install @ironflow/node
 ```
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ## Table of Contents
 

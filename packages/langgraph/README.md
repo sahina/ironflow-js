@@ -6,7 +6,7 @@ Drop-in replacement for `MemorySaver` / `SqliteSaver` / `PostgresSaver` — your
 agent state survives crashes and resumes from the last checkpoint with no extra
 wiring.
 
-Requires Node.js 20+.
+Requires Node.js 22+.
 
 ## Table of Contents
 

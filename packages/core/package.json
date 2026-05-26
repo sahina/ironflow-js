@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/core",
-  "version": "0.22.6",
+  "version": "0.22.7",
   "description": "Core types, schemas, and protocol definitions for Ironflow SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -49,7 +49,7 @@
     "@connectrpc/connect": "^2.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.19.18",
+    "@types/node": "^22.19.19",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"
   },
@@ -62,7 +62,7 @@
     }
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
   "keywords": [
     "ironflow",

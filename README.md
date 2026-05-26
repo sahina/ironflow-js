@@ -35,7 +35,7 @@ pnpm install
 pnpm -r build
 ```
 
-Requires Node.js 20+ and pnpm.
+Requires Node.js 22+ and pnpm.
 
 ## Read-only mirror
 

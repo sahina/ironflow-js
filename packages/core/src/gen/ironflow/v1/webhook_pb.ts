@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/webhook.proto.
  */
 export const file_ironflow_v1_webhook: GenFile = /*@__PURE__*/
-  fileDesc("Chlpcm9uZmxvdy92MS93ZWJob29rLnByb3RvEgtpcm9uZmxvdy52MSKCAgoNV2ViaG9va1NvdXJjZRIKCgJpZBgBIAEoCRIUCgxldmVudF9wcmVmaXgYAiABKAkSFQoNdmVyaWZ5X2hlYWRlchgDIAEoCRIYChB2ZXJpZnlfYWxnb3JpdGhtGAQgASgJEhMKC3NvdXJjZV90eXBlGAUgASgJEikKCG1ldGFkYXRhGAYgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKxAQoaQ3JlYXRlV2ViaG9va1NvdXJjZVJlcXVlc3QSCgoCaWQYASABKAkSFAoMZXZlbnRfcHJlZml4GAIgASgJEhUKDXZlcmlmeV9oZWFkZXIYAyABKAkSGAoQdmVyaWZ5X2FsZ29yaXRobRgEIAEoCRIVCg12ZXJpZnlfc2VjcmV0GAUgASgJEikKCG1ldGFkYXRhGAYgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCI6ChlMaXN0V2ViaG9va1NvdXJjZXNSZXF1ZXN0Eg0KBWxpbWl0GAEgASgFEg4KBm9mZnNldBgCIAEoBSJJChpMaXN0V2ViaG9va1NvdXJjZXNSZXNwb25zZRIrCgdzb3VyY2VzGAEgAygLMhouaXJvbmZsb3cudjEuV2ViaG9va1NvdXJjZSIoChpEZWxldGVXZWJob29rU291cmNlUmVxdWVzdBIKCgJpZBgBIAEoCSKmAQoPV2ViaG9va0RlbGl2ZXJ5EgoKAmlkGAEgASgJEhEKCXNvdXJjZV9pZBgCIAEoCRITCgtleHRlcm5hbF9pZBgDIAEoCRIOCgZzdGF0dXMYBCABKAkSEAoIZXZlbnRfaWQYBSABKAkSDQoFZXJyb3IYBiABKAkSLgoKY3JlYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiYAocTGlzdFdlYmhvb2tEZWxpdmVyaWVzUmVxdWVzdBIRCglzb3VyY2VfaWQYASABKAkSDgoGc3RhdHVzGAIgASgJEg0KBWxpbWl0GAMgASgFEg4KBm9mZnNldBgEIAEoBSJmCh1MaXN0V2ViaG9va0RlbGl2ZXJpZXNSZXNwb25zZRIwCgpkZWxpdmVyaWVzGAEgAygLMhwuaXJvbmZsb3cudjEuV2ViaG9va0RlbGl2ZXJ5EhMKC3RvdGFsX2NvdW50GAIgASgFMpsDCg5XZWJob29rU2VydmljZRJaChNDcmVhdGVXZWJob29rU291cmNlEicuaXJvbmZsb3cudjEuQ3JlYXRlV2ViaG9va1NvdXJjZVJlcXVlc3QaGi5pcm9uZmxvdy52MS5XZWJob29rU291cmNlEmUKEkxpc3RXZWJob29rU291cmNlcxImLmlyb25mbG93LnYxLkxpc3RXZWJob29rU291cmNlc1JlcXVlc3QaJy5pcm9uZmxvdy52MS5MaXN0V2ViaG9va1NvdXJjZXNSZXNwb25zZRJWChNEZWxldGVXZWJob29rU291cmNlEicuaXJvbmZsb3cudjEuRGVsZXRlV2ViaG9va1NvdXJjZVJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkSbgoVTGlzdFdlYmhvb2tEZWxpdmVyaWVzEikuaXJvbmZsb3cudjEuTGlzdFdlYmhvb2tEZWxpdmVyaWVzUmVxdWVzdBoqLmlyb25mbG93LnYxLkxpc3RXZWJob29rRGVsaXZlcmllc1Jlc3BvbnNlQjpaOGdpdGh1Yi5jb20vc2FoaW5hL2lyb25mbG93L2FwaS9nby9pcm9uZmxvdy92MTtpcm9uZmxvd3YxYgZwcm90bzM", [file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("Chlpcm9uZmxvdy92MS93ZWJob29rLnByb3RvEgtpcm9uZmxvdy52MSKOAwoNV2ViaG9va1NvdXJjZRIKCgJpZBgBIAEoCRIUCgxldmVudF9wcmVmaXgYAiABKAkSFQoNdmVyaWZ5X2hlYWRlchgDIAEoCRIYChB2ZXJpZnlfYWxnb3JpdGhtGAQgASgJEhMKC3NvdXJjZV90eXBlGAUgASgJEikKCG1ldGFkYXRhGAYgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCgpjcmVhdGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIZChF2ZXJpZnlfc2VjcmV0X3NldBgJIAEoCBIMCgRuYW1lGAogASgJEh4KFnZlcmlmeV9zZWNyZXRfcHJldl9zZXQYCyABKAgSQQoddmVyaWZ5X3NlY3JldF9wcmV2X2V4cGlyZXNfYXQYDCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIiUKF0dldFdlYmhvb2tTb3VyY2VSZXF1ZXN0EgoKAmlkGAEgASgJIr0BChpDcmVhdGVXZWJob29rU291cmNlUmVxdWVzdBIUCgxldmVudF9wcmVmaXgYAiABKAkSFQoNdmVyaWZ5X2hlYWRlchgDIAEoCRIYChB2ZXJpZnlfYWxnb3JpdGhtGAQgASgJEhUKDXZlcmlmeV9zZWNyZXQYBSABKAkSKQoIbWV0YWRhdGEYBiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EgwKBG5hbWUYByABKAlKBAgBEAJSAmlkIjoKGUxpc3RXZWJob29rU291cmNlc1JlcXVlc3QSDQoFbGltaXQYASABKAUSDgoGb2Zmc2V0GAIgASgFIl4KGkxpc3RXZWJob29rU291cmNlc1Jlc3BvbnNlEisKB3NvdXJjZXMYASADKAsyGi5pcm9uZmxvdy52MS5XZWJob29rU291cmNlEhMKC3RvdGFsX2NvdW50GAIgASgFIpIBChpVcGRhdGVXZWJob29rU291cmNlUmVxdWVzdBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEhUKDXZlcmlmeV9oZWFkZXIYAyABKAkSGAoQdmVyaWZ5X2FsZ29yaXRobRgEIAEoCRIpCghtZXRhZGF0YRgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QipgEKGlJvdGF0ZVdlYmhvb2tTZWNyZXRSZXF1ZXN0EgoKAmlkGAEgASgJEhUKDXZlcmlmeV9zZWNyZXQYAiABKAkSGgoNZ3JhY2Vfc2Vjb25kcxgDIAEoBUgAiAEBEjcKE2V4cGVjdGVkX3VwZGF0ZWRfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wQhAKDl9ncmFjZV9zZWNvbmRzImUKHkV4cGlyZVdlYmhvb2tTZWNyZXRQcmV2UmVxdWVzdBIKCgJpZBgBIAEoCRI3ChNleHBlY3RlZF91cGRhdGVkX2F0GAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKfAQoqRGlzYWJsZVdlYmhvb2tTaWduYXR1cmVWZXJpZmljYXRpb25SZXF1ZXN0EgoKAmlkGAEgASgJEhoKDWdyYWNlX3NlY29uZHMYAiABKAVIAIgBARI3ChNleHBlY3RlZF91cGRhdGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEIQCg5fZ3JhY2Vfc2Vjb25kcyIoChpEZWxldGVXZWJob29rU291cmNlUmVxdWVzdBIKCgJpZBgBIAEoCSKFAgoPV2ViaG9va0RlbGl2ZXJ5EgoKAmlkGAEgASgJEhEKCXNvdXJjZV9pZBgCIAEoCRITCgtleHRlcm5hbF9pZBgDIAEoCRIOCgZzdGF0dXMYBCABKAkSEAoIZXZlbnRfaWQYBSABKAkSDQoFZXJyb3IYBiABKAkSLgoKY3JlYXRlZF9hdBgHIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFAoMcmVxdWVzdF9ib2R5GAggASgJEjAKD3JlcXVlc3RfaGVhZGVycxgJIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSFQoNc2lnbmF0dXJlX2tleRgKIAEoCSJgChxMaXN0V2ViaG9va0RlbGl2ZXJpZXNSZXF1ZXN0EhEKCXNvdXJjZV9pZBgBIAEoCRIOCgZzdGF0dXMYAiABKAkSDQoFbGltaXQYAyABKAUSDgoGb2Zmc2V0GAQgASgFImYKHUxpc3RXZWJob29rRGVsaXZlcmllc1Jlc3BvbnNlEjAKCmRlbGl2ZXJpZXMYASADKAsyHC5pcm9uZmxvdy52MS5XZWJob29rRGVsaXZlcnkSEwoLdG90YWxfY291bnQYAiABKAUyiQcKDldlYmhvb2tTZXJ2aWNlEloKE0NyZWF0ZVdlYmhvb2tTb3VyY2USJy5pcm9uZmxvdy52MS5DcmVhdGVXZWJob29rU291cmNlUmVxdWVzdBoaLmlyb25mbG93LnYxLldlYmhvb2tTb3VyY2USVAoQR2V0V2ViaG9va1NvdXJjZRIkLmlyb25mbG93LnYxLkdldFdlYmhvb2tTb3VyY2VSZXF1ZXN0GhouaXJvbmZsb3cudjEuV2ViaG9va1NvdXJjZRJlChJMaXN0V2ViaG9va1NvdXJjZXMSJi5pcm9uZmxvdy52MS5MaXN0V2ViaG9va1NvdXJjZXNSZXF1ZXN0GicuaXJvbmZsb3cudjEuTGlzdFdlYmhvb2tTb3VyY2VzUmVzcG9uc2USWgoTVXBkYXRlV2ViaG9va1NvdXJjZRInLmlyb25mbG93LnYxLlVwZGF0ZVdlYmhvb2tTb3VyY2VSZXF1ZXN0GhouaXJvbmZsb3cudjEuV2ViaG9va1NvdXJjZRJaChNSb3RhdGVXZWJob29rU2VjcmV0EicuaXJvbmZsb3cudjEuUm90YXRlV2ViaG9va1NlY3JldFJlcXVlc3QaGi5pcm9uZmxvdy52MS5XZWJob29rU291cmNlEmIKF0V4cGlyZVdlYmhvb2tTZWNyZXRQcmV2EisuaXJvbmZsb3cudjEuRXhwaXJlV2ViaG9va1NlY3JldFByZXZSZXF1ZXN0GhouaXJvbmZsb3cudjEuV2ViaG9va1NvdXJjZRJ6CiNEaXNhYmxlV2ViaG9va1NpZ25hdHVyZVZlcmlmaWNhdGlvbhI3Lmlyb25mbG93LnYxLkRpc2FibGVXZWJob29rU2lnbmF0dXJlVmVyaWZpY2F0aW9uUmVxdWVzdBoaLmlyb25mbG93LnYxLldlYmhvb2tTb3VyY2USVgoTRGVsZXRlV2ViaG9va1NvdXJjZRInLmlyb25mbG93LnYxLkRlbGV0ZVdlYmhvb2tTb3VyY2VSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5Em4KFUxpc3RXZWJob29rRGVsaXZlcmllcxIpLmlyb25mbG93LnYxLkxpc3RXZWJob29rRGVsaXZlcmllc1JlcXVlc3QaKi5pcm9uZmxvdy52MS5MaXN0V2ViaG9va0RlbGl2ZXJpZXNSZXNwb25zZUI6WjhnaXRodWIuY29tL3NhaGluYS9pcm9uZmxvdy9hcGkvZ28vaXJvbmZsb3cvdjE7aXJvbmZsb3d2MWIGcHJvdG8z", [file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * WebhookSource represents a registered webhook provider.
@@ -22,6 +22,9 @@ export const file_ironflow_v1_webhook: GenFile = /*@__PURE__*/
  */
 export type WebhookSource = Message<"ironflow.v1.WebhookSource"> & {
   /**
+   * Server-generated UUID (with `wh_` prefix) for new rows; legacy rows
+   * from before migration 031 carry their original user-supplied string ID.
+   *
    * @generated from field: string id = 1;
    */
   id: string;
@@ -60,6 +63,36 @@ export type WebhookSource = Message<"ironflow.v1.WebhookSource"> & {
    * @generated from field: google.protobuf.Timestamp updated_at = 8;
    */
   updatedAt?: Timestamp;
+
+  /**
+   * True when verify_secret is set server-side. Raw value never returned.
+   *
+   * @generated from field: bool verify_secret_set = 9;
+   */
+  verifySecretSet: boolean;
+
+  /**
+   * Operator-friendly display label. NOT unique.
+   *
+   * @generated from field: string name = 10;
+   */
+  name: string;
+
+  /**
+   * True when verify_secret_prev is set server-side. Raw value never
+   * returned. Combine with verify_secret_prev_expires_at to determine
+   * whether a rotation grace window is active (set AND future expiry).
+   *
+   * @generated from field: bool verify_secret_prev_set = 11;
+   */
+  verifySecretPrevSet: boolean;
+
+  /**
+   * Expiry of the prev secret slot. Zero/unset when no prev configured.
+   *
+   * @generated from field: google.protobuf.Timestamp verify_secret_prev_expires_at = 12;
+   */
+  verifySecretPrevExpiresAt?: Timestamp;
 };
 
 /**
@@ -70,14 +103,26 @@ export const WebhookSourceSchema: GenMessage<WebhookSource> = /*@__PURE__*/
   messageDesc(file_ironflow_v1_webhook, 0);
 
 /**
- * @generated from message ironflow.v1.CreateWebhookSourceRequest
+ * @generated from message ironflow.v1.GetWebhookSourceRequest
  */
-export type CreateWebhookSourceRequest = Message<"ironflow.v1.CreateWebhookSourceRequest"> & {
+export type GetWebhookSourceRequest = Message<"ironflow.v1.GetWebhookSourceRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
   id: string;
+};
 
+/**
+ * Describes the message ironflow.v1.GetWebhookSourceRequest.
+ * Use `create(GetWebhookSourceRequestSchema)` to create a new message.
+ */
+export const GetWebhookSourceRequestSchema: GenMessage<GetWebhookSourceRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_webhook, 1);
+
+/**
+ * @generated from message ironflow.v1.CreateWebhookSourceRequest
+ */
+export type CreateWebhookSourceRequest = Message<"ironflow.v1.CreateWebhookSourceRequest"> & {
   /**
    * @generated from field: string event_prefix = 2;
    */
@@ -102,6 +147,13 @@ export type CreateWebhookSourceRequest = Message<"ironflow.v1.CreateWebhookSourc
    * @generated from field: google.protobuf.Struct metadata = 6;
    */
   metadata?: JsonObject;
+
+  /**
+   * Operator-friendly display label (required, NOT unique).
+   *
+   * @generated from field: string name = 7;
+   */
+  name: string;
 };
 
 /**
@@ -109,7 +161,7 @@ export type CreateWebhookSourceRequest = Message<"ironflow.v1.CreateWebhookSourc
  * Use `create(CreateWebhookSourceRequestSchema)` to create a new message.
  */
 export const CreateWebhookSourceRequestSchema: GenMessage<CreateWebhookSourceRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_webhook, 1);
+  messageDesc(file_ironflow_v1_webhook, 2);
 
 /**
  * @generated from message ironflow.v1.ListWebhookSourcesRequest
@@ -131,7 +183,7 @@ export type ListWebhookSourcesRequest = Message<"ironflow.v1.ListWebhookSourcesR
  * Use `create(ListWebhookSourcesRequestSchema)` to create a new message.
  */
 export const ListWebhookSourcesRequestSchema: GenMessage<ListWebhookSourcesRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_webhook, 2);
+  messageDesc(file_ironflow_v1_webhook, 3);
 
 /**
  * @generated from message ironflow.v1.ListWebhookSourcesResponse
@@ -141,6 +193,11 @@ export type ListWebhookSourcesResponse = Message<"ironflow.v1.ListWebhookSources
    * @generated from field: repeated ironflow.v1.WebhookSource sources = 1;
    */
   sources: WebhookSource[];
+
+  /**
+   * @generated from field: int32 total_count = 2;
+   */
+  totalCount: number;
 };
 
 /**
@@ -148,7 +205,149 @@ export type ListWebhookSourcesResponse = Message<"ironflow.v1.ListWebhookSources
  * Use `create(ListWebhookSourcesResponseSchema)` to create a new message.
  */
 export const ListWebhookSourcesResponseSchema: GenMessage<ListWebhookSourcesResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_webhook, 3);
+  messageDesc(file_ironflow_v1_webhook, 4);
+
+/**
+ * @generated from message ironflow.v1.UpdateWebhookSourceRequest
+ */
+export type UpdateWebhookSourceRequest = Message<"ironflow.v1.UpdateWebhookSourceRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * @generated from field: string verify_header = 3;
+   */
+  verifyHeader: string;
+
+  /**
+   * @generated from field: string verify_algorithm = 4;
+   */
+  verifyAlgorithm: string;
+
+  /**
+   * @generated from field: google.protobuf.Struct metadata = 5;
+   */
+  metadata?: JsonObject;
+};
+
+/**
+ * Describes the message ironflow.v1.UpdateWebhookSourceRequest.
+ * Use `create(UpdateWebhookSourceRequestSchema)` to create a new message.
+ */
+export const UpdateWebhookSourceRequestSchema: GenMessage<UpdateWebhookSourceRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_webhook, 5);
+
+/**
+ * @generated from message ironflow.v1.RotateWebhookSecretRequest
+ */
+export type RotateWebhookSecretRequest = Message<"ironflow.v1.RotateWebhookSecretRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * New secret. Must be non-empty — use DisableWebhookSignatureVerification
+   * to downgrade to unsigned mode.
+   *
+   * @generated from field: string verify_secret = 2;
+   */
+  verifySecret: string;
+
+  /**
+   * Grace window in seconds during which the prior current secret keeps
+   * verifying as prev. Tri-state:
+   *   unset — use the server-side default (24 h, or whatever
+   *           IRONFLOW_WEBHOOK_SECRET_GRACE_HOURS_DEFAULT sets).
+   *   0     — instant cutover (no grace).
+   *   N     — explicit N seconds; clamped at the server to 604800 (7 d).
+   *
+   * @generated from field: optional int32 grace_seconds = 3;
+   */
+  graceSeconds?: number;
+
+  /**
+   * Optimistic concurrency token: when set, the server requires this to
+   * match webhook_sources.updated_at and returns Aborted on mismatch.
+   * Unset means the caller accepts last-writer-wins.
+   *
+   * @generated from field: google.protobuf.Timestamp expected_updated_at = 4;
+   */
+  expectedUpdatedAt?: Timestamp;
+};
+
+/**
+ * Describes the message ironflow.v1.RotateWebhookSecretRequest.
+ * Use `create(RotateWebhookSecretRequestSchema)` to create a new message.
+ */
+export const RotateWebhookSecretRequestSchema: GenMessage<RotateWebhookSecretRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_webhook, 6);
+
+/**
+ * @generated from message ironflow.v1.ExpireWebhookSecretPrevRequest
+ */
+export type ExpireWebhookSecretPrevRequest = Message<"ironflow.v1.ExpireWebhookSecretPrevRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * Optimistic concurrency token. Same semantics as
+   * RotateWebhookSecretRequest.expected_updated_at.
+   *
+   * @generated from field: google.protobuf.Timestamp expected_updated_at = 2;
+   */
+  expectedUpdatedAt?: Timestamp;
+};
+
+/**
+ * Describes the message ironflow.v1.ExpireWebhookSecretPrevRequest.
+ * Use `create(ExpireWebhookSecretPrevRequestSchema)` to create a new message.
+ */
+export const ExpireWebhookSecretPrevRequestSchema: GenMessage<ExpireWebhookSecretPrevRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_webhook, 7);
+
+/**
+ * @generated from message ironflow.v1.DisableWebhookSignatureVerificationRequest
+ */
+export type DisableWebhookSignatureVerificationRequest = Message<"ironflow.v1.DisableWebhookSignatureVerificationRequest"> & {
+  /**
+   * @generated from field: string id = 1;
+   */
+  id: string;
+
+  /**
+   * Grace window in seconds during which the prior current secret keeps
+   * verifying as prev. Same tri-state semantics as
+   * RotateWebhookSecretRequest.grace_seconds.
+   *
+   * @generated from field: optional int32 grace_seconds = 2;
+   */
+  graceSeconds?: number;
+
+  /**
+   * Optimistic concurrency token. Same semantics as
+   * RotateWebhookSecretRequest.expected_updated_at.
+   *
+   * @generated from field: google.protobuf.Timestamp expected_updated_at = 3;
+   */
+  expectedUpdatedAt?: Timestamp;
+};
+
+/**
+ * Describes the message ironflow.v1.DisableWebhookSignatureVerificationRequest.
+ * Use `create(DisableWebhookSignatureVerificationRequestSchema)` to create a new message.
+ */
+export const DisableWebhookSignatureVerificationRequestSchema: GenMessage<DisableWebhookSignatureVerificationRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_webhook, 8);
 
 /**
  * @generated from message ironflow.v1.DeleteWebhookSourceRequest
@@ -165,7 +364,7 @@ export type DeleteWebhookSourceRequest = Message<"ironflow.v1.DeleteWebhookSourc
  * Use `create(DeleteWebhookSourceRequestSchema)` to create a new message.
  */
 export const DeleteWebhookSourceRequestSchema: GenMessage<DeleteWebhookSourceRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_webhook, 4);
+  messageDesc(file_ironflow_v1_webhook, 9);
 
 /**
  * @generated from message ironflow.v1.WebhookDelivery
@@ -205,6 +404,24 @@ export type WebhookDelivery = Message<"ironflow.v1.WebhookDelivery"> & {
    * @generated from field: google.protobuf.Timestamp created_at = 7;
    */
   createdAt?: Timestamp;
+
+  /**
+   * @generated from field: string request_body = 8;
+   */
+  requestBody: string;
+
+  /**
+   * @generated from field: google.protobuf.Struct request_headers = 9;
+   */
+  requestHeaders?: JsonObject;
+
+  /**
+   * Which signature slot matched: current | prev | none | invalid. Empty
+   * on legacy rows recorded before migration 033.
+   *
+   * @generated from field: string signature_key = 10;
+   */
+  signatureKey: string;
 };
 
 /**
@@ -212,7 +429,7 @@ export type WebhookDelivery = Message<"ironflow.v1.WebhookDelivery"> & {
  * Use `create(WebhookDeliverySchema)` to create a new message.
  */
 export const WebhookDeliverySchema: GenMessage<WebhookDelivery> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_webhook, 5);
+  messageDesc(file_ironflow_v1_webhook, 10);
 
 /**
  * @generated from message ironflow.v1.ListWebhookDeliveriesRequest
@@ -244,7 +461,7 @@ export type ListWebhookDeliveriesRequest = Message<"ironflow.v1.ListWebhookDeliv
  * Use `create(ListWebhookDeliveriesRequestSchema)` to create a new message.
  */
 export const ListWebhookDeliveriesRequestSchema: GenMessage<ListWebhookDeliveriesRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_webhook, 6);
+  messageDesc(file_ironflow_v1_webhook, 11);
 
 /**
  * @generated from message ironflow.v1.ListWebhookDeliveriesResponse
@@ -266,7 +483,7 @@ export type ListWebhookDeliveriesResponse = Message<"ironflow.v1.ListWebhookDeli
  * Use `create(ListWebhookDeliveriesResponseSchema)` to create a new message.
  */
 export const ListWebhookDeliveriesResponseSchema: GenMessage<ListWebhookDeliveriesResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_webhook, 7);
+  messageDesc(file_ironflow_v1_webhook, 12);
 
 /**
  * @generated from service ironflow.v1.WebhookService
@@ -283,6 +500,16 @@ export const WebhookService: GenService<{
     output: typeof WebhookSourceSchema;
   },
   /**
+   * Get a single webhook source by ID
+   *
+   * @generated from rpc ironflow.v1.WebhookService.GetWebhookSource
+   */
+  getWebhookSource: {
+    methodKind: "unary";
+    input: typeof GetWebhookSourceRequestSchema;
+    output: typeof WebhookSourceSchema;
+  },
+  /**
    * List all webhook sources
    *
    * @generated from rpc ironflow.v1.WebhookService.ListWebhookSources
@@ -291,6 +518,50 @@ export const WebhookService: GenService<{
     methodKind: "unary";
     input: typeof ListWebhookSourcesRequestSchema;
     output: typeof ListWebhookSourcesResponseSchema;
+  },
+  /**
+   * Update editable fields on a webhook source. Does not change verify_secret.
+   *
+   * @generated from rpc ironflow.v1.WebhookService.UpdateWebhookSource
+   */
+  updateWebhookSource: {
+    methodKind: "unary";
+    input: typeof UpdateWebhookSourceRequestSchema;
+    output: typeof WebhookSourceSchema;
+  },
+  /**
+   * Rotate the verify_secret. Promotes the prior current secret to the
+   * prev slot for the grace window. Empty new secret is rejected — use
+   * DisableWebhookSignatureVerification.
+   *
+   * @generated from rpc ironflow.v1.WebhookService.RotateWebhookSecret
+   */
+  rotateWebhookSecret: {
+    methodKind: "unary";
+    input: typeof RotateWebhookSecretRequestSchema;
+    output: typeof WebhookSourceSchema;
+  },
+  /**
+   * Force-expire the previous secret immediately. Idempotent.
+   *
+   * @generated from rpc ironflow.v1.WebhookService.ExpireWebhookSecretPrev
+   */
+  expireWebhookSecretPrev: {
+    methodKind: "unary";
+    input: typeof ExpireWebhookSecretPrevRequestSchema;
+    output: typeof WebhookSourceSchema;
+  },
+  /**
+   * Disable signature verification on a source. Preserves the prior
+   * current secret as prev for the grace window; after the window the
+   * source operates unsigned.
+   *
+   * @generated from rpc ironflow.v1.WebhookService.DisableWebhookSignatureVerification
+   */
+  disableWebhookSignatureVerification: {
+    methodKind: "unary";
+    input: typeof DisableWebhookSignatureVerificationRequestSchema;
+    output: typeof WebhookSourceSchema;
   },
   /**
    * Delete a webhook source
