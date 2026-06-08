@@ -1423,19 +1423,25 @@ For projections backed by relational tables (Cloud / managed PG).
 ```typescript
 interface CreateSQLProjectionInput {
   name: string;
+  /** CREATE TABLE DDL for the projection table (must use proj_ prefix) */
+  tableSql: string;
+  /** Map of event_name → parameterized SQL handler (INSERT/UPDATE/DELETE) */
+  eventHandlers: Record<string, string>;
   events: string[];
-  sql: string;
-  schema?: string;
+  description?: string;
 }
 
 interface QuerySQLProjectionOptions {
-  params?: unknown[];
-  limit?: number;
+  where?: string; // e.g. "status = 'OPEN'"
+  orderBy?: string; // e.g. "created_at DESC"
+  limit?: number; // default 100
+  offset?: number; // pagination offset
 }
 
-interface SQLProjectionQueryResult<TRow = Record<string, unknown>> {
-  rows: TRow[];
-  rowCount: number;
+interface SQLProjectionQueryResult {
+  columns: string[];
+  rows: string[][]; // each row is string values in column order
+  totalCount: number; // total matches before limit/offset
 }
 ```
 

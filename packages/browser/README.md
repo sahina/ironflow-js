@@ -1303,10 +1303,6 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Projection types:** `ProjectionStatusInfo`, `ProjectionStateResult`
 
-**Time-travel types:** `TimeTravelRunStateSnapshot`, `TimeTravelTimelineEvent`, `TimeTravelStepSnapshot`, `TimeTravelStepOutputSnapshot`
-
-**Scoped injection types:** `PausedStepInfo`, `PausedState`
-
 **KV types:** `KVBucketConfig`, `KVBucketInfo`, `KVEntry`, `KVPutResult`, `KVListKeysResult`, `KVListBucketsResult`, `KVWatchEvent`, `KVWatchCallbacks`, `KVWatchOptions`, `KVWatcher`
 
 **Config types:** `ConfigResponse`, `ConfigEntry`, `ConfigSetResult`, `ConfigWatchCallbacks`

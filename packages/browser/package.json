@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/browser",
-  "version": "0.22.9",
+  "version": "0.23.0",
   "description": "Browser client for Ironflow event-driven backend platform - real-time subscriptions, workflow triggers, and event emission",
   "type": "module",
   "main": "./dist/index.js",
@@ -36,7 +36,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^22.19.19",
+    "@types/node": "^22.19.20",
     "esbuild": "^0.27.7",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.3",

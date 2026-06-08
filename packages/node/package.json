@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/node",
-  "version": "0.22.9",
+  "version": "0.23.0",
   "description": "Node.js SDK for Ironflow event-driven backend platform - workers, serve handlers, and step execution",
   "type": "module",
   "main": "./dist/index.js",
@@ -67,7 +67,7 @@
     "@connectrpc/connect-node": "^2.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.19.19",
+    "@types/node": "^22.19.20",
     "esbuild": "^0.27.7",
     "typescript": "^5.9.3",
     "vitest": "^2.1.9"
