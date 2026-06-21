@@ -131,10 +131,6 @@ export interface RegisterFunctionRequest {
   endpointUrl?: string;
   /** Actor key for sticky routing */
   actorKey?: string;
-  /** Pause behavior for scoped injection ("hold" or "release") */
-  pauseBehavior?: string;
-  /** Compensate-on-cancel flag (issue #546 P2). Pull-mode only. */
-  compensateOnCancel?: boolean;
   /** Cancel-on-event specs (issue #546 P3 / #572). */
   cancelOn?: { event: string; match: string }[];
 }
@@ -299,8 +295,6 @@ export class IronflowClient {
     if (request.preferredMode) body.preferredMode = request.preferredMode;
     if (request.endpointUrl) body.endpointUrl = request.endpointUrl;
     if (request.actorKey) body.actorKey = request.actorKey;
-    if (request.pauseBehavior) body.pauseBehavior = request.pauseBehavior;
-    if (request.compensateOnCancel) body.compensateOnCancel = true;
     if (request.cancelOn?.length) body.cancelOn = request.cancelOn;
 
     const response = await this.request<{ created: boolean }>(

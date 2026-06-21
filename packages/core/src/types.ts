@@ -148,19 +148,10 @@ export interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   recording?: boolean;
   /** Retention period for audit events ("7d", "30d", "90d", "forever") */
   recordingRetention?: string;
-  /** Pause behavior for scoped injection ("hold" or "release") */
-  pauseBehavior?: PauseBehavior;
   /** Custom metadata (e.g., service, team, owner) */
   metadata?: Record<string, unknown>;
   /** Debounce configuration — collapse rapid-fire events into a single invocation */
   debounce?: DebounceConfig;
-  /**
-   * Run registered `step.compensate()` handlers in reverse order when a
-   * pull-mode run is cancelled mid-saga. Ignored for push-mode functions —
-   * compensation closures only exist in a live SDK process, so push mode
-   * has no point of re-entry after the cancel signal arrives. Issue #546 P2.
-   */
-  compensateOnCancel?: boolean;
   /**
    * Cancel-on-event specs. When any spec matches an incoming event whose
    * match-path value equals the corresponding field on the running run,
@@ -264,13 +255,6 @@ export interface CancelOnConfig {
  * Execution mode for the function
  */
 export type ExecutionMode = "push" | "pull";
-
-/**
- * Pause behavior when a function is configured for scoped injection.
- * - "hold": Hold the run in paused state until explicitly resumed (default).
- * - "release": Automatically resume the run after injection.
- */
-export type PauseBehavior = "hold" | "release";
 
 // ============================================================================
 // Secrets Client
@@ -563,6 +547,10 @@ export type FunctionHandler<TEvent = unknown, TResult = unknown> = (
 
 /**
  * Run status
+ *
+ * Note: "pending" is deprecated — the engine no longer produces it as of #1222
+ * (run status "pending" retired). It is retained in the union for source/wire
+ * compatibility with older runs.
  */
 export type RunStatus =
   | "pending"
@@ -570,7 +558,11 @@ export type RunStatus =
   | "completed"
   | "failed"
   | "cancelled"
-  | "paused";
+  | "paused"
+  // Capacity lifecycle (#1222): queued and eligible for a dispatch slot, vs
+  // queued but backing off (retry delay / recovery grace).
+  | "waiting_for_capacity"
+  | "waiting";
 
 /**
  * Run details

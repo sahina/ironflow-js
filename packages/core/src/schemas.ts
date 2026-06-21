@@ -12,12 +12,19 @@ import { z } from "zod";
 // ============================================================================
 
 export const RunStatusSchema = z.enum([
+  // @deprecated The engine no longer produces "pending" as of #1222 (run status
+  // "pending" retired). Retained for source/wire compatibility with older runs.
   "pending",
   "running",
   "completed",
   "failed",
   "cancelled",
   "paused",
+  // Capacity lifecycle (#1222): a run queued and eligible for a dispatch slot,
+  // and a run queued but backing off (retry delay / recovery grace) before it
+  // becomes eligible.
+  "waiting_for_capacity",
+  "waiting",
 ]);
 
 // ============================================================================
@@ -110,8 +117,6 @@ export const RunResponseSchema = z.object({
     .optional(),
   startedAt: z.string().optional(),
   endedAt: z.string().optional(),
-  concurrencyKey: z.string().optional(),
-  priority: z.number().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -197,7 +202,15 @@ export const JobEventSchema = z.object({
   data: z.unknown(),
   timestamp: z.string(),
   version: z.number().int().min(1).default(1),
-  metadata: z.record(z.string(), z.unknown()).optional(),
+  // Tolerate an explicit null on the wire (an absent-metadata event is
+  // serialized server-side as JSON null, not omitted), normalizing it back to
+  // undefined so consumers see the same shape as a genuinely-absent field. A
+  // plain .optional() rejects null and would strand every run whose triggering
+  // event carried no metadata (e.g. REST-emitted events).
+  metadata: z
+    .record(z.string(), z.unknown())
+    .nullish()
+    .transform((m) => m ?? undefined),
 });
 
 export const JobContextSchema = z.object({
@@ -215,6 +228,11 @@ export const JobAssignmentSchema = z.object({
   completed_steps: z.array(JobCompletedStepSchema),
   actor_id: z.string().optional(),
   context: JobContextSchema.optional(),
+  // Execution fence (#1206, ADR 0037, T9). Present on capacity-mode assignments;
+  // the worker acks with it before executing and echoes it on every update.
+  // Absent for legacy / non-capacity assignments (default-off server).
+  execution_seq: z.number().optional(),
+  lease_token: z.string().optional(),
 });
 
 // ============================================================================

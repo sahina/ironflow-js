@@ -32,7 +32,6 @@ export type {
   ConcurrencyConfig,
   DebounceConfig,
   ExecutionMode,
-  PauseBehavior,
 
   // Paused state types (scoped injection)
   PausedStepInfo,

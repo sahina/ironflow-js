@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/langgraph",
-  "version": "0.23.0",
+  "version": "0.24.0",
   "description": "LangGraph checkpoint saver backed by Ironflow entity streams — durable agent state with crash-resume",
   "type": "module",
   "main": "./dist/index.js",

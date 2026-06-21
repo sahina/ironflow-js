@@ -473,6 +473,28 @@ describe("JobAssignmentSchema", () => {
       })
     ).toThrow();
   });
+
+  // A triggering event with no metadata is serialized server-side as JSON null
+  // (not omitted); the schema must accept it and normalize null -> undefined,
+  // not reject the whole assignment. Regression guard for the bug where
+  // REST-emitted events stranded every run with "expected record, received null".
+  it("should accept a null event.metadata and normalize it to undefined", () => {
+    const parsed = JobAssignmentSchema.parse({
+      job_id: "job-1",
+      run_id: "run-1",
+      function_id: "fn-1",
+      attempt: 1,
+      event: {
+        id: "evt-1",
+        name: "test",
+        data: {},
+        timestamp: "2024-01-01T00:00:00Z",
+        metadata: null,
+      },
+      completed_steps: [],
+    });
+    expect(parsed.event.metadata).toBeUndefined();
+  });
 });
 
 describe("WSSubscriptionResultSchema", () => {

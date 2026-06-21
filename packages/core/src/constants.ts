@@ -134,7 +134,11 @@ export const STEP_STATUS = {
 
 /** Run status values */
 export const RUN_STATUS = {
-  /** Run is pending execution */
+  /**
+   * Run is pending execution.
+   * @deprecated The engine no longer produces this status as of #1222 (run
+   * status "pending" retired). Retained for source compatibility.
+   */
   PENDING: "pending",
   /** Run is currently executing */
   RUNNING: "running",
@@ -146,6 +150,10 @@ export const RUN_STATUS = {
   CANCELLED: "cancelled",
   /** Run is paused (waiting for event or sleep) */
   PAUSED: "paused",
+  /** Run is queued and eligible for a dispatch slot (runnable, awaiting capacity) (#1222) */
+  WAITING_FOR_CAPACITY: "waiting_for_capacity",
+  /** Run is queued but backing off (retry delay / recovery grace) before it becomes eligible (#1222) */
+  WAITING: "waiting",
 } as const;
 
 /** WebSocket message types for pub/sub */

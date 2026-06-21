@@ -110,8 +110,6 @@ All fields on the config object:
 | `stepTimeout` | `string` | Default timeout for all `step.run()` calls (e.g., `"30s"`, `"5m"`). |
 | `recording` | `boolean` | Enable audit recording for this function. |
 | `recordingRetention` | `string` | Retention period for audit events (`"7d"`, `"30d"`, `"90d"`, `"forever"`). |
-| `pauseBehavior` | `"hold" \| "release"` | Controls whether a paused run retains (`"hold"`, default) or releases (`"release"`) its concurrency lane slot. |
-| `compensateOnCancel` | `boolean` | Run registered `step.compensate()` handlers in reverse order when a pull-mode run is cancelled mid-saga. Ignored for push-mode. |
 | `metadata` | `Record<string, unknown>` | Arbitrary metadata attached to the function definition. |
 
 **Trigger** fields:
@@ -778,16 +776,6 @@ await client.injectStepOutput("run_abc123", "step_xyz", { corrected: true }, "Ma
 
 // Resume the workflow
 await client.resumeRun("run_abc123");
-```
-
-`pauseBehavior` on `createFunction` controls whether a paused run retains or releases its concurrency lane slot:
-
-```typescript
-const fn = createFunction({
-  id: "process-order",
-  pauseBehavior: "hold", // "hold" (default) or "release"
-  // ...
-});
 ```
 
 ### listFunctions()

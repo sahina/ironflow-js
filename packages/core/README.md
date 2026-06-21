@@ -143,10 +143,6 @@ interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   recording?: boolean;
   /** Retention period for audit events ("7d", "30d", "90d", "forever") */
   recordingRetention?: string;
-  /** Pause behavior for scoped injection ("hold" or "release") */
-  pauseBehavior?: PauseBehavior;
-  /** Run compensations in reverse order when a pull-mode run is cancelled mid-saga */
-  compensateOnCancel?: boolean;
   /** Cancel-on-event specs (OR semantic). Auto-cancels run with cause "cancel-on-event". */
   cancelOn?: CancelOnConfig[];
   /** Custom metadata (e.g., service, team, owner) */
@@ -525,7 +521,7 @@ interface ParallelOptions {
 ### RunStatus
 
 ```typescript
-type RunStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "paused";
+type RunStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "paused" | "waiting_for_capacity" | "waiting";
 ```
 
 ### RunInfo
@@ -1618,7 +1614,7 @@ const run = validate(RunResponseSchema, parsedData, 'GetRun response');
 ### Available Schemas
 
 **Run & Status:**
-- `RunStatusSchema` -- `z.enum(["pending", "running", "completed", "failed", "cancelled", "paused"])`
+- `RunStatusSchema` -- `z.enum(["pending", "running", "completed", "failed", "cancelled", "paused", "waiting_for_capacity", "waiting"])`
 
 **Push Request (serve.ts):**
 - `PushRequestSchema` -- Full push mode request from engine to SDK
@@ -1838,8 +1834,9 @@ import {
   // { COMPLETED: "completed", FAILED: "failed", WAITING: "waiting" }
 
   RUN_STATUS,
-  // { PENDING: "pending", RUNNING: "running", COMPLETED: "completed",
-  //   FAILED: "failed", CANCELLED: "cancelled", PAUSED: "paused" }
+  // { PENDING: "pending" (deprecated), RUNNING: "running", COMPLETED: "completed",
+  //   FAILED: "failed", CANCELLED: "cancelled", PAUSED: "paused",
+  //   WAITING_FOR_CAPACITY: "waiting_for_capacity", WAITING: "waiting" }
 
   API_ENDPOINTS,
   // ConnectRPC paths: TRIGGER, TRIGGER_SYNC, GET_RUN, LIST_RUNS, CANCEL_RUN,

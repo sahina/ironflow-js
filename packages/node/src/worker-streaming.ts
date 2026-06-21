@@ -57,6 +57,11 @@ interface ActiveJob {
   functionId: string;
   startedAt: Date;
   abortController: AbortController;
+  // Execution fence (#1206, ADR 0037, chunk 3e), captured from the JobAssignment.
+  // Echoed on every mutating message so the engine's ingress guard can validate
+  // it. Zero (0n / "") for legacy / non-capacity assignments.
+  executionSeq: bigint;
+  leaseToken: string;
 }
 
 // Type for ConnectRPC client with connect method
@@ -364,13 +369,16 @@ class StreamingWorker implements Worker {
           case: "jobAck",
           value: create(JobAckSchema, {
             jobId: job.jobId,
+            executionSeq: job.executionSeq,
+            leaseToken: job.leaseToken,
           }),
         },
       });
       this.sendMessage(ackMsg);
     }
 
-    // Track active job
+    // Track active job, stashing the execution fence so the terminal messages
+    // can echo it (#1206, ADR 0037, chunk 3e).
     const abortController = new AbortController();
     const activeJob: ActiveJob = {
       jobId: job.jobId,
@@ -378,6 +386,8 @@ class StreamingWorker implements Worker {
       functionId: job.functionId,
       startedAt: new Date(),
       abortController,
+      executionSeq: job.executionSeq,
+      leaseToken: job.leaseToken,
     };
     this.activeJobs.set(job.jobId, activeJob);
 
@@ -410,13 +420,27 @@ class StreamingWorker implements Worker {
     job: JobAssignment,
     signal: AbortSignal
   ): Promise<void> {
+    // Capture the execution fence from the assignment up front (#1206, ADR 0037).
+    // Terminal messages echo it from here, NOT from a late activeJobs lookup — a
+    // concurrent cancel deletes the job from the map, and a handler that finishes
+    // afterward would otherwise send an empty token and the engine would
+    // fenceDisconnect the whole stream. Parity with the Go SDK, whose per-job
+    // reporter captures the fence at construction.
+    const fence = {
+      executionSeq: job.executionSeq,
+      leaseToken: job.leaseToken,
+    };
     const fn = this.functionMap.get(job.functionId);
     if (!fn) {
-      await this.sendJobFailed(job.jobId, {
-        message: `Function not found: ${job.functionId}`,
-        code: "FUNCTION_NOT_FOUND",
-        retryable: false,
-      });
+      await this.sendJobFailed(
+        job.jobId,
+        {
+          message: `Function not found: ${job.functionId}`,
+          code: "FUNCTION_NOT_FOUND",
+          retryable: false,
+        },
+        fence
+      );
       return;
     }
 
@@ -482,7 +506,7 @@ class StreamingWorker implements Worker {
       const durationMs = Date.now() - startTime;
 
       // Send completion via stream
-      await this.sendJobCompleted(job.jobId, result, durationMs);
+      await this.sendJobCompleted(job.jobId, result, durationMs, fence);
     } catch (error) {
       if (signal.aborted) {
         return;
@@ -512,18 +536,23 @@ class StreamingWorker implements Worker {
           retryable,
           durationMs,
         },
+        fence,
         retryable ? [] : ctx.getExecutedSteps()
       );
     }
   }
 
   /**
-   * Send job completed message via stream
+   * Send job completed message via stream. The fence (execution_seq, lease_token)
+   * is captured from the JobAssignment by the caller (#1206, ADR 0037), not
+   * re-derived from the mutable activeJobs map, so a concurrent cancel cannot
+   * blank it.
    */
   private async sendJobCompleted(
     jobId: string,
     output: unknown,
-    durationMs: number
+    durationMs: number,
+    fence: { executionSeq: bigint; leaseToken: string }
   ): Promise<void> {
     if (!this.sendMessage) return;
 
@@ -534,6 +563,8 @@ class StreamingWorker implements Worker {
           jobId,
           output: output as JsonObject,
           durationMs,
+          executionSeq: fence.executionSeq,
+          leaseToken: fence.leaseToken,
         }),
       },
     });
@@ -551,6 +582,7 @@ class StreamingWorker implements Worker {
       retryable: boolean;
       durationMs?: number;
     },
+    fence: { executionSeq: bigint; leaseToken: string },
     steps: StepResult[] = []
   ): Promise<void> {
     if (!this.sendMessage) return;
@@ -566,6 +598,8 @@ class StreamingWorker implements Worker {
             retryable: error.retryable,
           }),
           durationMs: error.durationMs ?? 0,
+          executionSeq: fence.executionSeq,
+          leaseToken: fence.leaseToken,
           steps: steps.map((s) =>
             create(ExecutedStepSchema, {
               id: s.id,
