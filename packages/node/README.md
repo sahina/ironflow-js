@@ -1285,7 +1285,7 @@ await client.roles.delete(role.id);
 ```typescript
 const policy = await client.policies.create({
   name: 'allow-emit',
-  effect: 'allow',
+  effect: 'deny',
   actions: 'emit:*',
   resources: '*',
   org_id: orgId,

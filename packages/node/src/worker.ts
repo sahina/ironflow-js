@@ -30,6 +30,25 @@ import { createProjectionRunner, StreamingUnsupportedError, type ProjectionRunne
 import { createSecretsClient } from "./secrets.js";
 import { withRunContext } from "./internal/run-context.js";
 import { SDK_VERSION } from "./version.js";
+import { createHash } from "node:crypto";
+
+// Reserved metadata key carrying a hash of the handler source (#1280). The engine
+// bumps a function's VERSION only when its registered config changes, and
+// functionsConfigEqual compares metadata — so stamping the code hash here is what
+// makes a code-only reload observable (ironflow_await_reload + the desktop
+// staleness chip gate on that version bump). Reserved (`__` prefix) so it doesn't
+// collide with user metadata.
+export const CODE_HASH_META_KEY = "__ironflow_code_hash";
+
+// functionCodeHash is a short deterministic hash of a handler's SOURCE. Content
+// hash, NOT a nonce: two distinct instances with identical source (an identical
+// dev-process restart) hash the same, so the version is not inflated; a body edit
+// changes the source → the hash → the registered metadata → the engine version.
+// Caveat: reflects the handler body only — edits to an imported helper the handler
+// calls are not visible in handler.toString(). Exported for tests.
+export function functionCodeHash(handler: unknown): string {
+  return createHash("sha256").update(String(handler)).digest("hex").slice(0, 16);
+}
 
 /**
  * Worker lifecycle states
@@ -295,7 +314,9 @@ class IronflowWorker implements Worker {
       if (fn.config.actorKey) body.actorKey = fn.config.actorKey;
       if (fn.config.recording != null) body.recording = fn.config.recording;
       if (fn.config.recordingRetention != null) body.recordingRetention = fn.config.recordingRetention;
-      if (fn.config.metadata) body.metadata = fn.config.metadata;
+      // Stamp a hash of the handler source so a code edit changes the registered
+      // config → the engine bumps the version → the reload barrier fires (#1280).
+      body.metadata = { ...(fn.config.metadata ?? {}), [CODE_HASH_META_KEY]: functionCodeHash(fn.handler) };
       if (fn.config.secrets?.length) body.secrets = fn.config.secrets;
       if (fn.config.cancelOn?.length) {
         body.cancelOn = fn.config.cancelOn.map((s) => ({

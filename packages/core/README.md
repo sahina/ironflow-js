@@ -382,17 +382,16 @@ interface EmitResult {
 }
 
 interface EmitSyncResult {
-  /** ID of the stored event */
-  eventId: string;
-  /** Per-run sync results (one entry per triggered run) */
-  results: Array<{
-    runId: string;
-    functionId: string;
-    status: RunStatus;
-    output?: unknown;
-    error?: { message: string; code?: string };
-    durationMs: number;
-  }>;
+  /** ID of the triggered run */
+  runId: string;
+  /** ID of the function that handled the event */
+  functionId: string;
+  /** Final run status */
+  status: string;
+  /** Function return value */
+  output: unknown;
+  /** Wall-clock duration in milliseconds */
+  durationMs: number;
 }
 ```
 
@@ -805,9 +804,10 @@ interface AppendResult {
   entityVersion: number;
   eventId: string;
   /**
-   * NATS JetStream sequence on the PUBSUB stream. Pass to
-   * projections.waitForCatchup({ minSeq }) for read-your-writes.
-   * 0 (or undefined) means publish failed or unavailable.
+   * NATS JetStream sequence on the PUBSUB stream. Always 0/undefined under
+   * the transactional outbox (#487) — publishing is deferred, so the sequence
+   * is unknown at append time. For read-your-writes, use
+   * projections.waitForEvent(eventId, projection) instead.
    */
   sequence?: number;
 }
@@ -2308,11 +2308,12 @@ interface EntityHistoryEntry {
 }
 
 interface StreamSnapshot {
+  snapshotId: string;
   entityId: string;
   entityType: string;
-  version: number;
-  state: unknown;
-  takenAt: string;
+  entityVersion: number;
+  state: Record<string, unknown>;
+  createdAt: string;
 }
 ```
 

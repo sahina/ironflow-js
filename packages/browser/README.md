@@ -173,7 +173,7 @@ const sub = await ironflow.subscribe('events:order.*', {
   // Acknowledgment mode: 'auto' (default) | 'manual'
   ackMode: 'manual',
 
-  // Backpressure handling: 'buffer' (default) | 'drop'
+  // Backpressure handling: 'buffer' (default) | 'drop' | 'block'
   backpressure: 'buffer',
 
   // Browser-specific: track last event for state access
@@ -501,7 +501,7 @@ sub.unsubscribe();
 
 ### `agents.readMemory(projection, opts?)`
 
-Typed read of an agent memory projection. Optional read-your-writes via `minSeq` from a prior `streams.append`.
+Typed read of an agent memory projection. Optional read-your-writes via `minSeq` (a NATS sequence, e.g. `targetSeq` from a prior `waitForEvent`).
 
 ```typescript
 interface DocMemory {
@@ -512,14 +512,16 @@ interface DocMemory {
 const mem = await ironflow.agents.readMemory<DocMemory>('doc-processor-memory');
 console.log(mem.state.docs, mem.version);
 
-// Read-your-writes: pass the seq returned by a prior append so the
-// projection has caught up before the read.
-const { sequence } = await ironflow.streams.append('agent-memory:doc-1', {
+// Read-your-writes: streams.append does not return a NATS sequence under
+// the transactional outbox — wait for the appended event to be processed
+// (the server resolves eventId → seq), then read with the resolved seq.
+const { eventId } = await ironflow.streams.append('agent-memory:doc-1', {
   name: 'DocProcessed',
   data: { docId: 'doc-1', status: 'classified' },
 });
+const wait = await ironflow.waitForEvent(eventId, 'doc-processor-memory', { timeoutMs: 5_000 });
 const fresh = await ironflow.agents.readMemory<DocMemory>('doc-processor-memory', {
-  minSeq: sequence,
+  minSeq: wait.targetSeq,
   timeoutMs: 5_000,
 });
 ```
@@ -533,10 +535,6 @@ A complete browser-driven demo lives at `examples/agents/doc-processor-agent/web
 ### Server compatibility
 
 Requires Ironflow server with `waitForProjectionCatchup` (#473) and the unified Trigger path. Any server built from `main` after #608 (Lane D) supports the full surface.
-
-### Stuck or hanging?
-
-See `_internal/runbooks/runbook-browser-agent-stuck.md` for triage.
 
 ## Entity Streams (Event Sourcing)
 
@@ -558,8 +556,7 @@ const result = await ironflow.streams.append('order-123', {
 });
 
 console.log(result.entityVersion);  // New entity version after append
-console.log(result.eventId);        // Unique event ID
-console.log(result.sequence);       // NATS JetStream sequence (pass to projections.waitForCatchup({ minSeq }))
+console.log(result.eventId);        // Unique event ID (pass to waitForEvent for read-your-writes)
 ```
 
 ### Read Stream
@@ -938,7 +935,7 @@ await ironflow.roles.delete('role_xyz789');
 // Create a policy
 const policy = await ironflow.policies.create({
   name: 'allow-read',
-  effect: 'allow',
+  effect: 'deny',
   actions: 'read',
   resources: '*',
   org_id: 'org_abc123',

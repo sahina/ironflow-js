@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/browser",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Browser client for Ironflow event-driven backend platform - real-time subscriptions, workflow triggers, and event emission",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,14 +29,14 @@
     "pack:local": "pnpm build:bundle && cd dist-bundle && pnpm pack --pack-destination /tmp/ironflow-packs"
   },
   "dependencies": {
-    "@bufbuild/protobuf": "^2.12.0",
-    "@connectrpc/connect": "^2.1.1",
-    "@connectrpc/connect-web": "^2.1.1",
+    "@bufbuild/protobuf": "^2.13.0",
+    "@connectrpc/connect": "^2.1.2",
+    "@connectrpc/connect-web": "^2.1.2",
     "@ironflow/core": "workspace:^",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/node": "^22.19.20",
+    "@types/node": "^22.20.1",
     "esbuild": "^0.27.7",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.3",
