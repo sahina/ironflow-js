@@ -18,7 +18,7 @@ All four packages version in lockstep.
 - `.ts` source for the SDK packages above
 - Generated protocol code (`packages/core/src/gen/`) vendored from the engine repo
 - `pnpm-workspace.yaml`, root `package.json`, and per-package configs needed to build locally
-- `LICENSE`, issue templates, security policy
+- `LICENSE` and security policy
 
 ## Where the engine source lives
 
@@ -43,9 +43,11 @@ This repo is **read-only**. Pull requests will be closed without review. Source 
 
 ## Bug reports
 
-- SDK bugs (in `@ironflow/{core,browser,node,langgraph}`) → [open an issue here](https://github.com/sahina/ironflow-js/issues/new/choose)
-- Engine/server bugs → email the support address in [LICENSE](LICENSE)
-- Security issues → see [SECURITY.md](SECURITY.md) — do **not** open a public issue
+All Ironflow bug reports — SDK, engine, CLI, dashboard, desktop — go to one tracker:
+
+- Bugs and feature requests → [sahina/ironflow-issues](https://github.com/sahina/ironflow-issues/issues/new/choose). Pick **JS SDK** as the component.
+- Security issues → [private advisory](https://github.com/sahina/ironflow-issues/security/advisories/new) or see [SECURITY.md](SECURITY.md) — do **not** open a public issue
+- Commercial-licensing enquiries → the support address in [LICENSE](LICENSE)
 
 ## Verifying release integrity
 

@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Engine / server bug
-    url: https://ironflow.run/support
-    about: Bugs in the Ironflow engine (HTTP API, workflow execution, dashboard) — email support per LICENSE.
+  - name: Report a bug or request a feature
+    url: https://github.com/sahina/ironflow-issues/issues/new/choose
+    about: All Ironflow issues are tracked in one place. Pick "JS SDK" as the component.
   - name: Security vulnerability
-    url: https://github.com/sahina/ironflow-js/security/policy
-    about: Report security issues privately per SECURITY.md.
+    url: https://github.com/sahina/ironflow-issues/security/advisories/new
+    about: Report privately. Do not open a public issue.
   - name: Pull requests
     url: https://github.com/sahina/ironflow-js/blob/main/CONTRIBUTING.md
     about: This repo is read-only. PRs will be closed without review.
