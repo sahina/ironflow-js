@@ -43,7 +43,7 @@ This repo is **read-only**. Pull requests will be closed without review. Source 
 
 ## Bug reports
 
-All Ironflow bug reports — SDK, engine, CLI, dashboard, desktop — go to one tracker:
+Issues are disabled on this repo. All Ironflow bug reports — SDK, engine, CLI, dashboard, desktop — go to one tracker:
 
 - Bugs and feature requests → [sahina/ironflow-issues](https://github.com/sahina/ironflow-issues/issues/new/choose). Pick **JS SDK** as the component.
 - Security issues → [private advisory](https://github.com/sahina/ironflow-issues/security/advisories/new) or see [SECURITY.md](SECURITY.md) — do **not** open a public issue
