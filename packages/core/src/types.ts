@@ -1457,6 +1457,70 @@ export interface UpcastResult {
 // ============================================================================
 
 /**
+ * Describes a provider's signature scheme and where the event name and
+ * delivery ID live (ADR 0049).
+ *
+ * It carries no provider identity — GitHub, Stripe, Shopify, Slack and Standard
+ * Webhooks are all expressible as field values here — so supporting a provider
+ * is configuration rather than an Ironflow release.
+ *
+ * Omit it to verify the legacy way: hex HMAC over the bare request body, using
+ * `verifyHeader` and `verifyAlgorithm`.
+ */
+export interface WebhookVerifyConfig {
+  /** Header carrying the signature, e.g. "Stripe-Signature". */
+  signatureHeader: string;
+  /**
+   * Splits a multi-entry header. Omit for one entry. Stripe uses ",",
+   * Standard Webhooks uses " ".
+   */
+  entrySeparator?: string;
+  /**
+   * Splits "key<delim>value" within an entry. Omit when the entry is a bare
+   * signature (Shopify). GitHub/Stripe/Slack use "=", Standard Webhooks ",".
+   */
+  kvDelimiter?: string;
+  /**
+   * Selects which entries hold signatures, e.g. "v1". EVERY matching entry is
+   * tried, because providers send several while a secret rotates.
+   */
+  signatureKey?: string;
+  /** Separate header holding the timestamp (Slack). */
+  timestampHeader?: string;
+  /**
+   * Or the key inside `signatureHeader` holding it (Stripe's "t=").
+   * `timestampHeader` wins when both are set.
+   */
+  timestampKey?: string;
+  /**
+   * The string that gets signed, with `{body}`, `{ts}` and `{id}`
+   * placeholders. `{id}` resolves through `dedupIdPath`.
+   */
+  signingTemplate: string;
+  /** "hex" or "base64". */
+  encoding: string;
+  /** "hmac-sha256" or "hmac-sha1". */
+  algorithm: string;
+  /**
+   * Replay window. Honored ONLY when `signingTemplate` contains `{ts}` — an
+   * unsigned timestamp is attacker-controlled, so a tolerance over one is
+   * decoration and is rejected rather than silently ignored.
+   */
+  toleranceSeconds?: number;
+  /**
+   * Where the event type lives: "header:X-GitHub-Event" or "body:type".
+   * Omit to fall back to the body "type" key.
+   */
+  eventNamePath?: string;
+  /**
+   * Where the delivery ID lives: "header:X-GitHub-Delivery" or a dotted body
+   * path like "body:data.object.id". Omit to fall back to the body "id" and
+   * "event_id" keys.
+   */
+  dedupIdPath?: string;
+}
+
+/**
  * A registered webhook source.
  */
 export interface WebhookSource {
@@ -1466,6 +1530,17 @@ export interface WebhookSource {
   verifyAlgorithm?: string;
   sourceType?: string;
   metadata?: Record<string, unknown>;
+  /** Short display fragment of the ingest token (ifwh_ + 8 chars). */
+  ingestTokenPrefix?: string;
+  /**
+   * Raw per-source ingest token (ADR 0048). Present ONLY on the create and
+   * rotate responses — the server stores a hash, so this is the single
+   * opportunity to capture it. Without it the source cannot receive
+   * deliveries.
+   */
+  ingestToken?: string;
+  /** Signature descriptor (ADR 0049). Absent means legacy verification. */
+  verifyConfig?: WebhookVerifyConfig;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -1480,6 +1555,12 @@ export interface CreateWebhookSourceInput {
   verifyAlgorithm?: string;
   verifySecret?: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Signature descriptor (ADR 0049). Set it to verify a provider whose scheme
+   * is not "hex HMAC over the bare body" — which is every provider except
+   * GitHub. Omit for legacy verification.
+   */
+  verifyConfig?: WebhookVerifyConfig;
 }
 
 /**
@@ -1605,4 +1686,60 @@ export interface WaitProgress {
   error?: string;
   /** "managed" or "external" (informational). */
   mode?: string;
+}
+
+/**
+ * Converts a verify config to the snake_case shape the Connect JSON request
+ * body expects.
+ *
+ * Use {@link webhookVerifyConfigFromWire} for the response direction. Responses
+ * are snake_case on EVERY transport — the server registers a protojson codec
+ * with UseProtoNames=true (internal/server/connect/jsoncodec.go) — so there is
+ * no camelCase path, despite what an earlier version of this comment claimed.
+ */
+export function webhookVerifyConfigToWire(
+  cfg: WebhookVerifyConfig | undefined,
+): Record<string, unknown> | undefined {
+  if (!cfg) return undefined;
+  return {
+    signature_header: cfg.signatureHeader,
+    entry_separator: cfg.entrySeparator ?? "",
+    kv_delimiter: cfg.kvDelimiter ?? "",
+    signature_key: cfg.signatureKey ?? "",
+    timestamp_header: cfg.timestampHeader ?? "",
+    timestamp_key: cfg.timestampKey ?? "",
+    signing_template: cfg.signingTemplate,
+    encoding: cfg.encoding,
+    algorithm: cfg.algorithm,
+    tolerance_seconds: cfg.toleranceSeconds ?? 0,
+    event_name_path: cfg.eventNamePath ?? "",
+    dedup_id_path: cfg.dedupIdPath ?? "",
+  };
+}
+
+/**
+ * Reads a verify config from a snake_case wire payload.
+ *
+ * Needed by BOTH JS clients. The server marshals every ConnectRPC response
+ * with UseProtoNames=true, so responses are snake_case regardless of transport.
+ */
+export function webhookVerifyConfigFromWire(
+  raw: Record<string, unknown> | undefined,
+): WebhookVerifyConfig | undefined {
+  if (!raw) return undefined;
+  const str = (k: string) => (raw[k] as string) || undefined;
+  return {
+    signatureHeader: (raw.signature_header as string) ?? "",
+    entrySeparator: str("entry_separator"),
+    kvDelimiter: str("kv_delimiter"),
+    signatureKey: str("signature_key"),
+    timestampHeader: str("timestamp_header"),
+    timestampKey: str("timestamp_key"),
+    signingTemplate: (raw.signing_template as string) ?? "",
+    encoding: (raw.encoding as string) ?? "",
+    algorithm: (raw.algorithm as string) ?? "",
+    toleranceSeconds: (raw.tolerance_seconds as number) || undefined,
+    eventNamePath: str("event_name_path"),
+    dedupIdPath: str("dedup_id_path"),
+  };
 }

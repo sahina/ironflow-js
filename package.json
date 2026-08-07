@@ -11,7 +11,7 @@
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
-    "@bufbuild/protoc-gen-es": "2.2.3",
+    "@bufbuild/protoc-gen-es": "2.13.0",
     "@types/node": "^22.19.18",
     "@vitest/coverage-v8": "^2.1.9",
     "typescript": "^5.9.3",

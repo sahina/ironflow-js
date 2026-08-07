@@ -71,6 +71,8 @@ import {
   type UpcastResult,
   type WebhookSource,
   type CreateWebhookSourceInput,
+  webhookVerifyConfigToWire,
+  webhookVerifyConfigFromWire,
   type WebhookDelivery,
   type ListWebhookDeliveriesOptions,
   type User,
@@ -1468,32 +1470,77 @@ export class IronflowClient {
   readonly webhooks = {
     /** Create a new webhook source */
     create: async (input: CreateWebhookSourceInput): Promise<WebhookSource> => {
+      // Responses are snake_case on EVERY transport: the server registers
+      // snakeJSONCodec with UseProtoNames=true (internal/server/connect/jsoncodec.go,
+      // wired at server.go:621). Reading camelCase here yields undefined for
+      // every field — which silently dropped the write-once ingest token.
       const response = await this.request<{
         id: string;
-        eventPrefix: string;
-        verifyHeader?: string;
-        verifyAlgorithm?: string;
-        sourceType?: string;
+        event_prefix: string;
+        verify_header?: string;
+        verify_algorithm?: string;
+        source_type?: string;
         metadata?: Record<string, unknown>;
-        createdAt?: string;
-        updatedAt?: string;
+        ingest_token?: string;
+        ingest_token_prefix?: string;
+        verify_config?: Record<string, unknown>;
+        created_at?: string;
+        updated_at?: string;
       }>("/ironflow.v1.WebhookService/CreateWebhookSource", {
         id: input.id,
         event_prefix: input.eventPrefix,
         verify_header: input.verifyHeader ?? "",
         verify_algorithm: input.verifyAlgorithm ?? "",
         verify_secret: input.verifySecret ?? "",
+        verify_config: webhookVerifyConfigToWire(input.verifyConfig),
         metadata: input.metadata,
       }, "webhooks.create");
       return {
         id: response.id,
-        eventPrefix: response.eventPrefix,
-        verifyHeader: response.verifyHeader,
-        verifyAlgorithm: response.verifyAlgorithm,
-        sourceType: response.sourceType,
+        eventPrefix: response.event_prefix,
+        verifyHeader: response.verify_header,
+        verifyAlgorithm: response.verify_algorithm,
+        sourceType: response.source_type,
         metadata: response.metadata,
-        createdAt: response.createdAt,
-        updatedAt: response.updatedAt,
+        // ADR 0048: the raw ingest token is returned ONLY here. The server
+        // keeps a hash, so dropping it makes the source unreachable — the
+        // provider has no other credential to authenticate with.
+        ingestToken: response.ingest_token,
+        ingestTokenPrefix: response.ingest_token_prefix,
+        verifyConfig: webhookVerifyConfigFromWire(response.verify_config),
+        createdAt: response.created_at,
+        updatedAt: response.updated_at,
+      };
+    },
+
+    /**
+     * Rotate a source's per-source ingest token (ADR 0048).
+     *
+     * No grace window — the previous token stops working immediately, so
+     * update the provider's URL as soon as this returns. `ingestToken` on the
+     * result is the only copy; it cannot be retrieved later.
+     */
+    rotateIngestToken: async (
+      id: string,
+      expectedUpdatedAt?: string,
+    ): Promise<WebhookSource> => {
+      // snake_case: see the codec note on create() above.
+      const response = await this.request<{
+        id: string;
+        event_prefix?: string;
+        ingest_token?: string;
+        ingest_token_prefix?: string;
+        updated_at?: string;
+      }>("/ironflow.v1.WebhookService/RotateWebhookIngestToken", {
+        id,
+        ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}),
+      }, "webhooks.rotateIngestToken");
+      return {
+        id: response.id,
+        eventPrefix: response.event_prefix ?? "",
+        ingestToken: response.ingest_token,
+        ingestTokenPrefix: response.ingest_token_prefix,
+        updatedAt: response.updated_at,
       };
     },
 

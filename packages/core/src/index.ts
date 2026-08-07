@@ -158,6 +158,7 @@ export type {
 
   // Webhook management types
   WebhookSource,
+  WebhookVerifyConfig,
   CreateWebhookSourceInput,
   WebhookDelivery,
   ListWebhookDeliveriesOptions,
@@ -404,6 +405,14 @@ export type {
 } from "./projection-types.js";
 
 export { peelProjectionEnvelope } from "./projection-types.js";
+
+// Webhook signature descriptor wire converters (ADR 0049). Values, not types.
+// Both transports need them: WebhookService registers a protojson codec with
+// UseProtoNames=true, so its responses are snake_case regardless of transport.
+export {
+  webhookVerifyConfigToWire,
+  webhookVerifyConfigFromWire,
+} from "./types.js";
 
 // ============================================================================
 // KV Exports

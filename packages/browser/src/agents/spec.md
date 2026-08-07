@@ -36,7 +36,7 @@ ironflow.agents.subscribe(
 
 ## Run event taxonomy
 
-Subjects published by server: `system.run.{runId}.{event}`. Bridge prefixes with `public.{projectName}.{envID}.` before NATS publish; browser SDK subscribes with the bridge-aware pattern via existing `client.subscribe()`.
+Subjects published by server: `system.run.{runId}.{event}`. Bridge prefixes with `public.{environmentID}.` before NATS publish (ADR 0050); browser SDK subscribes with the bridge-aware pattern via existing `client.subscribe()`.
 
 Source: `internal/pubsub/types.go:187-197`, `internal/engine/event_publisher.go:43-91`.
 

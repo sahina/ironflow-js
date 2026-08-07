@@ -89,6 +89,8 @@ import {
   patterns,
   peelProjectionEnvelope,
   type EmitSyncResult,
+  webhookVerifyConfigToWire,
+  webhookVerifyConfigFromWire,
 } from "@ironflow/core";
 import type { IronflowConfig, IronflowConfigOptions } from "./config.js";
 import { mergeConfig } from "./config.js";
@@ -2472,6 +2474,9 @@ class IronflowClient {
         verify_algorithm?: string;
         source_type?: string;
         metadata?: Record<string, unknown>;
+        ingest_token?: string;
+        ingest_token_prefix?: string;
+        verify_config?: Record<string, unknown>;
         created_at?: string;
         updated_at?: string;
       }>("/ironflow.v1.WebhookService/CreateWebhookSource", {
@@ -2480,6 +2485,7 @@ class IronflowClient {
         verify_header: input.verifyHeader ?? "",
         verify_algorithm: input.verifyAlgorithm ?? "",
         verify_secret: input.verifySecret ?? "",
+        verify_config: webhookVerifyConfigToWire(input.verifyConfig),
         metadata: input.metadata,
       });
       return {
@@ -2489,6 +2495,10 @@ class IronflowClient {
         verifyAlgorithm: response.verify_algorithm,
         sourceType: response.source_type,
         metadata: response.metadata,
+        // ADR 0048: raw token returned only here; the server keeps a hash.
+        ingestToken: response.ingest_token,
+        ingestTokenPrefix: response.ingest_token_prefix,
+        verifyConfig: webhookVerifyConfigFromWire(response.verify_config),
         createdAt: response.created_at,
         updatedAt: response.updated_at,
       };
