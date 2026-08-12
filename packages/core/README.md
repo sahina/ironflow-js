@@ -802,14 +802,13 @@ interface AppendOptions {
 ```typescript
 interface AppendResult {
   entityVersion: number;
-  eventId: string;
   /**
-   * NATS JetStream sequence on the PUBSUB stream. Always 0/undefined under
-   * the transactional outbox (#487) — publishing is deferred, so the sequence
-   * is unknown at append time. For read-your-writes, use
-   * projections.waitForEvent(eventId, projection) instead.
+   * ID of the appended event. Appends run through the transactional
+   * outbox (#487), so no NATS sequence is known at append time — for
+   * read-your-writes, resolve this ID with
+   * projections.waitForEvent(eventId, projection).
    */
-  sequence?: number;
+  eventId: string;
 }
 ```
 
@@ -1068,8 +1067,9 @@ interface ConfigSetResult {
 
 ```typescript
 interface ConfigWatchCallbacks {
-  onEvent: (config: ConfigResponse) => void;
+  onUpdate: (event: ConfigWatchEvent) => void;
   onError?: (error: Error) => void;
+  onClose?: () => void;
 }
 ```
 
@@ -1077,10 +1077,11 @@ interface ConfigWatchCallbacks {
 
 ```typescript
 interface ConfigWatchEvent {
+  type: string; // always "config_update" for data events
   name: string;
   data: Record<string, unknown>;
   revision: number;
-  operation: "put" | "delete";
+  updatedAt: string; // ISO-8601
 }
 
 interface ConfigWatcher {
@@ -1200,7 +1201,7 @@ interface UpdatePolicyInput {
 
 ## Audit Types
 
-Audit trail for function execution recording (enterprise feature).
+Audit trail for function execution recording.
 
 ```typescript
 interface AuditEvent {
@@ -1303,7 +1304,7 @@ interface ProjectionConfig<TState = unknown, TEvent = unknown> {
 
 ```typescript
 interface ProjectionContext {
-  event: { id: string; name: string; seq: number; timestamp: Date };
+  event: { id: string; name: string; seq: number; timestamp: Date; metadata?: Record<string, unknown> };
   projection: { name: string; version: number };
   logger: Logger;
 }
@@ -1315,13 +1316,13 @@ interface ProjectionContext {
 /** Managed: pure reducer. Returns new state. */
 type ManagedProjectionHandler<TState = unknown, TEvent = unknown> = (
   state: TState,
-  event: TEvent & { name: string; data: unknown },
+  event: TEvent & { name: string; data: unknown; metadata?: Record<string, unknown> },
   ctx: ProjectionContext
 ) => TState;
 
 /** External: side effects. Return void or Promise<void>. */
 type ExternalProjectionHandler<TEvent = unknown> = (
-  event: TEvent & { name: string; data: unknown },
+  event: TEvent & { name: string; data: unknown; metadata?: Record<string, unknown> },
   ctx: ProjectionContext
 ) => void | Promise<void>;
 ```
@@ -1480,6 +1481,8 @@ interface WaitProgress {
   terminal: boolean;
   caughtUp: boolean;
   timedOut: boolean;
+  error?: string;
+  mode?: string;
 }
 ```
 
@@ -1678,7 +1681,7 @@ These are `z.infer<>` types derived from the corresponding schemas.
 
 ## Protocol Types
 
-Low-level protocol types for SDK authors building custom transports. Import from `@ironflow/core` or `@ironflow/core/protocol`.
+Low-level protocol types for SDK authors building custom transports. Import from `@ironflow/core` or `@ironflow/core/protocol`. `InvokeFunctionYield` and `InvokeFunctionAsyncYield` are the exception — they are reachable only from `@ironflow/core/protocol`.
 
 ### Push Mode (HTTP)
 
@@ -2388,6 +2391,9 @@ interface WebhookSource {
   verifyAlgorithm?: string;
   sourceType?: string;
   metadata?: Record<string, unknown>;
+  ingestTokenPrefix?: string;       // display fragment (ifwh_ + 8 chars)
+  ingestToken?: string;             // raw token — returned ONLY on create/rotate (ADR 0048); without it the source cannot receive deliveries
+  verifyConfig?: WebhookVerifyConfig; // signature descriptor (ADR 0049); absent means legacy verification
   createdAt?: string;
   updatedAt?: string;
 }
@@ -2399,6 +2405,7 @@ interface CreateWebhookSourceInput {
   verifyAlgorithm?: string;
   verifySecret?: string;
   metadata?: Record<string, unknown>;
+  verifyConfig?: WebhookVerifyConfig; // signature descriptor (ADR 0049)
 }
 
 interface WebhookDelivery {

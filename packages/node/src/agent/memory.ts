@@ -3,7 +3,7 @@
  *
  * Composition:
  *   - memory.append(eventName, data) → step.run wraps backend.appendEvent +
- *     auto-waitForCatchup so memory.get() inside the same run sees the write.
+ *     auto-waitForEvent so memory.get() inside the same run sees the write.
  *   - memory.get() → step.run wraps backend.getProjection. In-run cache
  *     short-circuits repeated reads. Cache invalidates on append.
  *   - memory.entityStream() — kept as NotImplementedError stub. Lands when a
@@ -68,7 +68,7 @@ class NotImplementedError extends IronflowError {
  * Method shapes mirror the underlying client methods:
  *   - appendEvent  → client.streams.append
  *   - getProjection → client.projections.get
- *   - waitForCatchup → client.projections.waitForCatchup
+ *   - waitForEvent → client.projections.waitForEvent
  */
 export interface MemoryBackend {
   appendEvent(
@@ -86,9 +86,10 @@ export interface MemoryBackend {
     name: string
   ): Promise<ProjectionStateResult<TState>>;
 
-  waitForCatchup(
-    name: string,
-    opts: { minSeq: number; partition?: string; timeoutMs?: number }
+  waitForEvent(
+    eventId: string,
+    projection: string,
+    opts: { timeoutMs?: number; partition?: string }
   ): Promise<void>;
 }
 
@@ -175,10 +176,11 @@ export function makeMemory(
         })
       );
 
-      if (appended.sequence && appended.sequence > 0) {
+      // Appends run through the transactional outbox, so no NATS sequence is
+      // known at append time — resolve the eventId server-side instead.
+      if (appended.eventId) {
         await step.run("memory.append.wait", () =>
-          backend.waitForCatchup(config.projection, {
-            minSeq: appended.sequence!,
+          backend.waitForEvent(appended.eventId, config.projection, {
             timeoutMs: DEFAULT_WAIT_TIMEOUT_MS,
           })
         );

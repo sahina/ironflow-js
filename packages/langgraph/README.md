@@ -26,7 +26,7 @@ Requires Node.js 22+.
 ## Installation
 
 ```bash
-npm install @ironflow/langgraph @ironflow/node @langchain/langgraph @langchain/langgraph-checkpoint
+npm install @ironflow/langgraph @ironflow/node @langchain/core @langchain/langgraph @langchain/langgraph-checkpoint
 ```
 
 Peer dependencies (you install these yourself):
@@ -40,8 +40,8 @@ Runtime dependencies (pulled in automatically):
 
 | Package | Version |
 |---|---|
-| `@ironflow/core` | `0.24.0` |
-| `@ironflow/node` | `0.24.0` |
+| `@ironflow/core` | `0.26.0` |
+| `@ironflow/node` | `0.26.0` |
 
 ## Quick Start
 
@@ -106,7 +106,9 @@ checkpoint for the thread if no id is given.
 ### `saver.list(config, options?): AsyncGenerator<CheckpointTuple>`
 
 Yields checkpoints in `checkpoint_id` descending order (latest first), matching
-`MemorySaver` / `SqliteSaver` / `PostgresSaver` semantics.
+`MemorySaver` / `SqliteSaver` / `PostgresSaver` semantics. Ordering is per
+namespace: when `checkpoint_ns` is omitted, each namespace is yielded as its own
+descending block rather than one globally sorted sequence.
 
 - `config.configurable.thread_id` — **required** (throws `LG_THREAD_ID_REQUIRED`).
   Cross-thread iteration is not supported in v1; see [Limitations](#limitations).

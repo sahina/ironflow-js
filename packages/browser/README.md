@@ -119,7 +119,7 @@ Register a global handler that fires for all subscription errors:
 
 ```typescript
 const unsubscribe = ironflow.onError((error) => {
-  // error: { message: string; code: string; retryable?: boolean }
+  // error: { subscriptionId?: string; code: string; message: string; retrying?: boolean }
   console.error('Ironflow error:', error.message, error.code);
 });
 ```
@@ -204,7 +204,7 @@ sub.unsubscribe();
 
 ### Pattern Helpers
 
-Use the `patterns` utility to build subscription patterns. Available as a static property on the client class and as a direct import:
+Use the `patterns` utility to build subscription patterns. Import it directly:
 
 ```typescript
 import { ironflow, patterns } from '@ironflow/browser';
@@ -273,9 +273,9 @@ const sub = await ironflow.joinConsumerGroup(
 );
 
 // Returns AckableSubscription
-sub.ack(eventId);                // Acknowledge successful processing
-sub.nak(eventId, 5000);         // Negative ack with optional redelivery delay (ms)
-sub.term(eventId);               // Terminate - do not redeliver
+await sub.ack(eventId);          // Acknowledge successful processing
+await sub.nak(eventId, 5000);   // Negative ack with optional redelivery delay (ms)
+await sub.term(eventId);         // Terminate - do not redeliver
 
 sub.unsubscribe();
 ```
@@ -291,7 +291,7 @@ const sub = await ironflow.subscribe('events:order.created', {
 
 // sub is AckableSubscription when ackMode is 'manual'
 const ackableSub = sub as AckableSubscription;
-ackableSub.ack(eventId);
+await ackableSub.ack(eventId);
 ```
 
 ## Emitting Events
@@ -481,7 +481,7 @@ Errors:
 | `RunFailedError` | `system.run.{runId}.failed` |
 | `RunCancelledError` | `system.run.{runId}.cancelled` |
 
-### `agents.subscribe(runId, callbacks)`
+### `agents.subscribe(runId, callbacks, opts?)`
 
 Typed wrapper over the broader `subscribe(pattern)` API. Dispatches by topic.
 
@@ -1302,13 +1302,13 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **KV types:** `KVBucketConfig`, `KVBucketInfo`, `KVEntry`, `KVPutResult`, `KVListKeysResult`, `KVListBucketsResult`, `KVWatchEvent`, `KVWatchCallbacks`, `KVWatchOptions`, `KVWatcher`
 
-**Config types:** `ConfigResponse`, `ConfigEntry`, `ConfigSetResult`, `ConfigWatchCallbacks`
+**Config types:** `ConfigResponse`, `ConfigEntry`, `ConfigSetResult`, `ConfigWatchCallbacks`, `ConfigWatchEvent`
 
 **Browser-specific types:** `IronflowConfig`, `IronflowConfigOptions`, `ReconnectConfig`, `VisibilityConfig`, `AuthConfig`, `BrowserSubscribeOptions`, `SubscriptionGroup`, `Transport`, `TransportCallbacks`, `TransportFactory`, `TransportOptions`
 
-**Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`
+**Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`, `DEFAULT_CONFIG`, `mergeConfig`
 
-**Classes:** `BrowserKVClient`, `BrowserKVBucketHandle`, `BrowserConfigClient`
+**Classes:** `BrowserKVClient`, `BrowserKVBucketHandle`, `BrowserConfigClient`, `SubscriptionManager`
 
 ## Links
 

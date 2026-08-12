@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/node",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Node.js SDK for Ironflow event-driven backend platform - workers, serve handlers, and step execution",
   "type": "module",
   "main": "./dist/index.js",
@@ -94,7 +94,7 @@
   "license": "LicenseRef-Ironflow-EULA",
   "homepage": "https://ironflow.run",
   "bugs": {
-    "url": "https://github.com/sahina/ironflow-js/issues"
+    "url": "https://github.com/sahina/ironflow-issues/issues"
   },
   "repository": {
     "type": "git",

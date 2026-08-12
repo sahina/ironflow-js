@@ -1135,13 +1135,17 @@ export class IronflowClient {
     },
     /**
      * Wait until the named projection has processed events up to `minSeq`,
-     * or the timeout elapses. Read-your-writes primitive for CQRS: pair
-     * with `sequence` from a `streams.append` response.
+     * or the timeout elapses. Read-your-writes primitive for CQRS.
+     * `streams.append` returns no sequence (appends run through the
+     * transactional outbox) — resolve its `eventId` to a sequence with
+     * `projections.waitForEvent` first.
      *
      * ```typescript
-     * const { sequence } = await client.streams.append(orderId, event);
+     * const { eventId } = await client.streams.append(orderId, event);
+     * const { targetSeq } = await client.projections.waitForEvent(
+     *   eventId, "order-detail-view", { timeoutMs: 5000 });
      * await client.projections.waitForCatchup("order-detail-view", {
-     *   minSeq: sequence,
+     *   minSeq: targetSeq,
      *   partition: orderId,
      *   timeoutMs: 5000,
      * });

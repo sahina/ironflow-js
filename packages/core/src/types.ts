@@ -954,15 +954,13 @@ export interface AppendOptions {
 export interface AppendResult {
   /** Updated entity version after the append */
   entityVersion: number;
-  /** ID of the appended event */
-  eventId: string;
   /**
-   * NATS JetStream sequence of this event on the PUBSUB stream
-   * (the `events:` namespace projections consume). Pass to
-   * `projections.waitForCatchup({ minSeq })` for read-your-writes.
-   * 0 means publish failed or unavailable. Issue #473.
+   * ID of the appended event. For read-your-writes, resolve it to a
+   * projection sequence via `projections.waitForEvent(eventId, ...)` —
+   * appends run through the transactional outbox, so no NATS sequence
+   * is known at append time.
    */
-  sequence?: number;
+  eventId: string;
 }
 
 /**

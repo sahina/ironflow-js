@@ -35,16 +35,16 @@ function makeFakeBackend(overrides: Partial<MemoryBackend> = {}): {
   backend: MemoryBackend;
   appendCalls: Array<{ streamId: string; input: Parameters<MemoryBackend["appendEvent"]>[1] }>;
   getCalls: string[];
-  waitCalls: Array<{ name: string; opts: Parameters<MemoryBackend["waitForCatchup"]>[1] }>;
+  waitCalls: Array<{ eventId: string; projection: string; opts: Parameters<MemoryBackend["waitForEvent"]>[2] }>;
 } {
   const appendCalls: Array<{ streamId: string; input: Parameters<MemoryBackend["appendEvent"]>[1] }> = [];
   const getCalls: string[] = [];
-  const waitCalls: Array<{ name: string; opts: Parameters<MemoryBackend["waitForCatchup"]>[1] }> = [];
+  const waitCalls: Array<{ eventId: string; projection: string; opts: Parameters<MemoryBackend["waitForEvent"]>[2] }> = [];
 
   const backend: MemoryBackend = {
     appendEvent: vi.fn(async (streamId, input): Promise<AppendResult> => {
       appendCalls.push({ streamId, input });
-      return { entityVersion: 1, eventId: "evt-1", sequence: 42 };
+      return { entityVersion: 1, eventId: "evt-1" };
     }),
     getProjection: vi.fn(async (name: string) => {
       getCalls.push(name);
@@ -60,8 +60,8 @@ function makeFakeBackend(overrides: Partial<MemoryBackend> = {}): {
         updatedAt: new Date("2026-04-26T00:00:00Z"),
       };
     }) as unknown as MemoryBackend["getProjection"],
-    waitForCatchup: vi.fn(async (name, opts) => {
-      waitCalls.push({ name, opts });
+    waitForEvent: vi.fn(async (eventId, projection, opts) => {
+      waitCalls.push({ eventId, projection, opts });
     }),
     ...overrides,
   };
@@ -123,7 +123,7 @@ describe("makeMemory() — guard rails", () => {
 });
 
 describe("makeMemory() — append()", () => {
-  it("calls backend.appendEvent and waitForCatchup, invalidates cache", async () => {
+  it("calls backend.appendEvent and waitForEvent, invalidates cache", async () => {
     const { step, runCalls } = makeFakeStep();
     const { backend, appendCalls, waitCalls } = makeFakeBackend();
     const cache = createMemoryRuntimeCache();
@@ -150,8 +150,9 @@ describe("makeMemory() — append()", () => {
     });
 
     expect(waitCalls).toHaveLength(1);
-    expect(waitCalls[0]!.name).toBe("agent-memory");
-    expect(waitCalls[0]!.opts).toMatchObject({ minSeq: 42 });
+    expect(waitCalls[0]!.projection).toBe("agent-memory");
+    expect(waitCalls[0]!.eventId).toBe("evt-1");
+    expect(waitCalls[0]!.opts).toMatchObject({ timeoutMs: 5000 });
     expect(waitCalls[0]!.opts.partition).toBeUndefined();
 
     expect(cache.has).toBe(false);
@@ -183,10 +184,10 @@ describe("makeMemory() — append()", () => {
     ]);
   });
 
-  it("skips waitForCatchup when sequence is 0 or undefined", async () => {
+  it("skips the catch-up wait when append returns no eventId", async () => {
     const { step, runCalls } = makeFakeStep();
     const { backend, waitCalls } = makeFakeBackend({
-      appendEvent: vi.fn(async () => ({ entityVersion: 1, eventId: "e", sequence: 0 })),
+      appendEvent: vi.fn(async () => ({ entityVersion: 1, eventId: "" })),
     });
     const memory = makeMemory(
       step,

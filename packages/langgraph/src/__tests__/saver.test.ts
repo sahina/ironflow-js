@@ -15,7 +15,7 @@ class FakeStream {
     this.appendCalls.push({ entityId, input, options });
     if (options?.idempotencyKey && this.idemKeys.has(options.idempotencyKey)) {
       const existing = this.events[this.events.length - 1]!;
-      return { entityVersion: existing.entityVersion, eventId: existing.id, sequence: 0 };
+      return { entityVersion: existing.entityVersion, eventId: existing.id };
     }
     if (options?.idempotencyKey) this.idemKeys.add(options.idempotencyKey);
     const event: StreamEvent = {
@@ -27,7 +27,7 @@ class FakeStream {
       timestamp: new Date().toISOString(),
     };
     this.events.push(event);
-    return { entityVersion: event.entityVersion, eventId: event.id, sequence: 0 };
+    return { entityVersion: event.entityVersion, eventId: event.id };
   };
 
   read = async (

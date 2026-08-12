@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/core",
-  "version": "0.26.0",
+  "version": "0.27.0",
   "description": "Core types, schemas, and protocol definitions for Ironflow SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -75,7 +75,7 @@
   "license": "LicenseRef-Ironflow-EULA",
   "homepage": "https://ironflow.run",
   "bugs": {
-    "url": "https://github.com/sahina/ironflow-js/issues"
+    "url": "https://github.com/sahina/ironflow-issues/issues"
   },
   "repository": {
     "type": "git",

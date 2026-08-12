@@ -111,6 +111,7 @@ All fields on the config object:
 | `recording` | `boolean` | Enable audit recording for this function. |
 | `recordingRetention` | `string` | Retention period for audit events (`"7d"`, `"30d"`, `"90d"`, `"forever"`). |
 | `metadata` | `Record<string, unknown>` | Arbitrary metadata attached to the function definition. |
+| `cancelOn` | `CancelOnConfig[]` | Auto-cancel in-flight runs when a matching event arrives. Each spec is `{ event: string; match: string }`; OR semantics across specs. |
 
 **Trigger** fields:
 
@@ -579,7 +580,7 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `environment` | `string` | `IRONFLOW_ENV` or `"default"` | Target environment. |
 | `eventDefinitions` | `EventDefinitionRegistry` | -- | Registry for automatic event upcasting. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. |
-| `transport` | `"polling" \| "streaming"` | `"polling"` | Worker transport mode. |
+| `transport` | `"polling" \| "streaming"` | `"polling"` | Inert -- `createWorker` always polls. Import `createStreamingWorker` from `@ironflow/node/worker-streaming` for streaming. |
 
 ### Worker interface
 
@@ -870,17 +871,20 @@ const job   = await client.projections.rebuild('order-summary');
 const jobNow = await client.projections.getRebuildJob('order-summary');
 await client.projections.cancelRebuild('order-summary');
 
-// Read-your-writes — wait until a projection has caught up
-const { sequence } = await client.streams.append(orderId, event);
+// Read-your-writes — wait until a projection has caught up.
+// `streams.append` returns no NATS sequence under the transactional outbox;
+// resolve eventId → seq with waitForEvent first, then wait on that seq.
+const { eventId } = await client.streams.append(orderId, event);
+const { targetSeq } = await client.projections.waitForEvent(eventId, 'order-detail-view', { timeoutMs: 5000 });
 await client.projections.waitForCatchup('order-detail-view', {
-  minSeq: sequence,
+  minSeq: targetSeq,
   partition: orderId,
   timeoutMs: 5000,
 });
 
 // Batched catch-up wait (max 16 items, single deadline)
 await client.projections.waitForCatchupBatch(
-  [{ name: 'order-detail-view', minSeq: sequence, partition: orderId }],
+  [{ name: 'order-detail-view', minSeq: targetSeq, partition: orderId }],
   { timeoutMs: 5000 }
 );
 
@@ -1216,7 +1220,7 @@ await config.patch('app-settings', { locale: 'fr' });
 // List all configs
 const all = await config.list();
 for (const entry of all) {
-  console.log(entry.name, entry.data);
+  console.log(entry.name, entry.revision, entry.updatedAt);
 }
 
 // Delete a config (idempotent)
@@ -1407,6 +1411,7 @@ Projections build derived state from event streams. Two modes: **managed** (pure
 | `handler` | Function | Event handler (signature varies by mode). |
 | `maxRetries` | `number` | Maximum retries per event (default: 3). |
 | `batchSize` | `number` | Events per batch (default: 100). |
+| `partitionKey` | `string` | JSONPath for partition key extraction (e.g., `"$.data.customerId"`). State is maintained per-partition when set. |
 
 ### Managed projection (pure reducer)
 
@@ -1594,7 +1599,7 @@ The upcaster chain must be complete. If v2->v3 is registered but v1->v2 is missi
 
 ## Error Handling
 
-All error classes are re-exported from `@ironflow/core`:
+These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. Core defines more — notably `StepTimeoutError` (thrown by `step.run()` on timeout), `RunFailedError`, and `RunCancelledError` (thrown by `client.emitSync()`) — import those from `@ironflow/core` directly:
 
 | Error Class | Description |
 |-------------|-------------|
@@ -1650,7 +1655,7 @@ throw new NonRetryableError('Payment declined - do not retry');
 
 ## Agent Primitives
 
-The `@ironflow/node/agent` entry point provides durable AI-agent primitives. Each helper (`tool`, `llm`, `approve`, `memory`, `spawn`) is sugar over `step.run` — agents inherit Ironflow's crash-resume, replay, audit, and scoped-injection semantics with no new server primitives.
+The `@ironflow/node/agent` entry point provides durable AI-agent primitives. Each helper (`tool`, `llm`, `approve`, `memory`, `spawn`) is sugar over the step client — `tool`/`llm` wrap `step.run`, `approve` wraps `step.waitForEvent`, `spawn` wraps `step.invoke`/`step.invokeAsync` — agents inherit Ironflow's crash-resume, replay, audit, and scoped-injection semantics with no new server primitives.
 
 The agent module is **bring-your-own-provider**: no LLM router, no prompt templates, no graph execution. You pass your provider SDK call into `llm()`; the wrapper memoizes the result and classifies failures.
 
@@ -1689,29 +1694,29 @@ const supportAgent = agent(
     triggers: [{ event: 'support.ticket.opened' }],
     tools: [fetchOrder],
     maxTurns: 10,                      // default: 20
-    memory: { projection: 'agent-memory' }, // optional persistent memory
+    memory: { streamId: 'agent-memory:support', projection: 'agent-memory' }, // optional persistent memory
   },
   async ({ event, tool, llm, approve, memory, spawn, turn }) => {
     // Call a tool by reference (type-safe)
     const order = await tool(fetchOrder, { orderId: event.data.orderId });
 
     // Call your LLM provider — wrapper memoizes the result as a step
-    const result = await llm({
+    const result = await llm.complete({
       messages: [{ role: 'user', content: `Triage order ${order.id}` }],
       call: async () => callAnthropic(/* ... */),
     });
 
     // Pause for human approval (durable)
-    const decision = await approve({
-      prompt: 'Refund this order?',
-      timeout: '24h',
+    const decision = await approve('refund-approval', {
+      ttl: '24h',
+      payload: { prompt: 'Refund this order?' },
     });
 
     // Append to / read from durable agent memory
-    await memory.append({ role: 'assistant', content: 'Refund approved' });
+    await memory.append('assistant.message', { role: 'assistant', content: 'Refund approved' });
 
     // Spawn a child agent (durable child run)
-    const child = await spawn('refund-agent', { orderId: order.id });
+    const child = await spawn('refund', { functionId: 'refund-agent', input: { orderId: order.id } });
 
     return { turn, approved: decision.approved };
   }
@@ -1727,7 +1732,7 @@ const supportAgent = agent(
 | `DuplicateToolError` | Two tools registered with the same `name`. |
 | `LLMError` | Base LLM failure; `LLMInvalidJSONError`, `LLMMaxTokensError`, `LLMRefusalError` are subclasses. |
 | `MaxTurnsExceededError` | Agent exceeded `maxTurns` budget. |
-| `MemoryProjectionRequiredError` | `memory.*` called without a projection configured. |
+| `MemoryProjectionRequiredError` | `memory.entityStream(streamId, projectionName)` called with an empty projection name. |
 
 ### Expose tools over MCP
 
@@ -1740,11 +1745,11 @@ const handle = await exposeMcp({
   name: 'order-tools',
   version: '1.0.0',
   tools: [
-    { name: 'fetch-order', description: '…', input: /* JSON schema */ },
+    { name: 'fetch-order', description: '…', input: z.object({ orderId: z.string() }), handler: async ({ orderId }) => fetchFromDb(orderId) },
   ],
   callbackUrl: 'https://api.example.com/api/ironflow',
-  // serverUrl + apiKey default to IRONFLOW_SERVER_URL / IRONFLOW_API_KEY env vars
-  // (IRONFLOW_URL also accepted as legacy fallback for Go-SDK compat)
+  // serverUrl defaults to IRONFLOW_URL, then IRONFLOW_SERVER_URL;
+  // apiKey defaults to IRONFLOW_API_KEY
 });
 
 console.log(handle.toolNames); // ["order-tools.fetch-order"]

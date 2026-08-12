@@ -146,11 +146,10 @@ function createDefaultMemoryBackend(): MemoryBackend | undefined {
         { idempotencyKey: input.idempotencyKey, metadata: input.metadata }
       ),
     getProjection: (name) => client.projections.get(name),
-    waitForCatchup: async (name, opts) => {
-      await client.projections.waitForCatchup(name, {
-        minSeq: opts.minSeq,
-        partition: opts.partition,
+    waitForEvent: async (eventId, projection, opts) => {
+      await client.projections.waitForEvent(eventId, projection, {
         timeoutMs: opts.timeoutMs,
+        partition: opts.partition,
       });
     },
   };
