@@ -18,7 +18,6 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       GET_RUN: "/ironflow.v1.IronflowService/GetRun",
       LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
       CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
-      RETRY_RUN: "/ironflow.v1.IronflowService/RetryRun",
       REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
       HEALTH: "/ironflow.v1.IronflowService/Health",
     },

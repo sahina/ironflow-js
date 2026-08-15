@@ -270,9 +270,6 @@ describe("API_ENDPOINTS", () => {
     expect(API_ENDPOINTS.CANCEL_RUN).toBe(
       "/ironflow.v1.IronflowService/CancelRun"
     );
-    expect(API_ENDPOINTS.RETRY_RUN).toBe(
-      "/ironflow.v1.IronflowService/RetryRun"
-    );
     expect(API_ENDPOINTS.REGISTER_FUNCTION).toBe(
       "/ironflow.v1.IronflowService/RegisterFunction"
     );

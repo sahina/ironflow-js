@@ -39,6 +39,10 @@
 
 // Main client export
 export { ironflow } from "./client.js";
+// The type, so an app can annotate `OfflineClient.client` or mock it. The class
+// itself stays unexported — construction goes through `ironflow` or
+// `createClient()`.
+export type { IronflowClient } from "./client.js";
 
 // Configuration types
 export type {
@@ -201,3 +205,33 @@ export {
   isRetryable,
   isIronflowError,
 } from "@ironflow/core";
+
+// ============================================================================
+// Offline write queue (ADR 0052)
+// ============================================================================
+
+// Opt-in via a factory rather than a flag on the `ironflow` singleton:
+// configure() returns void, so a runtime option cannot refine emit()'s static
+// return type, and widening it on the singleton would break every caller who
+// never asked for queueing.
+export {
+  createClient,
+  OfflineClient,
+  queueDbName,
+  type CreateClientOptions,
+  type OfflineQueueConfig,
+  type QueueApi,
+  type QueuedWriteResult,
+} from "./offline.js";
+
+export {
+  type DeadLetteredWrite,
+  type QueuedWrite,
+  type QueuedWriteKind,
+  type QueueState,
+  type QueueStats,
+  type WriteLostReason,
+  type WriteStatus,
+} from "./queue/types.js";
+
+export { QueueFullError } from "@ironflow/core";

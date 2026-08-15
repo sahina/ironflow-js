@@ -10,7 +10,6 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       GET_RUN: "/ironflow.v1.IronflowService/GetRun",
       LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
       CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
-      RETRY_RUN: "/ironflow.v1.IronflowService/RetryRun",
       REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
       HEALTH: "/ironflow.v1.IronflowService/Health",
     },
@@ -207,76 +206,6 @@ describe("IronflowClient", () => {
       const result = await client.cancelRun("run_123", "User requested");
 
       expect(result.status).toBe("cancelled");
-    });
-  });
-
-  describe("retryRun", () => {
-    it("sends retry request with runId", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            id: "run_123",
-            status: "running",
-            functionId: "my-func",
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({
-        serverUrl: "http://localhost:9123",
-      });
-
-      const result = await client.retryRun("run_123");
-
-      expect(result.id).toBe("run_123");
-      expect(result.status).toBe("running");
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/ironflow.v1.IronflowService/RetryRun",
-        expect.objectContaining({
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        })
-      );
-
-      const call = assertDefined(mockFetch.mock.calls[0]);
-      const body = JSON.parse(call[1]?.body as string);
-      expect(body.id).toBe("run_123");
-      expect(body.fromStep).toBeUndefined();
-    });
-
-    it("sends fromStep when provided", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            id: "run_123",
-            status: "running",
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-
-      await client.retryRun("run_123", "step-3");
-
-      const call = assertDefined(mockFetch.mock.calls[0]);
-      const body = JSON.parse(call[1]?.body as string);
-      expect(body.id).toBe("run_123");
-      expect(body.fromStep).toBe("step-3");
-    });
-
-    it("throws on server error", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        text: () => Promise.resolve("run not found"),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-
-      await expect(client.retryRun("run_123")).rejects.toThrow("run not found");
     });
   });
 

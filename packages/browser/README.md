@@ -11,6 +11,7 @@ This README is the sole reference for coding agents integrating with the browser
 - [Connection Management](#connection-management)
 - [Events and Subscriptions](#events-and-subscriptions)
 - [Emitting Events](#emitting-events)
+- [Offline Writes](#offline-writes)
 - [Workflow Operations](#workflow-operations)
 - [Agents (`ironflow.agents.*`)](#agents-ironflowagents)
 - [Entity Streams (Event Sourcing)](#entity-streams-event-sourcing)
@@ -321,6 +322,165 @@ const result = await ironflow.emit(
 );
 ```
 
+## Offline Writes
+
+For apps that keep working with no connection. `createClient()` returns a client
+whose `emit()` and `streams.append()` are written to an IndexedDB outbox first
+and sent by a background drainer.
+
+```typescript
+import { createClient } from '@ironflow/browser';
+
+const app = await createClient({
+  serverUrl: 'https://api.example.com',
+  auth: { token: session.accessToken },
+  offlineQueue: {
+    identity: session.userId,           // required, see below
+    onAuthRequired: async () => ({ token: await refreshToken() }),
+    onWriteLost: (write, reason) => toast(`A change was not saved: ${reason}`),
+  },
+});
+
+const { localId } = await app.emit('order.placed', { orderId: '123' });
+// Resolves immediately — nothing has been sent yet.
+
+app.queue.watch(localId, (status) => {
+  if (status.status === 'sent') markRowSynced();
+});
+```
+
+Everything the ordinary client can do is on `app.client`:
+
+```typescript
+const run = await app.client.getRun(runId);
+await app.client.subscribe('order.*', handler);
+```
+
+### What it does and does not promise
+
+**Writes survive a reload, a crash, and a discarded tab.** They are on disk
+before `emit()` resolves.
+
+**They are not delivered in the background.** Nothing drains while the page is
+frozen or closed; delivery happens the next time the app is open. Tell users
+"saved, will sync when you're back", never "sent in the background". True
+background delivery needs a service worker — see ADR 0052, Alternative A.
+
+**Storage is best-effort.** Safari evicts an origin's IndexedDB after roughly
+seven days with no interaction.
+
+**`runIds` are not returned.** A run id cannot exist before the server creates
+the run, and the point of the queue is to answer before contacting the server.
+Subscribe for the outcome instead.
+
+**Nothing attached to the returned promise survives a reload.** After a refresh
+the `await` is gone but the write is still queued. Use `queue.watch(localId)` or
+an event subscription — never a `.then()` — to react to delivery.
+
+**The outbox is not encrypted.** Any XSS on your origin can read queued writes.
+This matches Sentry, Segment, Workbox and Firestore, all of which store
+plaintext. For a write that must never sit on disk, send it through
+`app.client.emit()` instead, which throws when offline rather than queueing.
+
+### `identity` is required, and is not your token
+
+The outbox is per-origin, so a shared machine can hold one user's queue when the
+next signs in. Every write records the `identity` in force when it was queued,
+and a mismatch quarantines it rather than sending it as the wrong person.
+
+Pass a stable id for the principal — a user id works. Do not pass the token: a
+hash of a credential identifies the *credential*, so an ordinary token rotation
+would make the same user look like a different one and quarantine their own
+writes.
+
+**`onAuthRequired` must report who signed in**, not just the new credential:
+
+```typescript
+onAuthRequired: async () => {
+  const session = await showLoginPrompt();
+  return { token: session.accessToken, identity: session.userId };
+},
+```
+
+Returning the identity is what makes a shared machine safe. If a *different*
+person signs in at that prompt — the normal outcome of showing a login form —
+the queue rebinds to them, and the previous user's pending writes are
+quarantined instead of being transmitted under the new user's credentials.
+
+The callback is bounded at five minutes — generous, since the honest case is
+someone reading a login form. The bound is there because a promise that never
+settles at all (a modal the user dismissed, an auth server that hangs) would
+otherwise hold the drain loop open for the life of the page: delivery would stop
+with no in-app recovery while `pending` climbed to `maxItems`. On timeout the
+queue backs off and asks again, and nothing is dead-lettered. Returning an
+identity with no credential leaves the existing credential in place rather than
+clearing it — `setAuth({})` would take the shared client's subscriptions down
+with it.
+
+Writes are also bound to the server and environment they were enqueued against.
+Reconfiguring the underlying client while the queue is non-empty quarantines
+those writes (`destination-mismatch`) rather than sending them somewhere they
+were never meant to go.
+
+### Delivery rules
+
+| Response | What happens |
+| --- | --- |
+| 2xx | Removed from the outbox; watchers see `sent` |
+| Network failure, 5xx, 429 | Retried with exponential backoff and jitter; stays at the head |
+| 401 | Queue pauses, `onAuthRequired` runs, then it resumes |
+| 403 and other 4xx | Moved to the dead-letter store; the queue advances |
+| 2xx with an unreadable body | Dead-lettered as `RESPONSE_UNPARSEABLE` — retrying cannot fix it, and treating it as retryable would stall the whole queue behind it |
+
+Writes are sent strictly in order, one at a time, and the queue does not advance
+past one that has not been acknowledged. That is deliberate: `order.placed`
+arriving after `order.shipped` is a corrupted projection, not a slow request. A
+consequence worth planning for is that a full queue drains in as many round
+trips as it has writes — `queue.subscribe()` reports `total` so you can render
+"syncing 34 of 500" rather than a spinner that looks stuck.
+
+### When it refuses
+
+`emit()` and `streams.append()` throw rather than silently dropping:
+
+- **`QueueFullError`** at 500 writes or 5 MB. The queue rejects rather than
+  evicting the oldest. Dropping `order.placed` while keeping `order.shipped`
+  would manufacture exactly the corruption the ordering guarantee prevents, so
+  the app is told instead and can stop generating dependent writes.
+- **A write bound to a different server, environment, or principal.** Quarantined
+  to the dead-letter store rather than sent, with the reason naming which.
+- **`streams.append` with `expectedVersion`.** A version read before the write
+  was queued is stale by the time it sends, so the append would always lose its
+  concurrency check. Use `expectedVersion: -1`, or write through
+  `app.client.streams.append()`.
+- **Bodies that are not JSON-serializable** (cycles, `BigInt`). Caught at
+  enqueue rather than reporting "saved" for a write that could never be sent.
+
+Writes older than `maxRetentionMs` (default 7 days) are dead-lettered instead of
+delivered — a change queued nine days ago is usually more harmful to apply than
+to drop. Everything that will never be sent lands in the dead-letter store:
+
+```typescript
+for (const entry of await app.queue.deadLetter()) {
+  console.warn(entry.reason, entry.message, entry.write.body);
+  await app.queue.retry(entry.write.localId);   // or .discard(...)
+}
+```
+
+### Multiple tabs
+
+One tab drains at a time, held by a Web Lock; the others keep their counters in
+sync over `BroadcastChannel`. Without `navigator.locks` (Safari < 16) tabs may
+interleave — writes are still deduplicated by the engine, but ordering across
+tabs is not guaranteed.
+
+### Environments without IndexedDB
+
+Server rendering, Node, or a locked-down browser: the queue disables itself with
+a console warning and writes are sent directly, so a shared config that sets
+`offlineQueue` does not crash a server render. Check `app.queue.enabled` to know
+which mode you are in; results report `queued: false, pending: false`.
+
 ## Workflow Operations
 
 ### Invoke a Workflow Function
@@ -376,9 +536,6 @@ console.log(result.nextCursor);  // Cursor for next page (undefined if last page
 ```typescript
 // Cancel a running workflow
 const run = await ironflow.cancelRun('run_abc123', 'No longer needed');
-
-// Retry a failed run (optionally from a specific step)
-const run = await ironflow.retryRun('run_abc123', 'step-that-failed');
 
 // Resume a paused or failed run
 const run = await ironflow.resumeRun('run_abc123', 'step-to-resume-from');
@@ -1279,6 +1436,15 @@ Common error codes returned by the client:
 - Firefox 75+
 - Safari 13.1+
 - Edge 80+
+
+The offline write queue degrades rather than requiring a newer baseline:
+
+| Feature | Needs | Without it |
+| --- | --- | --- |
+| Outbox persistence | IndexedDB (all of the above) | Queue disables itself, writes go direct |
+| Idempotency keys | `crypto.randomUUID` (Safari 15.4+) | Falls back to `crypto.getRandomValues` |
+| One drainer across tabs | `navigator.locks` (Safari 16+) | Single-tab drain; tabs may interleave |
+| Cross-tab pending counts | `BroadcastChannel` | Counters are tab-local |
 
 Requires native `fetch`, `WebSocket`, and `AbortController` support.
 

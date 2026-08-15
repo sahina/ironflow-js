@@ -230,8 +230,6 @@ export const API_ENDPOINTS = {
   LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
   /** Cancel a run */
   CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
-  /** Retry a run */
-  RETRY_RUN: "/ironflow.v1.IronflowService/RetryRun",
   /** Register a function */
   REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
   /** Health check */

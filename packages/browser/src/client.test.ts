@@ -857,139 +857,6 @@ describe("emit behavior", () => {
   });
 });
 
-describe("retryRun behavior", () => {
-  it("should POST to ConnectRPC endpoint /ironflow.v1.IronflowService/RetryRun", async () => {
-    const originalFetch = global.fetch;
-    const mockResponse = {
-      id: "run-1",
-      functionId: "fn-1",
-      eventId: "evt-1",
-      status: "RUNNING",
-      attempt: 2,
-      maxAttempts: 3,
-      createdAt: "2026-01-01T00:00:00Z",
-      updatedAt: "2026-01-01T00:00:01Z",
-    };
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(JSON.stringify(mockResponse)),
-    });
-    global.fetch = mockFetch;
-
-    async function retryRun(
-      serverUrl: string,
-      runId: string,
-      fromStep?: string
-    ): Promise<unknown> {
-      const url = `${serverUrl}/ironflow.v1.IronflowService/RetryRun`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: runId, fromStep }),
-      });
-      if (!response.ok) {
-        throw new Error(`Retry run failed: ${response.status}`);
-      }
-      const text = await response.text();
-      return JSON.parse(text);
-    }
-
-    const result = await retryRun("http://localhost:9123", "run-1", "step-2");
-
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, options] = assertDefined(mockFetch.mock.calls[0]);
-    expect(url).toBe("http://localhost:9123/ironflow.v1.IronflowService/RetryRun");
-    expect(options.method).toBe("POST");
-    expect(options.headers["Content-Type"]).toBe("application/json");
-    const body = JSON.parse(options.body);
-    expect(body.id).toBe("run-1");
-    expect(body.fromStep).toBe("step-2");
-    expect(result).toEqual(mockResponse);
-
-    global.fetch = originalFetch;
-  });
-
-  it("should work without fromStep parameter", async () => {
-    const originalFetch = global.fetch;
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () =>
-        Promise.resolve(
-          JSON.stringify({
-            id: "run-2",
-            functionId: "fn-1",
-            eventId: "evt-2",
-            status: "RUNNING",
-            attempt: 2,
-            maxAttempts: 3,
-            createdAt: "2026-01-01T00:00:00Z",
-            updatedAt: "2026-01-01T00:00:01Z",
-          })
-        ),
-    });
-    global.fetch = mockFetch;
-
-    async function retryRun(
-      serverUrl: string,
-      runId: string,
-      fromStep?: string
-    ): Promise<unknown> {
-      const url = `${serverUrl}/ironflow.v1.IronflowService/RetryRun`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: runId, fromStep }),
-      });
-      if (!response.ok) {
-        throw new Error(`Retry run failed: ${response.status}`);
-      }
-      const text = await response.text();
-      return JSON.parse(text);
-    }
-
-    await retryRun("http://localhost:9123", "run-2");
-
-    const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
-    expect(body.id).toBe("run-2");
-    expect(body.fromStep).toBeUndefined();
-
-    global.fetch = originalFetch;
-  });
-
-  it("should throw when response is not ok", async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      text: () => Promise.resolve('{"message":"run not found"}'),
-    });
-
-    async function retryRun(
-      serverUrl: string,
-      runId: string,
-      fromStep?: string
-    ): Promise<unknown> {
-      const url = `${serverUrl}/ironflow.v1.IronflowService/RetryRun`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: runId, fromStep }),
-      });
-      if (!response.ok) {
-        throw new Error(`Retry run failed: ${response.status}`);
-      }
-      const text = await response.text();
-      return JSON.parse(text);
-    }
-
-    await expect(
-      retryRun("http://localhost:9123", "run-missing")
-    ).rejects.toThrow("Retry run failed: 404");
-
-    global.fetch = originalFetch;
-  });
-});
-
 describe("streams.append behavior", () => {
   it("should POST to /ironflow.v1.EntityStreamService/AppendEvent with correct body", async () => {
     const originalFetch = global.fetch;
@@ -1644,12 +1511,6 @@ describe("IronflowClient (real module)", () => {
       );
     });
 
-    it("retryRun throws NotConfiguredError", async () => {
-      await expect(ironflow.retryRun("run-1")).rejects.toThrow(
-        "Client not configured"
-      );
-    });
-
     it("emit throws NotConfiguredError", async () => {
       await expect(ironflow.emit("event.name", {})).rejects.toThrow(
         "Client not configured"
@@ -2228,43 +2089,6 @@ describe("IronflowClient (real module)", () => {
       const body = JSON.parse(opts.body);
       expect(body.id).toBe("run_c");
       expect(body.reason).toBe("user requested");
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // retryRun
-  // --------------------------------------------------------------------------
-
-  describe("retryRun", () => {
-    it("sends retry request with fromStep and returns normalized run", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        text: () =>
-          Promise.resolve(
-            JSON.stringify({
-              id: "run_r",
-              functionId: "fn-r",
-              eventId: "evt-r",
-              status: "RUN_STATUS_RUNNING",
-              attempt: 2,
-              maxAttempts: 3,
-              createdAt: "2026-01-01T00:00:00Z",
-              updatedAt: "2026-01-01T00:03:00Z",
-            })
-          ),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const run = await ironflow.retryRun("run_r", "step-2");
-
-      expect(run.id).toBe("run_r");
-      expect(run.status).toBe("running");
-      expect(run.attempt).toBe(2);
-
-      const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
-      expect(body.id).toBe("run_r");
-      expect(body.fromStep).toBe("step-2");
     });
   });
 

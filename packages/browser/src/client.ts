@@ -92,7 +92,11 @@ import {
   webhookVerifyConfigToWire,
   webhookVerifyConfigFromWire,
 } from "@ironflow/core";
-import type { IronflowConfig, IronflowConfigOptions } from "./config.js";
+import type {
+  AuthConfig,
+  IronflowConfig,
+  IronflowConfigOptions,
+} from "./config.js";
 import { mergeConfig } from "./config.js";
 import {
   SubscriptionManager,
@@ -107,6 +111,30 @@ import { BrowserKVClient } from "./kv.js";
 import { BrowserConfigClient } from "./config-client.js";
 import { createAgentsNamespace, type AgentsNamespace } from "./agents/index.js";
 import type { z } from "zod";
+
+/**
+ * Key for the offline queue's replay entry point.
+ *
+ * Not exported from the package root, so it is unreachable outside this module
+ * pair — the closest thing to package-private TypeScript offers.
+ */
+export const REPLAY_QUEUED_WRITE = Symbol("ironflow.replayQueuedWrite");
+
+/**
+ * Whether an HTTP status is worth trying again.
+ *
+ * 5xx is the obvious half. 429 is the half that is easy to miss: a rate limit
+ * is a "later", not a "never", and a caller that treats it as permanent gives
+ * up at exactly the moment backing off would have worked.
+ *
+ * This matters most for the offline write queue (ADR 0052), whose drain after
+ * a long offline stretch is a burst of writes — the single most likely way to
+ * earn a 429. Classifying it as permanent would send those writes to the dead
+ * letter store precisely when the queue was doing its job.
+ */
+function isRetryableStatus(status: number): boolean {
+  return status >= 500 || status === 429;
+}
 
 /**
  * Ironflow browser client singleton
@@ -200,6 +228,36 @@ class IronflowClient {
       serverUrl: this.config.serverUrl,
       transport: this.config.transport,
     });
+  }
+
+  /**
+   * Replace the credentials without tearing anything down.
+   *
+   * `configure()` cannot be used for this: it calls `cleanup()`, which destroys
+   * the transport, every subscription, and — for an offline client — the
+   * drainer mid-flight. Refreshing an expired token must not cost you all of
+   * that.
+   *
+   * Every request path reads `config.auth` at send time (`request()`,
+   * `streamRequest()`, `restRequest()` all build their `Authorization` header
+   * per call), so the next request picks this up with no further work. An
+   * already-open subscription keeps the credentials it connected with until it
+   * reconnects.
+   */
+  setAuth(auth: AuthConfig | undefined): void {
+    this.ensureConfigured();
+    this.config!.auth = auth;
+    this.logger.debug("Auth updated");
+  }
+
+  /**
+   * The configured logger.
+   *
+   * @internal Lets sibling modules (the offline queue) honour the app's logging
+   * configuration instead of writing straight to the console.
+   */
+  getLogger(): Logger {
+    return this.logger;
   }
 
   /**
@@ -469,22 +527,6 @@ class IronflowClient {
       "POST",
       "/ironflow.v1.IronflowService/CancelRun",
       { id: runId, reason }
-    );
-
-    return this.mapRunResponse(response);
-  }
-
-  /**
-   * Retry a failed run
-   */
-  async retryRun(runId: string, fromStep?: string): Promise<Run> {
-    this.ensureConfigured();
-
-    const response = await this.request(
-      RunResponseSchema,
-      "POST",
-      "/ironflow.v1.IronflowService/RetryRun",
-      { id: runId, fromStep }
     );
 
     return this.mapRunResponse(response);
@@ -2709,177 +2751,40 @@ class IronflowClient {
     document.addEventListener("visibilitychange", this.visibilityHandler);
   }
 
-  private async request<T>(
-    schema: z.ZodType<T>,
+  /**
+   * Shared HTTP shell for every REST/Connect call the client makes.
+   *
+   * `send` owns the transport concerns; `handle` owns how one response becomes
+   * a `T`. Splitting there is what lets three callers with very different
+   * response handling share one implementation:
+   *
+   *   caller ──> send(method, path, body, handle)
+   *                │
+   *                ├─ headers: Content-Type (only when a body is sent),
+   *                │           X-Ironflow-Environment,
+   *                │           Authorization (apiKey wins over token)
+   *                ├─ fetch ──> handle(response) ──> T
+   *                │               └─ may throw IronflowError ──┐
+   *                ├─ catch: AbortError -> TIMEOUT              │ rethrown
+   *                │         anything else -> REQUEST_FAILED    │  as-is
+   *                └─ finally: clearTimeout <───────────────────┘
+   *
+   * Two details are load-bearing and must not be "tidied":
+   *
+   * 1. The abort timer is cleared only *after* `handle` returns, so a slow
+   *    parse of a large body can still trip the timeout. That matches the
+   *    behaviour of the three helpers this replaces.
+   * 2. `handle` runs inside the try, so errors it throws pass through the
+   *    catch below. Every typed error in this SDK (`ValidationError`,
+   *    `UnauthenticatedError`, `EnterpriseRequiredError`, `UnauthorizedError`)
+   *    extends `IronflowError`, so the single `instanceof` guard covers all of
+   *    them and they are rethrown untouched.
+   */
+  private async send<T>(
     method: string,
     path: string,
-    body: unknown
-  ): Promise<T> {
-    const url = `${this.config!.serverUrl}${path}`;
-    const timeout = this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
-      };
-
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      } else if (this.config!.auth?.token) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.token}`;
-      }
-
-      const response = await fetch(url, {
-        method,
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      const responseBody = await response.text();
-
-      if (!response.ok) {
-        const errorResult = ErrorResponseSchema.safeParse(
-          safeJsonParse(responseBody)
-        );
-        const errorData = errorResult.success
-          ? errorResult.data
-          : { message: responseBody };
-
-        throw new IronflowError(
-          errorData.message ?? `Request failed: ${response.status}`,
-          {
-            code: errorData.code ?? `HTTP_${response.status}`,
-            retryable: response.status >= 500,
-          }
-        );
-      }
-
-      const parsed = safeJsonParse(responseBody);
-      if (parsed === undefined) {
-        throw new ValidationError("Invalid JSON response from server");
-      }
-
-      const result = schema.safeParse(parsed);
-      if (!result.success) {
-        const issues = result.error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join(", ");
-        throw new ValidationError(`Invalid response from server: ${issues}`);
-      }
-
-      return result.data;
-    } catch (error) {
-      if (error instanceof IronflowError || error instanceof ValidationError) {
-        throw error;
-      }
-
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new IronflowError(
-          `Request timeout after ${timeout}ms for ${method} ${path}`,
-          {
-            code: "TIMEOUT",
-            retryable: true,
-          }
-        );
-      }
-
-      throw new IronflowError(
-        error instanceof Error
-          ? `${method} ${path} failed: ${error.message}`
-          : `${method} ${path} failed`,
-        {
-          code: "REQUEST_FAILED",
-          retryable: true,
-          cause: error instanceof Error ? error : undefined,
-        }
-      );
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  private async streamRequest<T>(path: string, body: unknown): Promise<T> {
-    const url = `${this.config!.serverUrl}${path}`;
-    const timeout = this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
-      };
-
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      } else if (this.config!.auth?.token) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.token}`;
-      }
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorBody = safeJsonParse(await response.text()) as
-          | { message?: string; code?: string }
-          | undefined;
-        throw new IronflowError(
-          errorBody?.message ?? `Request failed: ${response.status}`,
-          {
-            code: errorBody?.code ?? `HTTP_${response.status}`,
-            retryable: response.status >= 500,
-          }
-        );
-      }
-
-      return response.json();
-    } catch (error) {
-      if (error instanceof IronflowError) {
-        throw error;
-      }
-
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new IronflowError(
-          `Request timeout after ${timeout}ms for POST ${path}`,
-          { code: "TIMEOUT", retryable: true }
-        );
-      }
-
-      throw new IronflowError(
-        error instanceof Error
-          ? `POST ${path} failed: ${error.message}`
-          : `POST ${path} failed`,
-        {
-          code: "REQUEST_FAILED",
-          retryable: true,
-          cause: error instanceof Error ? error : undefined,
-        }
-      );
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  /**
-   * REST request helper for auth management endpoints.
-   *
-   * Supports GET, POST, PATCH, DELETE methods with typed error mapping:
-   * - 401 → UnauthenticatedError
-   * - 402 → EnterpriseRequiredError
-   * - 403 → UnauthorizedError
-   */
-  private async restRequest<T>(
-    method: "GET" | "POST" | "PATCH" | "DELETE",
-    path: string,
-    body?: unknown
+    body: unknown,
+    handle: (response: Response) => Promise<T>
   ): Promise<T> {
     const url = `${this.config!.serverUrl}${path}`;
     const timeout = this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
@@ -2912,7 +2817,201 @@ class IronflowClient {
       }
 
       const response = await fetch(url, fetchOptions);
+      try {
+        return await handle(response);
+      } catch (error) {
+        if (error instanceof IronflowError) throw error;
+        if (error instanceof Error && error.name === "AbortError") throw error;
+        // The request itself succeeded; the BODY could not be understood.
+        // Retrying cannot fix a server that returns unparseable bytes, and
+        // marking it retryable would stall the offline queue at this write
+        // indefinitely (it blocks on the head of a strict FIFO).
+        throw new IronflowError(
+          `${method} ${path} returned an unparseable response: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          {
+            code: "RESPONSE_UNPARSEABLE",
+            status: response.status,
+            retryable: false,
+            cause: error instanceof Error ? error : undefined,
+          }
+        );
+      }
+    } catch (error) {
+      if (error instanceof IronflowError) {
+        throw error;
+      }
 
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new IronflowError(
+          `Request timeout after ${timeout}ms for ${method} ${path}`,
+          {
+            code: "TIMEOUT",
+            retryable: true,
+          }
+        );
+      }
+
+      throw new IronflowError(
+        error instanceof Error
+          ? `${method} ${path} failed: ${error.message}`
+          : `${method} ${path} failed`,
+        {
+          code: "REQUEST_FAILED",
+          retryable: true,
+          cause: error instanceof Error ? error : undefined,
+        }
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Connect-style request whose response is validated against a zod schema.
+   *
+   * Reads the body exactly once and reuses the text for both the error path
+   * and the success parse.
+   */
+  private async request<T>(
+    schema: z.ZodType<T>,
+    method: string,
+    path: string,
+    body: unknown
+  ): Promise<T> {
+    return this.send(method, path, body, async (response) => {
+      const responseBody = await response.text();
+
+      if (!response.ok) {
+        const errorResult = ErrorResponseSchema.safeParse(
+          safeJsonParse(responseBody)
+        );
+        const errorData = errorResult.success
+          ? errorResult.data
+          : { message: responseBody };
+
+        throw new IronflowError(
+          errorData.message ?? `Request failed: ${response.status}`,
+          {
+            code: errorData.code ?? `HTTP_${response.status}`,
+            status: response.status,
+            retryable: isRetryableStatus(response.status),
+          }
+        );
+      }
+
+      const parsed = safeJsonParse(responseBody);
+      if (parsed === undefined) {
+        throw new ValidationError("Invalid JSON response from server");
+      }
+
+      const result = schema.safeParse(parsed);
+      if (!result.success) {
+        const issues = result.error.issues
+          .map((i) => `${i.path.join(".")}: ${i.message}`)
+          .join(", ");
+        throw new ValidationError(`Invalid response from server: ${issues}`);
+      }
+
+      return result.data;
+    });
+  }
+
+  /**
+   * Replay a write that the offline queue stored earlier (ADR 0052).
+   *
+   * Keyed by a module-private symbol rather than a name. An `@internal` JSDoc
+   * tag does nothing without `stripInternal`, which this repo does not set, so
+   * a named method would ship in the published .d.ts — and this one is an
+   * arbitrary-path authenticated POST, which is not something to hand out.
+   * `index.ts` does not re-export the symbol, so no consumer can reach it.
+   *
+   * Takes the serialised body the queue persisted and routes it through the
+   * ordinary request path, so a replayed write gets exactly the same headers,
+   * timeout and retry classification as a live one — including 429 being
+   * retryable, which the drainer depends on.
+   */
+  async [REPLAY_QUEUED_WRITE](
+    path: string,
+    body: string
+  ): Promise<{ eventId?: string; entityVersion?: number }> {
+    this.ensureConfigured();
+
+    // Parsed here rather than inline in the call, and as a NON-retryable coded
+    // error: a bare SyntaxError is not an IronflowError, and the drainer treats
+    // anything else as a network fault worth retrying. Since the queue is strict
+    // FIFO, an unreadable record at the head would then block every write behind
+    // it until retention expired. Dead-lettering quarantines just the one.
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(body);
+    } catch (error) {
+      throw new IronflowError(
+        `Queued write body is not valid JSON and can never be sent: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { code: "QUEUE_BODY_CORRUPT", retryable: false }
+      );
+    }
+
+    const response = await this.streamRequest<{
+      eventId?: string;
+      entityVersion?: number | string;
+    }>(path, parsed);
+
+    return {
+      eventId: response.eventId,
+      entityVersion:
+        response.entityVersion === undefined
+          ? undefined
+          : Number(response.entityVersion),
+    };
+  }
+
+  /**
+   * Connect-style POST returning the raw decoded JSON, no schema validation.
+   *
+   * Only reads the body on the error path.
+   */
+  private async streamRequest<T>(path: string, body: unknown): Promise<T> {
+    return this.send("POST", path, body, async (response) => {
+      if (!response.ok) {
+        const errorBody = safeJsonParse(await response.text()) as
+          | { message?: string; code?: string }
+          | undefined;
+        throw new IronflowError(
+          errorBody?.message ?? `Request failed: ${response.status}`,
+          {
+            code: errorBody?.code ?? `HTTP_${response.status}`,
+            status: response.status,
+            retryable: isRetryableStatus(response.status),
+          }
+        );
+      }
+
+      return response.json() as Promise<T>;
+    });
+  }
+
+  /**
+   * REST request helper for auth management endpoints.
+   *
+   * Supports GET, POST, PATCH, DELETE methods with typed error mapping:
+   * - 401 → UnauthenticatedError
+   * - 402 → EnterpriseRequiredError
+   * - 403 → UnauthorizedError
+   *
+   * Note the error message template differs from the two Connect helpers
+   * above ("Request failed with status N" vs "Request failed: N"); both are
+   * pinned by tests, so pick deliberately if you ever unify them.
+   */
+  private async restRequest<T>(
+    method: "GET" | "POST" | "PATCH" | "DELETE",
+    path: string,
+    body?: unknown
+  ): Promise<T> {
+    return this.send(method, path, body, async (response) => {
       // Handle 204 No Content
       if (response.status === 204) {
         return undefined as T;
@@ -2942,42 +3041,14 @@ class IronflowClient {
           default:
             throw new IronflowError(errorMessage, {
               code: `HTTP_${response.status}`,
-              retryable: response.status >= 500,
+              status: response.status,
+              retryable: isRetryableStatus(response.status),
             });
         }
       }
 
       return response.json() as Promise<T>;
-    } catch (error) {
-      if (
-        error instanceof IronflowError ||
-        error instanceof UnauthenticatedError ||
-        error instanceof EnterpriseRequiredError ||
-        error instanceof UnauthorizedError
-      ) {
-        throw error;
-      }
-
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new IronflowError(
-          `Request timeout after ${timeout}ms for ${method} ${path}`,
-          { code: "TIMEOUT", retryable: true }
-        );
-      }
-
-      throw new IronflowError(
-        error instanceof Error
-          ? `${method} ${path} failed: ${error.message}`
-          : `${method} ${path} failed`,
-        {
-          code: "REQUEST_FAILED",
-          retryable: true,
-          cause: error instanceof Error ? error : undefined,
-        }
-      );
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    });
   }
 
   private mapRunResponse(response: z.infer<typeof RunResponseSchema>): Run {

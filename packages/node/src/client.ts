@@ -566,15 +566,6 @@ export class IronflowClient {
   }
 
   /**
-   * Retry a failed run
-   */
-  async retryRun(runId: string, fromStep?: string): Promise<Run> {
-    const body: Record<string, unknown> = { id: runId };
-    if (fromStep) body.fromStep = fromStep;
-    return this.request<Run>(API_ENDPOINTS.RETRY_RUN, body, "retryRun");
-  }
-
-  /**
    * Health check
    */
   async health(): Promise<string> {

@@ -10,6 +10,15 @@
 export class IronflowError extends Error {
   /** Error code for programmatic handling */
   readonly code: string;
+  /**
+   * HTTP status, when the error came from a response.
+   *
+   * Classification must key off this rather than `code`: `code` is built as
+   * `errorBody?.code ?? \`HTTP_${status}\``, so any proxy or Connect handler that
+   * puts its own `code` in the body silently replaces it. A 401 arriving as
+   * `{"code":"unauthenticated"}` would otherwise miss every string comparison.
+   */
+  readonly status?: number;
   /** Whether this error is retryable */
   readonly retryable: boolean;
   /** Additional error details */
@@ -19,6 +28,7 @@ export class IronflowError extends Error {
     message: string,
     options?: {
       code?: string;
+      status?: number;
       retryable?: boolean;
       details?: Record<string, unknown>;
       cause?: Error;
@@ -27,6 +37,7 @@ export class IronflowError extends Error {
     super(message, { cause: options?.cause });
     this.name = "IronflowError";
     this.code = options?.code ?? "UNKNOWN_ERROR";
+    this.status = options?.status;
     this.retryable = options?.retryable ?? false;
     this.details = options?.details;
   }
@@ -449,5 +460,26 @@ export class UnauthorizedError extends IronflowError {
       retryable: false,
     });
     this.name = "UnauthorizedError";
+  }
+}
+
+/**
+ * Thrown when the browser offline write queue is at its item or byte cap, or
+ * the origin is out of storage quota.
+ *
+ * The queue rejects rather than evicting. Every telemetry SDK drops the oldest
+ * entry instead, which is right for telemetry and wrong here: dropping
+ * `order.placed` while keeping `order.shipped` manufactures exactly the
+ * corrupted projection that strict FIFO exists to prevent. Rejecting is louder
+ * and safer, because the application finds out and can stop generating writes
+ * that depend on the one that never landed. See ADR 0052, Alternative G.
+ */
+export class QueueFullError extends IronflowError {
+  constructor(message = "Offline write queue is full") {
+    super(message, {
+      code: "QUEUE_FULL",
+      retryable: false,
+    });
+    this.name = "QueueFullError";
   }
 }

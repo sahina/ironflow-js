@@ -277,6 +277,7 @@ export {
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
+  QueueFullError,
   isRetryable,
   isIronflowError,
   toError,

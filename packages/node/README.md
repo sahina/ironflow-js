@@ -731,15 +731,6 @@ Cancel a running workflow.
 const run = await client.cancelRun('run_abc123', 'no longer needed');
 ```
 
-### retryRun(runId, fromStep?)
-
-Retry a failed run, optionally from a specific step.
-
-```typescript
-await client.retryRun('run_abc123');
-await client.retryRun('run_abc123', 'validate'); // Retry from specific step
-```
-
 ### resumeRun(runId, fromStep?)
 
 Resume a paused or failed run.

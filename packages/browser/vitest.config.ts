@@ -5,6 +5,9 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
+    // jsdom has no indexedDB; the setup file supplies fake-indexeddb so the
+    // offline write queue (ADR 0052) is testable at all. See vitest.setup.ts.
+    setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json'],
@@ -17,7 +20,19 @@ export default defineConfig({
         'src/gen/**',
         'examples/**',
         'vitest.config.ts',
+        'vitest.setup.ts',
       ],
+      // Package-wide thresholds stay off (see above), but src/queue owns
+      // persisted user data — a write that goes missing there is unrecoverable,
+      // so it gets a floor. Scoped so the existing ~12k lines need no retrofit.
+      thresholds: {
+        'src/queue/**': {
+          statements: 80,
+          branches: 80,
+          functions: 80,
+          lines: 80,
+        },
+      },
     },
   },
 })
