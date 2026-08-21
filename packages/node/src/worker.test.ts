@@ -658,6 +658,26 @@ describe("Worker", () => {
     });
   });
 
+  describe("auth failure (#1673)", () => {
+    it("stops instead of 401-looping, and names IRONFLOW_API_KEY", async () => {
+      mockFetch.mockResolvedValue({ ok: false, status: 401 });
+      const errorSpy = vi.fn();
+
+      const w = realCreateWorker({
+        serverUrl: "http://localhost:9123",
+        functions: [createMockFunction("ingest-corpus", async () => "ok")],
+        logger: { info: vi.fn(), warn: vi.fn(), error: errorSpy, debug: vi.fn() },
+      });
+
+      await expect(w.start()).rejects.toThrow(/IRONFLOW_API_KEY/);
+      // One attempt, not a reconnect loop.
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining(".ironflow_bootstrap_key.json")
+      );
+    });
+  });
+
   describe("duplicate function detection", () => {
     it("should warn on duplicate function IDs", () => {
       const fn1 = createMockFunction("my-func", async () => "a");

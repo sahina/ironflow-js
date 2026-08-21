@@ -212,6 +212,9 @@ export type {
   // Webhook management types
   WebhookSource,
   CreateWebhookSourceInput,
+  UpdateWebhookSourceInput,
+  RotateWebhookSecretInput,
+  DisableWebhookSignatureVerificationInput,
   WebhookDelivery,
   ListWebhookDeliveriesOptions,
 

@@ -41,14 +41,16 @@ class MockWebSocket {
 }
 
 let mockWs: MockWebSocket;
+let lastWsUrl = "";
 const originalWebSocket = globalThis.WebSocket;
 
 beforeEach(() => {
   // Replace global WebSocket with mock
   (globalThis as any).WebSocket = class extends MockWebSocket {
-    constructor() {
+    constructor(url: string) {
       super();
       mockWs = this;
+      lastWsUrl = url;
       // Auto-connect after microtask
       queueMicrotask(() => this.simulateOpen());
     }
@@ -63,6 +65,7 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.WebSocket = originalWebSocket;
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
 });
 
 // Helper: import fresh module per test to avoid state leakage
@@ -113,6 +116,34 @@ describe("SubscriptionClient", () => {
 
       expect(client.isConnected).toBe(true);
       expect(client.connectionState).toBe("connected");
+
+      client.close();
+    });
+
+    it("falls back to IRONFLOW_API_KEY for the token param", async () => {
+      vi.stubEnv("IRONFLOW_API_KEY", "env-key");
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({ serverUrl: "http://localhost:9123" });
+
+      await client.connect();
+
+      expect(lastWsUrl).toContain("token=env-key");
+
+      client.close();
+    });
+
+    it("prefers an explicit apiKey over IRONFLOW_API_KEY", async () => {
+      vi.stubEnv("IRONFLOW_API_KEY", "env-key");
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({
+        serverUrl: "http://localhost:9123",
+        apiKey: "explicit-key",
+      });
+
+      await client.connect();
+
+      expect(lastWsUrl).toContain("token=explicit-key");
+      expect(lastWsUrl).not.toContain("env-key");
 
       client.close();
     });

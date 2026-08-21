@@ -136,6 +136,61 @@ describe("ExecutionContext", () => {
       expect(stepId).toContain("custom-run-id");
     });
 
+    // #1694 item 4: unescaped, a top-level step literally named "a:0:b" at
+    // index 0 and a step named "b" at index 0 inside parallel "a" branch 0 both
+    // render as "run-123:a:0:b:0" — one memoization key, one steps row, two
+    // different steps.
+    it("should not collide with a parallel branch scope when the name contains ':'", () => {
+      const ctx = new ExecutionContext(createPushRequest());
+
+      const topLevel = ctx.generateStepId("a:0:b");
+      const branch = ctx.createBranchContext("a", 0);
+      const inBranch = branch.generateStepId("b");
+
+      expect(topLevel).not.toBe(inBranch);
+      expect(inBranch).toBe("run-123:a:0:b:0");
+    });
+
+    it("should leave names without ':' or a backslash unchanged", () => {
+      const ctx = new ExecutionContext(createPushRequest());
+
+      expect(ctx.generateStepId("charge-card")).toBe("run-123:charge-card:0");
+    });
+
+    // Upgrade bridge: a run that paused before escaping shipped carries rows keyed
+    // by the UNESCAPED name. Without this the newly escaped id misses the memoized
+    // row and the completed step re-executes for real at the deploy boundary.
+    it("resumes a legacy unescaped id when that is the memoized row", () => {
+      const ctx = new ExecutionContext(
+        createPushRequest({
+          steps: [
+            { id: "run-123:charge:card:0", name: "charge:card", status: "completed", output: "cached" },
+          ],
+        })
+      );
+
+      expect(ctx.generateStepId("charge:card")).toBe("run-123:charge:card:0");
+    });
+
+    it("uses the escaped id when no legacy row exists", () => {
+      const ctx = new ExecutionContext(createPushRequest());
+
+      expect(ctx.generateStepId("charge:card")).toBe("run-123:charge\\:card:0");
+    });
+
+    // The SDK's own namespaces are structure, not user input. Escaping their
+    // colon would change the id of every existing publish/compensation step, so
+    // the first resume after an upgrade would miss the memoized row and re-run
+    // the side effect.
+    it("should keep the SDK's own compensate:/publish: prefixes literal", () => {
+      const ctx = new ExecutionContext(createPushRequest());
+
+      expect(ctx.generateStepId("compensate:charge-card")).toBe("run-123:compensate:charge-card:0");
+      expect(ctx.generateStepId("publish:orders.created")).toBe("run-123:publish:orders.created:0");
+      // ...while still escaping the leaf after the prefix.
+      expect(ctx.generateStepId("publish:a:0:b")).toBe("run-123:publish:a\\:0\\:b:0");
+    });
+
     it("should increment counter per step name", () => {
       const ctx = new ExecutionContext(createPushRequest());
 

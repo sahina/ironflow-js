@@ -1,5 +1,5 @@
 /**
- * The offline write queue (ADR 0052).
+ * The offline write queue (ADR 0053).
  *
  * Write-through outbox: every eligible write is persisted BEFORE anything is
  * attempted over the network, and a single drainer sends them in strict order.

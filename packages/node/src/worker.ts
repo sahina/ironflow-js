@@ -12,6 +12,9 @@ import type {
 } from "@ironflow/core";
 import {
   IronflowError,
+  UnauthenticatedError,
+  UnauthorizedError,
+  throwIfAuthError,
   JobAssignmentSchema,
   createLogger,
   createNoopLogger,
@@ -29,6 +32,7 @@ import { isYieldSignal, type YieldInfo } from "./internal/errors.js";
 import { createProjectionRunner, StreamingUnsupportedError, type ProjectionRunner } from "./projection-runner.js";
 import { createSecretsClient } from "./secrets.js";
 import { withRunContext } from "./internal/run-context.js";
+import { errorDetail } from "./internal/error-detail.js";
 import { SDK_VERSION } from "./version.js";
 import { createHash } from "node:crypto";
 
@@ -125,7 +129,7 @@ class IronflowWorker implements Worker {
       config.reconnectDelay ?? DEFAULT_WORKER.RECONNECT_DELAY_MS;
     this.environment =
       config.environment ?? process.env.IRONFLOW_ENV ?? DEFAULT_ENVIRONMENT;
-    this.apiKey = config.apiKey ?? process.env.IRONFLOW_API_KEY;
+    this.apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
 
     // Initialize logger
     if (config.logger === false) {
@@ -174,6 +178,17 @@ class IronflowWorker implements Worker {
       } catch (error) {
         if ((this.state as WorkerState) === "stopped") {
           break;
+        }
+
+        // An auth failure will not fix itself on the network cadence (#1673):
+        // surface the actionable message once and stop instead of 401-looping.
+        if (
+          error instanceof UnauthenticatedError ||
+          error instanceof UnauthorizedError
+        ) {
+          this.logger.error(error.message);
+          this.stop();
+          throw error;
         }
 
         this.logger.error("Connection error", { error: String(error) });
@@ -336,8 +351,12 @@ class IronflowWorker implements Worker {
       );
 
       if (!response.ok) {
+        // Read the body BEFORE throwIfAuthError: a Response body can only be
+        // consumed once, and the auth throw would take the reason with it.
+        const detail = await errorDetail(response);
+        throwIfAuthError(response.status, `Failed to register function ${fnId}`);
         throw new IronflowError(
-          `Failed to register function ${fnId}: ${response.status}`,
+          `Failed to register function ${fnId}: ${detail}`,
           { code: "FUNCTION_REGISTRATION_FAILED" }
         );
       }
@@ -373,7 +392,9 @@ class IronflowWorker implements Worker {
     );
 
     if (!response.ok) {
-      throw new IronflowError("Failed to register worker", {
+      const detail = await errorDetail(response);
+      throwIfAuthError(response.status, "Failed to register worker");
+      throw new IronflowError(`Failed to register worker: ${detail}`, {
         code: "REGISTRATION_FAILED",
       });
     }
@@ -488,7 +509,9 @@ class IronflowWorker implements Worker {
         }
 
         if (!response.ok) {
-          throw new Error(`Failed to get job: ${response.status}`);
+          const detail = await errorDetail(response);
+          throwIfAuthError(response.status, "Failed to get job");
+          throw new Error(`Failed to get job: ${detail}`);
         }
 
         // The response is either the capacity batched shape ({"jobs":[...]}) or a
@@ -518,6 +541,15 @@ class IronflowWorker implements Worker {
       } catch (error) {
         if (this.state !== "connected") {
           break;
+        }
+
+        // Key revoked mid-run: let it out to start(), which stops the worker
+        // rather than polling a 401 every 5s (#1673).
+        if (
+          error instanceof UnauthenticatedError ||
+          error instanceof UnauthorizedError
+        ) {
+          throw error;
         }
 
         this.logger.warn("Job polling error", { error: String(error) });
@@ -602,7 +634,15 @@ class IronflowWorker implements Worker {
         output: s.output,
       })),
       resume: undefined,
-    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl);
+    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
+
+    // Checkpoint completed steps to the server as they finish (#1670) so a
+    // killed worker does not take the whole run's progress with it. The
+    // terminal update below reports only what the checkpointer has NOT
+    // durably flushed — re-reporting a flushed step would double its audit
+    // record and step event.
+    const checkpointer = this.startCheckpointer(baseUrl, job, ctx, fence);
+    ctx.onStepRecorded = checkpointer.schedule;
 
     const step = createStepClient(ctx);
     const functionContext: FunctionContext = {
@@ -621,6 +661,7 @@ class IronflowWorker implements Worker {
     try {
       // Check for abort
       if (signal.aborted) {
+        await checkpointer.finish();
         return;
       }
 
@@ -629,11 +670,15 @@ class IronflowWorker implements Worker {
       );
     } catch (error) {
       if (signal.aborted) {
+        await checkpointer.finish();
         return;
       }
 
       if (isYieldSignal(error)) {
-        // Send yield
+        // Flush before pausing: the yield update carries no steps at all, so a
+        // buffered step would be lost across the pause and re-executed on resume.
+        await checkpointer.flush();
+        await checkpointer.finish();
         await this.sendStepYielded(baseUrl, job.job_id, error.yieldInfo, fence);
         return;
       }
@@ -645,23 +690,157 @@ class IronflowWorker implements Worker {
         await executeCompensations(ctx);
       }
 
-      // Send failure with executed steps (includes compensation steps)
+      // Send failure with the steps not already checkpointed (includes
+      // compensation steps).
+      const failTail = await checkpointer.finish();
       await this.sendJobFailed(baseUrl, job.job_id, {
         message: error instanceof Error ? error.message : String(error),
         code: error instanceof IronflowError ? error.code : "ERROR",
         retryable,
-      }, ctx.getExecutedSteps(), fence);
+      }, failTail.steps, fence, failTail.offset);
       return;
     }
 
-    // Handler succeeded — send completion with executed steps.
+    // Handler succeeded — send completion with the steps not already checkpointed.
+    const tail = await checkpointer.finish();
     await this.sendJobCompleted(
       baseUrl,
       job.job_id,
       result,
-      ctx.getExecutedSteps(),
-      fence
+      tail.steps,
+      fence,
+      tail.offset
     );
+  }
+
+  /**
+   * Start a debounced step checkpointer for one job (#1670).
+   *
+   * A pull worker otherwise reports step results only in the terminal update
+   * body, so `kill -9` (and, since nothing wires `drain()` to a signal, Ctrl-C
+   * too) discards every completed step and the reclaimed run re-executes all of
+   * them. Each flush PUTs `status: "progress"`, which the engine persists
+   * without transitioning the run or releasing the capacity lease — it doubles
+   * as a lease heartbeat.
+   *
+   * A step counts as flushed only after a 2xx, so a rejected flush self-heals:
+   * those steps stay in the tail and go out with the next checkpoint or in the
+   * terminal body.
+   */
+  private startCheckpointer(
+    baseUrl: string,
+    job: ValidatedJobAssignment,
+    ctx: ExecutionContext,
+    fence?: { executionSeq?: number; leaseToken?: string }
+  ): {
+    schedule: () => void;
+    flush: () => Promise<void>;
+    finish: () => Promise<{ steps: StepResult[]; offset: number }>;
+  } {
+    const intervalMs = this.config.checkpointInterval ?? DEFAULT_WORKER.CHECKPOINT_INTERVAL_MS;
+    // Where this execution's steps start numbering. The server computes it from
+    // every persisted step row (max sequence + 1), NOT from completed_steps —
+    // a sleeping step from a yield, or a failed step from an earlier attempt,
+    // owns a sequence but is absent from that filtered list, so counting it
+    // would renumber this execution on top of those rows.
+    const base = job.step_sequence_base ?? 0;
+    let cursor = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = intervalMs <= 0;
+    // Consecutive failures, for backoff. A checkpoint is best-effort progress,
+    // so a server that is down must not be hammered once per debounce window
+    // for the life of a long job.
+    let failures = 0;
+    // Serializing chain: two timers must never race the cursor and send the
+    // same slice twice.
+    let chain: Promise<void> = Promise.resolve();
+
+    const send = async (): Promise<void> => {
+      if (stopped) {
+        return;
+      }
+      // Bounded batch: the server caps a checkpoint at MAX_CHECKPOINT_STEPS, and
+      // an unbounded slice would also mean a rejected flush re-uploads an
+      // ever-growing tail every window.
+      const pending = ctx
+        .getExecutedSteps()
+        .slice(cursor, cursor + DEFAULT_WORKER.MAX_CHECKPOINT_STEPS);
+      if (pending.length === 0) {
+        return;
+      }
+      const body: Record<string, unknown> = {
+        status: "progress",
+        steps: pending,
+        step_offset: base + cursor,
+      };
+      this.stampFence(body, fence);
+      try {
+        const response = await fetch(
+          `${baseUrl}/api/v1/workers/${this.workerId}/jobs/${job.job_id}`,
+          { method: "PUT", headers: this.buildHeaders(), body: JSON.stringify(body) }
+        );
+        if (response.ok) {
+          cursor += pending.length;
+          failures = 0;
+          return;
+        }
+        // A 4xx other than the run-state conflict is permanent for this job:
+        // either this execution is fenced out (409 STALE_EXECUTION), or the
+        // server does not implement checkpointing at all (400 "invalid status"
+        // on a pre-#1670 server, which a rolling upgrade can route us to).
+        // Retrying either every window for the life of the job is pure noise.
+        // A 409 RUN_NOT_RUNNING is NOT permanent-by-protocol, but the run is
+        // gone as far as this worker is concerned, so it stops too.
+        if (response.status >= 400 && response.status < 500) {
+          stopped = true;
+          this.logger.warn(
+            `Checkpointing disabled for job ${job.job_id}: server rejected the checkpoint (status ${response.status})`
+          );
+          return;
+        }
+        failures++;
+        this.logger.warn(
+          `Checkpoint for job ${job.job_id} rejected by server (status ${response.status})`
+        );
+      } catch (error) {
+        failures++;
+        this.logger.warn(`Checkpoint error for job ${job.job_id}`, {
+          error: String(error),
+        });
+      }
+    };
+
+    const flush = (): Promise<void> => {
+      chain = chain.then(send);
+      return chain;
+    };
+
+    return {
+      schedule: () => {
+        if (stopped || timer) {
+          return;
+        }
+        // Exponential backoff on consecutive failures, capped.
+        const delay = Math.min(intervalMs * 2 ** failures, DEFAULT_WORKER.MAX_CHECKPOINT_BACKOFF_MS);
+        timer = setTimeout(() => {
+          timer = undefined;
+          void flush();
+        }, delay);
+        // Never hold the process open for a checkpoint.
+        timer.unref?.();
+      },
+      flush,
+      finish: async () => {
+        if (timer) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+        await chain;
+        stopped = true;
+        ctx.onStepRecorded = undefined;
+        return { steps: ctx.getExecutedSteps().slice(cursor), offset: base + cursor };
+      },
+    };
   }
 
   /**
@@ -718,12 +897,14 @@ class IronflowWorker implements Worker {
     jobId: string,
     output: unknown,
     steps: StepResult[],
-    fence?: { executionSeq?: number; leaseToken?: string }
+    fence?: { executionSeq?: number; leaseToken?: string },
+    stepOffset = 0
   ): Promise<void> {
     const body: Record<string, unknown> = {
       status: "completed",
       output,
       steps,
+      step_offset: stepOffset,
     };
     this.stampFence(body, fence);
     await this.putJobUpdate(baseUrl, jobId, body);
@@ -764,7 +945,8 @@ class IronflowWorker implements Worker {
     jobId: string,
     error: { message: string; code: string; retryable: boolean },
     steps?: StepResult[],
-    fence?: { executionSeq?: number; leaseToken?: string }
+    fence?: { executionSeq?: number; leaseToken?: string },
+    stepOffset = 0
   ): Promise<void> {
     const body: Record<string, unknown> = {
       status: "failed",
@@ -772,6 +954,7 @@ class IronflowWorker implements Worker {
     };
     if (steps && steps.length > 0) {
       body.steps = steps;
+      body.step_offset = stepOffset;
     }
     this.stampFence(body, fence);
     await this.putJobUpdate(baseUrl, jobId, body);

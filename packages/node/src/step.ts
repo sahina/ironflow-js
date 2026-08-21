@@ -44,6 +44,9 @@ interface StepContext {
   markResumeProcessed(): void;
   recordStep(step: StepResult): void;
   createBranchContext(parallelName: string, branchIndex: number): BranchContext;
+  /** Only BranchContext has this — the root ExecutionContext is never a branch. */
+  markScopedClientUsed?(): void;
+  shouldWarnUnscoped(name: string): boolean;
   registerCompensation(stepName: string, fn: () => Promise<void>): void;
   hasCompensations(): boolean;
   getCompensationsInReverse(): Array<{ stepName: string; fn: () => Promise<void> }>;
@@ -458,7 +461,11 @@ async function executeParallel<T>(
   branches: ((step: StepClient) => Promise<T>)[],
   options: ParallelOptions = {}
 ): Promise<T[]> {
-  const { concurrency, onError = "failFast" } = options;
+  const { concurrency, onError = "failFast", expectScopedClient = true } = options;
+
+  // Opening a nested parallel/map counts as using the enclosing branch's
+  // scoped client, even if this call turns out to have zero items (#1671).
+  ctx.markScopedClientUsed?.();
 
   ctx.logger.debug(`Starting parallel execution: ${name}`, {
     branchCount: branches.length,
@@ -472,10 +479,10 @@ async function executeParallel<T>(
   const cancelled = { value: false };
 
   // Pre-create branch contexts and step clients for each branch
-  const branchStepClients = branches.map((_, index) => {
-    const branchCtx = ctx.createBranchContext(name, index);
-    return createStepClientInternal(branchCtx);
-  });
+  const branchContexts = branches.map((_, index) => ctx.createBranchContext(name, index));
+  const branchStepClients = branchContexts.map((branchCtx) =>
+    createStepClientInternal(branchCtx)
+  );
 
   const executeBranch = async (index: number): Promise<void> => {
     if (cancelled.value && onError === "failFast") return;
@@ -545,6 +552,42 @@ async function executeParallel<T>(
     successCount: results.filter((r) => !(r instanceof Error)).length,
     errorCount: results.filter((r) => r instanceof Error).length,
   });
+
+  // #1671: a branch is durable under this scope only if its callback uses the
+  // scoped step client. Ignoring it typechecks and appears to work — the only
+  // symptom is a missing timeline and no memoization on retry.
+  //
+  // Three gates, each closing a way this warning would stop being read:
+  //   - EVERY branch skipped the client. A mixed result means the author knows
+  //     about it and some branches short-circuit — `(u, s) => u.email ?
+  //     s.run(...) : null` is correct code that would otherwise warn forever.
+  //   - once per distinct name per run (shouldWarnUnscoped), so a nested
+  //     fan-out emits one "inner" line rather than one per outer item.
+  //   - expectScopedClient, the opt-out for a fan-out with nothing to memoize.
+  //
+  // ponytail: still a best-effort lint, not a guarantee. It stays silent
+  // whenever any branch errors (under the default failFast the throw above
+  // returns first; under "allSettled" one error keeps unscoped < branches.length)
+  // and whenever a branch yields. Widening it reintroduces the conditional
+  // -skip false positive; live with the holes until someone hits one.
+  const unscoped = branchContexts.filter(
+    (b, i) => !b.usedScopedClient && !(results[i] instanceof Error)
+  ).length;
+  if (
+    unscoped > 0 &&
+    unscoped === branches.length &&
+    expectScopedClient &&
+    ctx.shouldWarnUnscoped(name)
+  ) {
+    ctx.logger.warn(
+      `${name}: ${unscoped}/${branches.length} branches did not use the scoped ` +
+        `step client they were handed. Work done directly in the callback body ` +
+        `is never memoized; work routed through the enclosing function's step ` +
+        `client is memoized outside this scope. Either way, call the scoped ` +
+        `client — e.g. branchStep.run("work", ...). If this fan-out genuinely ` +
+        `has nothing to memoize, pass { expectScopedClient: false }.`
+    );
+  }
 
   return results as T[];
 }
@@ -761,6 +804,12 @@ async function executePublish(
     };
     if (ctx.apiKey) {
       headers["Authorization"] = `Bearer ${ctx.apiKey}`;
+    }
+    // Attribute the publish to this run so the flow map can learn
+    // function->topic edges (#1706). This request is hand-rolled rather than
+    // routed through the client, so it does not get the header for free.
+    if (ctx.runId) {
+      headers["X-Ironflow-Run-ID"] = ctx.runId;
     }
 
     const response = await fetch(url, {

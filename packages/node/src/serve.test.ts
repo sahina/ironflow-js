@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { IronflowFunction, FunctionContext } from "@ironflow/core";
 import { NonRetryableError, IronflowError } from "@ironflow/core";
 import { assertDefined } from "./internal/assert-defined.js";
@@ -743,6 +743,44 @@ describe("serve (real module)", () => {
     expect(response.headers.get("x-ironflow-environment")).toBe("testing");
   });
 
+  describe("step callback auth", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    });
+
+    it("authenticates step.publish with IRONFLOW_API_KEY", async () => {
+      vi.stubEnv("IRONFLOW_API_KEY", "env-key");
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ sequence: "1" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const publishFn = createFunction(
+        { id: "publish-fn", triggers: [{ event: "test.event" }] },
+        async ({ step }) => step.publish("orders", { id: "1" })
+      );
+      const handler = realServe({
+        functions: [publishFn],
+        skipVerification: true,
+        logger: false,
+        serverUrl: "http://localhost:9123",
+      });
+
+      await handler(
+        new Request("http://localhost/api/ironflow", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(createRealPushBody({ function_id: "publish-fn" })),
+        })
+      );
+
+      const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+      expect((init.headers as Record<string, string>).Authorization).toBe("Bearer env-key");
+    });
+  });
+
   describe("saga compensation", () => {
     it("runs compensations and includes them in steps on non-retryable error", async () => {
       let compensated = false;
@@ -932,6 +970,36 @@ describe("webhook routing", () => {
     expect(body.status).toBe("accepted");
     expect(body.event.name).toBe("webhook/test.payment.completed");
     expect(body.event.data).toEqual({ amount: 100 });
+  });
+
+  // /api/v1/events is not a public route, so an unauthenticated emit 502s the
+  // whole webhook outside dev mode (#1672 review).
+  it("authenticates the emit to /api/v1/events with IRONFLOW_API_KEY", async () => {
+    vi.stubEnv("IRONFLOW_API_KEY", "env-key");
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const handler = realServe({
+      functions: [testFn],
+      webhooks: [testWebhook],
+      skipVerification: true,
+      logger: false,
+      serverUrl: "http://localhost:9123",
+    });
+    await handler(
+      new Request("http://localhost/webhooks/test-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-test-sig": "valid" },
+        body: JSON.stringify({ type: "payment.completed", data: { amount: 100 }, id: "evt-1" }),
+      })
+    );
+
+    const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:9123/api/v1/events");
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer env-key");
+
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   it("should return 401 when webhook verification fails", async () => {

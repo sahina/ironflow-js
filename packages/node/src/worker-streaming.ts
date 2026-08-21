@@ -4,7 +4,7 @@
  * ConnectRPC bidirectional streaming worker for low-latency pull mode.
  */
 
-import { createClient } from "@connectrpc/connect";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-node";
 import { create, type JsonObject } from "@bufbuild/protobuf";
 import type {
@@ -14,6 +14,7 @@ import type {
   StepResult,
 } from "@ironflow/core";
 import {
+  AUTH_HELP,
   IronflowError,
   createLogger,
   createNoopLogger,
@@ -115,7 +116,7 @@ class StreamingWorker implements Worker {
       config.heartbeatInterval ?? DEFAULT_WORKER.HEARTBEAT_INTERVAL_MS;
     this.reconnectDelay =
       config.reconnectDelay ?? DEFAULT_WORKER.RECONNECT_DELAY_MS;
-    this.apiKey = config.apiKey ?? process.env.IRONFLOW_API_KEY;
+    this.apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
 
     // Initialize logger
     if (config.logger === false) {
@@ -163,6 +164,17 @@ class StreamingWorker implements Worker {
       } catch (error) {
         if ((this.state as WorkerState) === "stopped") {
           break;
+        }
+
+        // Auth failures do not fix themselves on the reconnect cadence (#1673).
+        if (
+          error instanceof ConnectError &&
+          (error.code === Code.Unauthenticated ||
+            error.code === Code.PermissionDenied)
+        ) {
+          this.logger.error(`Stream authentication failed: ${error.message}. ${AUTH_HELP}`);
+          this.stop();
+          throw error;
         }
 
         this.logger.error("Connection error", { error: String(error) });
@@ -482,7 +494,7 @@ class StreamingWorker implements Worker {
         output: s.output,
       })),
       resume: undefined,
-    }, undefined, undefined, fn.config.stepTimeout, this.config.serverUrl);
+    }, undefined, undefined, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
 
     const step = createStepClient(ctx);
     const functionContext: FunctionContext = {

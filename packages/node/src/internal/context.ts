@@ -16,6 +16,44 @@ import type {
 } from "@ironflow/core";
 
 /**
+ * Escape one segment of a composite step id.
+ *
+ * Step ids are `${runId}:${name}:${index}`, and a parallel branch scope is
+ * `${runId}:${parallelName}:${branchIndex}`. Unescaped, a top-level step
+ * literally named "a:0:b" at index 0 and a step named "b" at index 0 inside
+ * parallel "a" branch 0 both render as `run:a:0:b:0` — two different steps
+ * sharing one memoization key and one `steps` row (#1694 item 4).
+ *
+ * The step id is the memoization key on BOTH sides of the wire, so this must
+ * stay byte-identical to escapeStepIDPart in sdk/go/ironflow/step.go. Names
+ * containing neither ":" nor "\\" are returned unchanged, which is what keeps
+ * ids stable for in-flight runs.
+ */
+export function escapeStepIdPart(part: string): string {
+  for (const ns of STEP_ID_NAMESPACES) {
+    if (part.startsWith(ns)) {
+      return ns + escapeRaw(part.slice(ns.length));
+    }
+  }
+  return escapeRaw(part);
+}
+
+/**
+ * Prefixes the SDK itself prepends to a user-supplied name (step.publish,
+ * compensation). They are structure, not user input: escaping their colon would
+ * change the id of every existing publish and compensation step, so the first
+ * resume after an upgrade would miss the memoized row and re-run the side
+ * effect. Only the leaf after the prefix is escaped, which is enough — a branch
+ * scope's index segment is always numeric, so the escaped leaf cannot line up
+ * with one. Mirrors stepIDNamespaces in sdk/go/ironflow/step.go.
+ */
+const STEP_ID_NAMESPACES = ["compensate:", "publish:"];
+
+function escapeRaw(part: string): string {
+  return part.replace(/\\/g, "\\\\").replace(/:/g, "\\:");
+}
+
+/**
  * Execution context for a function invocation
  */
 export class ExecutionContext {
@@ -52,6 +90,12 @@ export class ExecutionContext {
   readonly serverUrl?: string;
   /** API key for authenticated requests from steps */
   readonly apiKey?: string;
+  /**
+   * Called after each step is recorded. The pull worker uses it to schedule a
+   * debounced checkpoint (#1670) so a killed worker does not lose completed
+   * steps that only ever lived in the terminal update body. Unset in push mode.
+   */
+  onStepRecorded?: () => void;
 
   constructor(request: PushRequest, logger?: Logger, eventDefinitions?: EventDefinitionRegistry, stepTimeout?: string, serverUrl?: string, apiKey?: string) {
     this.runId = request.run_id;
@@ -108,15 +152,42 @@ export class ExecutionContext {
   generateStepId(name: string): string {
     const index = this.stepCounters.get(name) ?? 0;
     this.stepCounters.set(name, index + 1);
-    return `${this.runId}:${name}:${index}`;
+    return this.preferLegacyStepId(
+      `${this.runId}:${escapeStepIdPart(name)}:${index}`,
+      `${this.runId}:${name}:${index}`
+    );
+  }
+
+  /**
+   * Bridge the escaping rollout (#1694 item 4).
+   *
+   * The step id is computed SDK-side, but completedSteps is indexed by whatever
+   * id the server sent back — i.e. whatever a PRIOR invocation's SDK wrote. A run
+   * that paused at a segment boundary (sleep / waitForEvent / invoke) before this
+   * change shipped has rows keyed by the UNESCAPED name. After the deploy the
+   * newly escaped id would miss that row and re-execute an already-completed step
+   * for real: a double charge or a duplicate publish, once, at the upgrade
+   * boundary, for exactly the colon-using names this fix targets.
+   *
+   * So: use the legacy id only when it is the one actually memoized. Names
+   * without ":" or a backslash escape to themselves and never reach the lookup;
+   * new runs have no legacy rows, so they always get the escaped id.
+   * Mirrors preferLegacyStepID in sdk/go/ironflow/step.go.
+   */
+  preferLegacyStepId(id: string, legacy: string): string {
+    if (legacy === id) return id;
+    if (this.completedSteps.has(id)) return id;
+    if (this.completedSteps.has(legacy)) return legacy;
+    return id;
   }
 
   /**
    * Create a scoped context for a parallel branch
    */
   createBranchContext(parallelName: string, branchIndex: number): BranchContext {
-    const scopePrefix = `${this.runId}:${parallelName}:${branchIndex}`;
-    return new BranchContext(this, scopePrefix);
+    const scopePrefix = `${this.runId}:${escapeStepIdPart(parallelName)}:${branchIndex}`;
+    const legacyScopePrefix = `${this.runId}:${parallelName}:${branchIndex}`;
+    return new BranchContext(this, scopePrefix, legacyScopePrefix);
   }
 
   /**
@@ -210,6 +281,23 @@ export class ExecutionContext {
    */
   recordStep(step: StepResult): void {
     this.executedSteps.push(step);
+    this.onStepRecorded?.();
+  }
+
+  /**
+   * One #1671 warning per distinct parallel/map name per invocation. Without
+   * this, `step.map("outer", items, (i, s) => s.parallel("inner", ...))` emits
+   * one "inner" line per item — a thousand identical lines, which is how a
+   * warning gets filtered out and stops working. Keyed by name rather than a
+   * single per-run flag so two genuinely different call sites still both
+   * report.
+   */
+  private readonly warnedUnscopedNames = new Set<string>();
+
+  shouldWarnUnscoped(name: string): boolean {
+    if (this.warnedUnscopedNames.has(name)) return false;
+    this.warnedUnscopedNames.add(name);
+    return true;
   }
 
   /**
@@ -257,7 +345,34 @@ export class ExecutionContext {
 export class BranchContext {
   private readonly parent: ExecutionContext;
   private readonly scopePrefix: string;
+  /**
+   * scopePrefix built WITHOUT the #1694 name escaping, so a run that started
+   * before escaping shipped still matches its already-persisted branch step ids
+   * on resume. See ExecutionContext.preferLegacyStepId.
+   */
+  private readonly legacyScopePrefix: string;
   private stepCounters: Map<string, number> = new Map();
+  /**
+   * True once this branch used its scoped client — claimed a step id, or
+   * opened a nested parallel/map. Deliberately narrower than "was durable":
+   * a callback that reaches for the enclosing function's step client instead
+   * still records real steps, they just land outside this branch's scope.
+   * #1671 flags both, so this tracks use of the client, not durability.
+   */
+  private scopedClientUsed = false;
+
+  get usedScopedClient(): boolean {
+    return this.scopedClientUsed;
+  }
+
+  /**
+   * executeParallel calls this on entry so a nested parallel/map counts even
+   * when it has zero items — relying on createBranchContext instead misses
+   * the empty-collection case and warns about a correct callback.
+   */
+  markScopedClientUsed(): void {
+    this.scopedClientUsed = true;
+  }
 
   get logger(): Logger {
     return this.parent.logger;
@@ -275,15 +390,20 @@ export class BranchContext {
     return this.parent.apiKey;
   }
 
-  constructor(parent: ExecutionContext, scopePrefix: string) {
+  constructor(parent: ExecutionContext, scopePrefix: string, legacyScopePrefix?: string) {
     this.parent = parent;
     this.scopePrefix = scopePrefix;
+    this.legacyScopePrefix = legacyScopePrefix ?? scopePrefix;
   }
 
   generateStepId(name: string): string {
+    this.scopedClientUsed = true;
     const index = this.stepCounters.get(name) ?? 0;
     this.stepCounters.set(name, index + 1);
-    return `${this.scopePrefix}:${name}:${index}`;
+    return this.parent.preferLegacyStepId(
+      `${this.scopePrefix}:${escapeStepIdPart(name)}:${index}`,
+      `${this.legacyScopePrefix}:${name}:${index}`
+    );
   }
 
   shouldSkipStep(stepId: string): boolean {
@@ -318,9 +438,14 @@ export class BranchContext {
     this.parent.recordStep(step);
   }
 
+  shouldWarnUnscoped(name: string): boolean {
+    return this.parent.shouldWarnUnscoped(name);
+  }
+
   createBranchContext(parallelName: string, branchIndex: number): BranchContext {
-    const nestedPrefix = `${this.scopePrefix}:${parallelName}:${branchIndex}`;
-    return new BranchContext(this.parent, nestedPrefix);
+    const nestedPrefix = `${this.scopePrefix}:${escapeStepIdPart(parallelName)}:${branchIndex}`;
+    const legacyNestedPrefix = `${this.legacyScopePrefix}:${parallelName}:${branchIndex}`;
+    return new BranchContext(this.parent, nestedPrefix, legacyNestedPrefix);
   }
 
   registerCompensation(stepName: string, fn: () => Promise<void>): void {

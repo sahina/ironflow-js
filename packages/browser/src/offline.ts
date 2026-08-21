@@ -1,5 +1,5 @@
 /**
- * The offline-capable client (ADR 0052).
+ * The offline-capable client (ADR 0053).
  *
  * Why this is a separate factory rather than a flag on the singleton:
  * `configure()` returns `void`, so TypeScript cannot refine `emit()`'s static

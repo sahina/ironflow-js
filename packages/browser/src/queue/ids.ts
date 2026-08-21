@@ -1,5 +1,5 @@
 /**
- * Identifier generation for queued writes (ADR 0052).
+ * Identifier generation for queued writes (ADR 0053).
  *
  * Every queued write carries an idempotency key generated at ENQUEUE time, not
  * at send time. That ordering is the whole trick: a retry after a page reload

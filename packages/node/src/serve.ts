@@ -231,9 +231,18 @@ export function serve(config: ServeConfig): UniversalHandler {
             if (event.idempotencyKey) {
               emitBody.idempotencyKey = event.idempotencyKey;
             }
+            // /api/v1/events is not a public route (isPublicPath rejects every
+            // /api/ path), so an unauthenticated emit 502s the whole webhook
+            // outside dev mode. Same env key the step callbacks below use.
+            const emitHeaders: Record<string, string> = {
+              "Content-Type": "application/json",
+            };
+            if (process.env.IRONFLOW_API_KEY) {
+              emitHeaders["Authorization"] = `Bearer ${process.env.IRONFLOW_API_KEY}`;
+            }
             const emitResp = await fetch(`${emitUrl}/api/v1/events`, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: emitHeaders,
               body: JSON.stringify(emitBody),
             });
             if (!emitResp.ok) {
@@ -339,7 +348,16 @@ async function executeHandler(
   serverUrl?: string
 ): Promise<PushResponse> {
   // Create execution context (with optional upcasting)
-  const ctx = new ExecutionContext(request, undefined, eventDefinitions, fn.config.stepTimeout, serverUrl);
+  // Step callbacks authenticate with the same env key the worker uses; serve()
+  // has no apiKey config field (parity with the Go SDK's serve handler).
+  const ctx = new ExecutionContext(
+    request,
+    undefined,
+    eventDefinitions,
+    fn.config.stepTimeout,
+    serverUrl,
+    process.env.IRONFLOW_API_KEY
+  );
 
   // Create step client
   const step = createStepClient(ctx);

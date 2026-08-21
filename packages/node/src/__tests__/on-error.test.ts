@@ -14,6 +14,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     },
     DEFAULT_SERVER_URL: "http://localhost:9123",
     getServerUrl: () => undefined,
+    AUTH_HELP: actual.AUTH_HELP,
     IronflowError: actual.IronflowError,
     UnauthenticatedError: actual.UnauthenticatedError,
     EnterpriseRequiredError: actual.EnterpriseRequiredError,

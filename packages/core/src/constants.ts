@@ -70,6 +70,12 @@ export const DEFAULT_WORKER = {
   HEARTBEAT_INTERVAL_MS: 30_000,
   /** Default reconnect delay in milliseconds (5 seconds). */
   RECONNECT_DELAY_MS: 5_000,
+  /** Default step-checkpoint debounce window in milliseconds (#1670). */
+  CHECKPOINT_INTERVAL_MS: 1_000,
+  /** Maximum steps in one checkpoint batch. Must not exceed the server's cap. */
+  MAX_CHECKPOINT_STEPS: 500,
+  /** Ceiling for exponential backoff after failed checkpoints (30 seconds). */
+  MAX_CHECKPOINT_BACKOFF_MS: 30_000,
 } as const;
 
 /** Default reconnection configuration */

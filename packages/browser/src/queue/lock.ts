@@ -1,5 +1,5 @@
 /**
- * Cross-tab flush coordination for the offline write queue (ADR 0052).
+ * Cross-tab flush coordination for the offline write queue (ADR 0053).
  *
  * IndexedDB is shared per-origin, so every open tab sees the same outbox. Two
  * tabs draining at once stay *correct* — the engine deduplicates by idempotency

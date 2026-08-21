@@ -33,6 +33,7 @@ import type {
   WaitProgress,
   QuerySQLProjectionOptions,
   SQLProjectionQueryResult,
+  SQLProjectionValue,
   ProjectionStateResult,
   ProjectionSubscriptionCallbacks,
   TimeTravelRunStateSnapshot,
@@ -56,6 +57,9 @@ import type {
   UpcastResult,
   WebhookSource,
   CreateWebhookSourceInput,
+  UpdateWebhookSourceInput,
+  RotateWebhookSecretInput,
+  DisableWebhookSignatureVerificationInput,
   WebhookDelivery,
   ListWebhookDeliveriesOptions,
   AuditEvent,
@@ -90,7 +94,9 @@ import {
   peelProjectionEnvelope,
   type EmitSyncResult,
   webhookVerifyConfigToWire,
-  webhookVerifyConfigFromWire,
+  webhookGraceToWire,
+  webhookSourceFromWire,
+  webhookDeliveryFromWire,
 } from "@ironflow/core";
 import type {
   AuthConfig,
@@ -127,7 +133,7 @@ export const REPLAY_QUEUED_WRITE = Symbol("ironflow.replayQueuedWrite");
  * is a "later", not a "never", and a caller that treats it as permanent gives
  * up at exactly the moment backing off would have worked.
  *
- * This matters most for the offline write queue (ADR 0052), whose drain after
+ * This matters most for the offline write queue (ADR 0053), whose drain after
  * a long offline stretch is a burst of writes — the single most likely way to
  * earn a 429. Classifying it as permanent would send those writes to the dead
  * letter store precisely when the queue was doing its job.
@@ -1616,7 +1622,7 @@ class IronflowClient {
 
     const response = await this.streamRequest<{
       columns: string[];
-      rows?: Array<{ values: string[] }>;
+      rows?: Array<{ values: string[]; typedValues?: SQLProjectionValue[] }>;
       totalCount: number | string;
     }>("/ironflow.v1.ProjectionService/QuerySQLProjection", {
       name,
@@ -1629,6 +1635,7 @@ class IronflowClient {
     return {
       columns: response.columns ?? [],
       rows: (response.rows ?? []).map((r) => r.values),
+      typedRows: (response.rows ?? []).map((r) => r.typedValues ?? []),
       totalCount: Number(response.totalCount ?? 0),
     };
   }
@@ -2506,71 +2513,165 @@ class IronflowClient {
    * ```
    */
   readonly webhooks = {
-    /** Create a new webhook source */
+    /**
+     * Create a new webhook source.
+     *
+     * The returned `ingestToken` is the ONLY copy (ADR 0048) — the server
+     * keeps a hash, so a source whose token is dropped can never receive a
+     * delivery.
+     */
     create: async (input: CreateWebhookSourceInput): Promise<WebhookSource> => {
       this.ensureConfigured();
-      const response = await this.streamRequest<{
-        id: string;
-        event_prefix: string;
-        verify_header?: string;
-        verify_algorithm?: string;
-        source_type?: string;
-        metadata?: Record<string, unknown>;
-        ingest_token?: string;
-        ingest_token_prefix?: string;
-        verify_config?: Record<string, unknown>;
-        created_at?: string;
-        updated_at?: string;
-      }>("/ironflow.v1.WebhookService/CreateWebhookSource", {
-        id: input.id,
-        event_prefix: input.eventPrefix,
-        verify_header: input.verifyHeader ?? "",
-        verify_algorithm: input.verifyAlgorithm ?? "",
-        verify_secret: input.verifySecret ?? "",
-        verify_config: webhookVerifyConfigToWire(input.verifyConfig),
-        metadata: input.metadata,
-      });
-      return {
-        id: response.id,
-        eventPrefix: response.event_prefix,
-        verifyHeader: response.verify_header,
-        verifyAlgorithm: response.verify_algorithm,
-        sourceType: response.source_type,
-        metadata: response.metadata,
-        // ADR 0048: raw token returned only here; the server keeps a hash.
-        ingestToken: response.ingest_token,
-        ingestTokenPrefix: response.ingest_token_prefix,
-        verifyConfig: webhookVerifyConfigFromWire(response.verify_config),
-        createdAt: response.created_at,
-        updatedAt: response.updated_at,
-      };
+      return webhookSourceFromWire(
+        await this.streamRequest<Record<string, unknown>>(
+          "/ironflow.v1.WebhookService/CreateWebhookSource",
+          {
+            name: input.name,
+            event_prefix: input.eventPrefix,
+            verify_header: input.verifyHeader ?? "",
+            verify_algorithm: input.verifyAlgorithm ?? "",
+            verify_secret: input.verifySecret ?? "",
+            verify_config: webhookVerifyConfigToWire(input.verifyConfig),
+            metadata: input.metadata,
+          },
+        ),
+      );
+    },
+
+    /** Fetch a single webhook source by ID. */
+    getSource: async (id: string): Promise<WebhookSource> => {
+      this.ensureConfigured();
+      return webhookSourceFromWire(
+        await this.streamRequest<Record<string, unknown>>(
+          "/ironflow.v1.WebhookService/GetWebhookSource",
+          { id },
+        ),
+      );
+    },
+
+    /**
+     * Replace the editable fields on a webhook source.
+     *
+     * FULL-REPLACE, not patch — every omitted field is cleared server-side.
+     * Fetch with `getSource` first and copy across what you are not changing;
+     * see {@link UpdateWebhookSourceInput}.
+     */
+    updateSource: async (input: UpdateWebhookSourceInput): Promise<WebhookSource> => {
+      this.ensureConfigured();
+      return webhookSourceFromWire(
+        await this.streamRequest<Record<string, unknown>>(
+          "/ironflow.v1.WebhookService/UpdateWebhookSource",
+          {
+            id: input.id,
+            name: input.name,
+            verify_header: input.verifyHeader ?? "",
+            verify_algorithm: input.verifyAlgorithm ?? "",
+            verify_config: webhookVerifyConfigToWire(input.verifyConfig),
+            metadata: input.metadata,
+            ...(input.expectedUpdatedAt
+              ? { expected_updated_at: input.expectedUpdatedAt }
+              : {}),
+          },
+        ),
+      );
+    },
+
+    /**
+     * Rotate a source's verify secret (ADR 0024), keeping the prior secret
+     * verifying as `prev` for the grace window.
+     */
+    rotateSecret: async (input: RotateWebhookSecretInput): Promise<WebhookSource> => {
+      this.ensureConfigured();
+      return webhookSourceFromWire(
+        await this.streamRequest<Record<string, unknown>>(
+          "/ironflow.v1.WebhookService/RotateWebhookSecret",
+          {
+            id: input.id,
+            verify_secret: input.verifySecret,
+            // Tri-state + range-validated; see webhookGraceToWire.
+            ...webhookGraceToWire(input.graceSeconds),
+            ...(input.expectedUpdatedAt
+              ? { expected_updated_at: input.expectedUpdatedAt }
+              : {}),
+          },
+        ),
+      );
+    },
+
+    /**
+     * Force-expire the previous secret slot, ending a rotation grace window
+     * early. Idempotent.
+     */
+    expireSecretPrev: async (
+      id: string,
+      expectedUpdatedAt?: string,
+    ): Promise<WebhookSource> => {
+      this.ensureConfigured();
+      return webhookSourceFromWire(
+        await this.streamRequest<Record<string, unknown>>(
+          "/ironflow.v1.WebhookService/ExpireWebhookSecretPrev",
+          {
+            id,
+            ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}),
+          },
+        ),
+      );
+    },
+
+    /**
+     * Stop verifying signatures on a source. The prior secret is preserved as
+     * `prev` for the grace window; after it lapses the source ingests
+     * unsigned.
+     */
+    disableSignatureVerification: async (
+      input: DisableWebhookSignatureVerificationInput,
+    ): Promise<WebhookSource> => {
+      this.ensureConfigured();
+      return webhookSourceFromWire(
+        await this.streamRequest<Record<string, unknown>>(
+          "/ironflow.v1.WebhookService/DisableWebhookSignatureVerification",
+          {
+            id: input.id,
+            // Tri-state + range-validated; see webhookGraceToWire.
+            ...webhookGraceToWire(input.graceSeconds),
+            ...(input.expectedUpdatedAt
+              ? { expected_updated_at: input.expectedUpdatedAt }
+              : {}),
+          },
+        ),
+      );
+    },
+
+    /**
+     * Rotate a source's per-source ingest token (ADR 0048).
+     *
+     * No grace window — the previous token stops working immediately, so
+     * update the provider's URL as soon as this returns. `ingestToken` on the
+     * result is the only copy.
+     */
+    rotateIngestToken: async (
+      id: string,
+      expectedUpdatedAt?: string,
+    ): Promise<WebhookSource> => {
+      this.ensureConfigured();
+      return webhookSourceFromWire(
+        await this.streamRequest<Record<string, unknown>>(
+          "/ironflow.v1.WebhookService/RotateWebhookIngestToken",
+          {
+            id,
+            ...(expectedUpdatedAt ? { expected_updated_at: expectedUpdatedAt } : {}),
+          },
+        ),
+      );
     },
 
     /** List all registered webhook sources */
     listSources: async (): Promise<WebhookSource[]> => {
       this.ensureConfigured();
       const response = await this.streamRequest<{
-        sources?: Array<{
-          id: string;
-          event_prefix: string;
-          verify_header?: string;
-          verify_algorithm?: string;
-          source_type?: string;
-          metadata?: Record<string, unknown>;
-          created_at?: string;
-          updated_at?: string;
-        }>;
+        sources?: Array<Record<string, unknown>>;
       }>("/ironflow.v1.WebhookService/ListWebhookSources", { limit: 0, offset: 0 });
-      return (response.sources ?? []).map((s) => ({
-        id: s.id,
-        eventPrefix: s.event_prefix,
-        verifyHeader: s.verify_header,
-        verifyAlgorithm: s.verify_algorithm,
-        sourceType: s.source_type,
-        metadata: s.metadata,
-        createdAt: s.created_at,
-        updatedAt: s.updated_at,
-      }));
+      return (response.sources ?? []).map(webhookSourceFromWire);
     },
 
     /** Delete a webhook source by ID */
@@ -2589,15 +2690,7 @@ class IronflowClient {
     }> => {
       this.ensureConfigured();
       const response = await this.streamRequest<{
-        deliveries?: Array<{
-          id: string;
-          source_id: string;
-          external_id?: string;
-          status: string;
-          event_id?: string;
-          error?: string;
-          created_at?: string;
-        }>;
+        deliveries?: Array<Record<string, unknown>>;
         total_count?: number;
       }>("/ironflow.v1.WebhookService/ListWebhookDeliveries", {
         source_id: opts?.sourceId ?? "",
@@ -2606,15 +2699,7 @@ class IronflowClient {
         offset: opts?.offset ?? 0,
       });
       return {
-        deliveries: (response.deliveries ?? []).map((d) => ({
-          id: d.id,
-          sourceId: d.source_id,
-          externalId: d.external_id,
-          status: d.status,
-          eventId: d.event_id,
-          error: d.error,
-          createdAt: d.created_at,
-        })),
+        deliveries: (response.deliveries ?? []).map(webhookDeliveryFromWire),
         totalCount: response.total_count ?? 0,
       };
     },
@@ -2919,7 +3004,7 @@ class IronflowClient {
   }
 
   /**
-   * Replay a write that the offline queue stored earlier (ADR 0052).
+   * Replay a write that the offline queue stored earlier (ADR 0053).
    *
    * Keyed by a module-private symbol rather than a name. An `@internal` JSDoc
    * tag does nothing without `stripInternal`, which this repo does not set, so

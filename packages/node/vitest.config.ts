@@ -5,6 +5,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    // The SDK falls back to IRONFLOW_API_KEY (#1672), so a contributor shell
+    // that exports it would add an Authorization header to every exact-header
+    // assertion in the package. Neutralise it for the whole suite.
+    env: { IRONFLOW_API_KEY: '' },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'json'],

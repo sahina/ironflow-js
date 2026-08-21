@@ -22,6 +22,12 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     EnterpriseRequiredError: actual.EnterpriseRequiredError,
     UnauthorizedError: actual.UnauthorizedError,
     peelProjectionEnvelope: actual.peelProjectionEnvelope,
+    // Pure wire mappers — pass them through rather than stubbing, since the
+    // webhook tests below assert on exactly the shape they produce.
+    webhookVerifyConfigToWire: actual.webhookVerifyConfigToWire,
+    webhookGraceToWire: actual.webhookGraceToWire,
+    webhookSourceFromWire: actual.webhookSourceFromWire,
+    webhookDeliveryFromWire: actual.webhookDeliveryFromWire,
   };
 });
 
@@ -32,6 +38,7 @@ describe("IronflowClient", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
   });
 
   describe("constructor", () => {
@@ -45,6 +52,66 @@ describe("IronflowClient", () => {
         serverUrl: "http://custom:9999",
       });
       expect(client).toBeDefined();
+    });
+
+    it("should fall back to IRONFLOW_API_KEY when apiKey is not provided", async () => {
+      vi.stubEnv("IRONFLOW_API_KEY", "env-key");
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createClient({ serverUrl: "http://localhost:9123" }).patchStep("step_123", {});
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/api/v1/steps/patch",
+        expect.objectContaining({
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer env-key",
+          },
+        })
+      );
+    });
+
+    // Empty means "not configured", not "force anonymous" — matches Go's
+    // `if apiKey == "" { apiKey = GetAPIKey() }`. This is why the fallback uses
+    // `||` rather than `??`: `apiKey: process.env.X ?? ""` must still authenticate.
+    it("should treat an empty apiKey as unset and fall back", async () => {
+      vi.stubEnv("IRONFLOW_API_KEY", "env-key");
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createClient({ serverUrl: "http://localhost:9123", apiKey: "" }).patchStep("step_123", {});
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/api/v1/steps/patch",
+        expect.objectContaining({
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer env-key",
+          },
+        })
+      );
+    });
+
+    it("should prefer an explicit apiKey over IRONFLOW_API_KEY", async () => {
+      vi.stubEnv("IRONFLOW_API_KEY", "env-key");
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createClient({
+        serverUrl: "http://localhost:9123",
+        apiKey: "explicit-key",
+      }).patchStep("step_123", {});
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/api/v1/steps/patch",
+        expect.objectContaining({
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer explicit-key",
+          },
+        })
+      );
     });
   });
 
@@ -2893,32 +2960,203 @@ describe("IronflowClient", () => {
   });
 
   describe("webhooks", () => {
-    it("should list webhook sources via ConnectRPC", async () => {
+    // Every mock body below is snake_case, because that is what the server
+    // actually sends: WebhookService registers snakeJSONCodec via
+    // SnakeJSONHandlerOptions(). Mocks that spelled these camelCase is how
+    // listSources shipped returning undefined for every field but id.
+    // The codec is scoped to WebhookService only (ADR 0023) — do not
+    // generalize these mocks to another service's tests.
+    const okJson = (body: unknown) => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({
-          sources: [
-            {
-              id: "stripe",
-              eventPrefix: "stripe.",
-              sourceType: "api",
-              createdAt: "2026-03-28T00:00:00Z",
-            },
-          ],
-        }),
+        json: () => Promise.resolve(body),
       });
       vi.stubGlobal("fetch", mockFetch);
+      return mockFetch;
+    };
+    const sentBody = (mockFetch: ReturnType<typeof vi.fn>) =>
+      JSON.parse(assertDefined(mockFetch.mock.calls[0])[1].body);
+
+    it("should list webhook sources via ConnectRPC", async () => {
+      const mockFetch = okJson({
+        sources: [
+          {
+            id: "wh_1",
+            name: "Stripe",
+            event_prefix: "stripe.",
+            source_type: "api",
+            verify_secret_set: true,
+            verify_secret_prev_set: true,
+            verify_secret_prev_expires_at: "2026-03-29T00:00:00Z",
+            ingest_token_prefix: "ifwh_1a2b3c4d",
+            created_at: "2026-03-28T00:00:00Z",
+          },
+        ],
+      });
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
       const sources = await client.webhooks.listSources();
 
       expect(sources).toHaveLength(1);
-      expect(assertDefined(sources[0]).id).toBe("stripe");
-      expect(assertDefined(sources[0]).eventPrefix).toBe("stripe.");
+      const s = assertDefined(sources[0]);
+      expect(s.id).toBe("wh_1");
+      expect(s.name).toBe("Stripe");
+      expect(s.eventPrefix).toBe("stripe.");
+      expect(s.sourceType).toBe("api");
+      expect(s.verifySecretSet).toBe(true);
+      expect(s.verifySecretPrevSet).toBe(true);
+      expect(s.verifySecretPrevExpiresAt).toBe("2026-03-29T00:00:00Z");
+      expect(s.ingestTokenPrefix).toBe("ifwh_1a2b3c4d");
+      expect(s.createdAt).toBe("2026-03-28T00:00:00Z");
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.WebhookService/ListWebhookSources",
         expect.objectContaining({ method: "POST" })
       );
+    });
+
+    it("should send name (not id) on create and surface the write-once token", async () => {
+      const mockFetch = okJson({
+        id: "wh_1",
+        name: "Stripe",
+        event_prefix: "stripe.",
+        ingest_token: "ifwh_rawsecret",
+        ingest_token_prefix: "ifwh_rawsecre",
+      });
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const source = await client.webhooks.create({
+        name: "Stripe",
+        eventPrefix: "stripe.",
+        verifySecret: "whsec_x",
+      });
+
+      // CreateWebhookSourceRequest reserves field 1 (id) and
+      // WebhookHandler.CreateWebhookSource rejects an empty Name, so the old
+      // shape got InvalidArgument on every call.
+      const body = sentBody(mockFetch);
+      expect(body.name).toBe("Stripe");
+      expect(body).not.toHaveProperty("id");
+      expect(source.id).toBe("wh_1");
+      expect(source.ingestToken).toBe("ifwh_rawsecret");
+    });
+
+    it("should fetch a single source", async () => {
+      const mockFetch = okJson({ id: "wh_1", name: "Stripe", event_prefix: "stripe." });
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const source = await client.webhooks.getSource("wh_1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.WebhookService/GetWebhookSource",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ id: "wh_1" }) })
+      );
+      expect(source.name).toBe("Stripe");
+    });
+
+    it("should send the concurrency token on update and omit it when absent", async () => {
+      let mockFetch = okJson({ id: "wh_1", name: "renamed", event_prefix: "stripe." });
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await client.webhooks.updateSource({
+        id: "wh_1",
+        name: "renamed",
+        verifyHeader: "Stripe-Signature",
+        expectedUpdatedAt: "2026-03-28T00:00:00Z",
+      });
+      let body = sentBody(mockFetch);
+      expect(body.verify_header).toBe("Stripe-Signature");
+      expect(body.expected_updated_at).toBe("2026-03-28T00:00:00Z");
+
+      mockFetch = okJson({ id: "wh_1", name: "renamed", event_prefix: "stripe." });
+      await client.webhooks.updateSource({ id: "wh_1", name: "renamed" });
+      body = sentBody(mockFetch);
+      expect(body).not.toHaveProperty("expected_updated_at");
+      // verify_config is preserve-on-omit server-side, which only works if the
+      // key is ABSENT. Sending `verify_config: {}` would wipe the descriptor.
+      expect(body).not.toHaveProperty("verify_config");
+    });
+
+    it("should treat graceSeconds as tri-state on rotateSecret", async () => {
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const response = { id: "wh_1", name: "Stripe", event_prefix: "stripe.", verify_secret_set: true };
+
+      // Omitted → the key is absent, so the server picks its own default.
+      // Baking 86400 in here would override IRONFLOW_WEBHOOK_SECRET_GRACE_HOURS_DEFAULT.
+      let mockFetch = okJson(response);
+      await client.webhooks.rotateSecret({ id: "wh_1", verifySecret: "whsec_new" });
+      expect(sentBody(mockFetch)).not.toHaveProperty("grace_seconds");
+
+      // 0 → instant cutover. A truthiness check would drop it and silently
+      // leave the old secret verifying for 24 h.
+      mockFetch = okJson(response);
+      await client.webhooks.rotateSecret({ id: "wh_1", verifySecret: "whsec_new", graceSeconds: 0 });
+      expect(sentBody(mockFetch).grace_seconds).toBe(0);
+
+      mockFetch = okJson(response);
+      await client.webhooks.rotateSecret({ id: "wh_1", verifySecret: "whsec_new", graceSeconds: 3600 });
+      expect(sentBody(mockFetch).grace_seconds).toBe(3600);
+    });
+
+    it("should expire the previous secret slot", async () => {
+      const mockFetch = okJson({
+        id: "wh_1",
+        name: "Stripe",
+        event_prefix: "stripe.",
+        verify_secret_prev_set: false,
+      });
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const source = await client.webhooks.expireSecretPrev("wh_1", "2026-03-28T00:00:00Z");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.WebhookService/ExpireWebhookSecretPrev",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ id: "wh_1", expected_updated_at: "2026-03-28T00:00:00Z" }),
+        })
+      );
+      // An explicit false must survive as false. Collapsing it to undefined
+      // makes "the slot is empty" indistinguishable from "the mapper stopped
+      // reading the key".
+      expect(source.verifySecretPrevSet).toBe(false);
+    });
+
+    it("should disable signature verification with a tri-state grace", async () => {
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const response = { id: "wh_1", name: "Stripe", event_prefix: "stripe." };
+
+      let mockFetch = okJson(response);
+      await client.webhooks.disableSignatureVerification({ id: "wh_1" });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.WebhookService/DisableWebhookSignatureVerification",
+        expect.objectContaining({ method: "POST" })
+      );
+      expect(sentBody(mockFetch)).not.toHaveProperty("grace_seconds");
+
+      mockFetch = okJson(response);
+      await client.webhooks.disableSignatureVerification({ id: "wh_1", graceSeconds: 0 });
+      expect(sentBody(mockFetch).grace_seconds).toBe(0);
+    });
+
+    it("should rotate the ingest token", async () => {
+      const mockFetch = okJson({
+        id: "wh_1",
+        name: "Stripe",
+        event_prefix: "stripe.",
+        ingest_token: "ifwh_rotated",
+        ingest_token_prefix: "ifwh_rotated",
+        updated_at: "2026-03-28T01:00:00Z",
+      });
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const source = await client.webhooks.rotateIngestToken("wh_1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.WebhookService/RotateWebhookIngestToken",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ id: "wh_1" }) })
+      );
+      expect(source.ingestToken).toBe("ifwh_rotated");
+      expect(source.updatedAt).toBe("2026-03-28T01:00:00Z");
     });
 
     it("should delete a webhook source", async () => {
@@ -2941,37 +3179,33 @@ describe("IronflowClient", () => {
     });
 
     it("should list webhook deliveries with filters", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({
-          deliveries: [
-            {
-              id: "del-1",
-              sourceId: "stripe",
-              status: "delivered",
-              eventId: "evt-123",
-            },
-          ],
-          totalCount: 1,
-        }),
+      okJson({
+        deliveries: [
+          {
+            id: "del-1",
+            source_id: "wh_1",
+            status: "delivered",
+            event_id: "evt-123",
+            signature_key: "current",
+          },
+        ],
+        total_count: 1,
       });
-      vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.webhooks.listDeliveries({ sourceId: "stripe", limit: 10 });
+      const result = await client.webhooks.listDeliveries({ sourceId: "wh_1", limit: 10 });
 
       expect(result.deliveries).toHaveLength(1);
-      expect(assertDefined(result.deliveries[0]).id).toBe("del-1");
-      expect(assertDefined(result.deliveries[0]).sourceId).toBe("stripe");
+      const d = assertDefined(result.deliveries[0]);
+      expect(d.id).toBe("del-1");
+      expect(d.sourceId).toBe("wh_1");
+      expect(d.eventId).toBe("evt-123");
+      expect(d.signatureKey).toBe("current");
       expect(result.totalCount).toBe(1);
     });
 
     it("should return empty deliveries array on empty response", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ deliveries: null, totalCount: 0 }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
+      okJson({ deliveries: null, total_count: 0 });
 
       const client = createClient();
       const result = await client.webhooks.listDeliveries();

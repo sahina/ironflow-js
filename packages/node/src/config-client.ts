@@ -14,6 +14,7 @@ import type {
 } from "@ironflow/core";
 import {
   IronflowError,
+  AUTH_HELP,
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
@@ -208,11 +209,11 @@ function enc(s: string): string {
 function throwTypedError(status: number, message: string): never {
   switch (status) {
     case 401:
-      throw new UnauthenticatedError(message);
+      throw new UnauthenticatedError(`${message} — ${AUTH_HELP}`);
     case 402:
       throw new EnterpriseRequiredError(message);
     case 403:
-      throw new UnauthorizedError(message);
+      throw new UnauthorizedError(`${message} — ${AUTH_HELP}`);
     default:
       throw new IronflowError(message);
   }

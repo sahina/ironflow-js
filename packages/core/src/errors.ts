@@ -472,7 +472,7 @@ export class UnauthorizedError extends IronflowError {
  * `order.placed` while keeping `order.shipped` manufactures exactly the
  * corrupted projection that strict FIFO exists to prevent. Rejecting is louder
  * and safer, because the application finds out and can stop generating writes
- * that depend on the one that never landed. See ADR 0052, Alternative G.
+ * that depend on the one that never landed. See ADR 0053, Alternative G.
  */
 export class QueueFullError extends IronflowError {
   constructor(message = "Offline write queue is full") {
@@ -481,5 +481,31 @@ export class QueueFullError extends IronflowError {
       retryable: false,
     });
     this.name = "QueueFullError";
+  }
+}
+
+/**
+ * Guidance appended to 401/403 errors (#1673). A worker started without a key
+ * used to log `401` and reconnect forever, never naming the env var or the key
+ * file. The path is a default, not a fact: `serve` resolves it three ways
+ * (--bootstrap-key-file, <db-dir>/, os.TempDir()) — so point at the banner.
+ */
+export const AUTH_HELP =
+  "Set IRONFLOW_API_KEY (or pass `apiKey` in the config). " +
+  "The server writes a first-boot admin key to <db-dir>/.ironflow_bootstrap_key.json " +
+  "(dev default: .ironflow/.ironflow_bootstrap_key.json) and prints the exact path in its " +
+  "startup banner. Read it with: cat <path> | jq -r .key";
+
+/**
+ * Throw a typed, actionable error for 401/403; no-op for every other status.
+ * Both thrown types are non-retryable — callers with a reconnect loop should
+ * break out rather than retry an auth failure on the network cadence.
+ */
+export function throwIfAuthError(status: number, context: string): void {
+  if (status === 401) {
+    throw new UnauthenticatedError(`${context}: 401 unauthenticated. ${AUTH_HELP}`);
+  }
+  if (status === 403) {
+    throw new UnauthorizedError(`${context}: 403 forbidden. ${AUTH_HELP}`);
   }
 }

@@ -1,5 +1,5 @@
 /**
- * IndexedDB persistence for the offline write queue (ADR 0052).
+ * IndexedDB persistence for the offline write queue (ADR 0053).
  *
  * Two object stores:
  *

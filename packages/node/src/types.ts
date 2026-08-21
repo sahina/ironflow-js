@@ -80,8 +80,18 @@ export interface WorkerConfig {
   environment?: string;
   /** Event definition registry for automatic upcasting of event data */
   eventDefinitions?: EventDefinitionRegistry;
-  /** API key for authentication (default: IRONFLOW_API_KEY env var) */
+  /** API key for authentication. Empty or unset falls back to the IRONFLOW_API_KEY env var. */
   apiKey?: string;
+  /**
+   * Debounce window in ms for checkpointing completed steps to the server
+   * while a job is still running (default: 1000; 0 disables). Without
+   * checkpointing, step results reach the server only in the terminal update,
+   * so a killed worker loses all in-flight progress and the reclaimed run
+   * re-executes every step (#1670).
+   *
+   * REST polling worker only — `createStreamingWorker` ignores it.
+   */
+  checkpointInterval?: number;
 }
 
 /**

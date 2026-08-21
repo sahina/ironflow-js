@@ -2,7 +2,7 @@
  * Vitest setup for @ironflow/browser.
  *
  * jsdom ships no `indexedDB` and no `navigator.locks`, so the offline write
- * queue (ADR 0052) has no test environment out of the box. This file supplies
+ * queue (ADR 0053) has no test environment out of the box. This file supplies
  * IndexedDB via fake-indexeddb and gives each test file a clean database.
  *
  * `navigator.locks` is deliberately NOT shimmed here. The queue reaches it

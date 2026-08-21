@@ -512,6 +512,8 @@ The `serve()` function creates a universal HTTP handler for serverless deploymen
 | `serverUrl` | `string` | Ironflow server URL (for emitting webhook events). |
 | `webhooks` | `IronflowWebhook[]` | Webhook sources to handle. |
 
+There is no `apiKey` field. Both authenticated hops out of `serve()` -- step callbacks such as `step.publish`, and the webhook `transform` result posted to `/api/v1/events` -- read the `IRONFLOW_API_KEY` env var, matching the Go SDK's serve handler. Neither route is public, so without that variable set they fail outside dev mode.
+
 ### Next.js App Router
 
 ```typescript
@@ -579,7 +581,7 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `logger` | `Logger \| false` | -- | Custom logger or `false` to disable. |
 | `environment` | `string` | `IRONFLOW_ENV` or `"default"` | Target environment. |
 | `eventDefinitions` | `EventDefinitionRegistry` | -- | Registry for automatic event upcasting. |
-| `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. |
+| `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `transport` | `"polling" \| "streaming"` | `"polling"` | Inert -- `createWorker` always polls. Import `createStreamingWorker` from `@ironflow/node/worker-streaming` for streaming. |
 
 ### Worker interface
@@ -652,7 +654,7 @@ The HTTP client for interacting with the Ironflow server from your backend code.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `serverUrl` | `string` | `http://localhost:9123` or `IRONFLOW_SERVER_URL` | Server URL. |
-| `apiKey` | `string` | -- | API key for authentication. |
+| `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `timeout` | `number` | `30000` | Request timeout in ms. |
 | `onError` | `OnErrorHandler` | -- | Global error handler (optional). |
 
@@ -957,19 +959,39 @@ const out = await client.schemas.testUpcast({
 Manage webhook *sources* registered with the Ironflow server (used by the dashboard and delivery tracking). For defining a webhook handler in code, use `createWebhook()` and pass it to `serve()`.
 
 ```typescript
-await client.webhooks.create({
-  id: 'stripe',
+// The ID is server-generated; `name` is the required display label.
+const source = await client.webhooks.create({
+  name: 'Stripe production',
   eventPrefix: 'stripe',
   verifyHeader: 'stripe-signature',
   verifyAlgorithm: 'hmac-sha256',
   verifySecret: process.env.STRIPE_WEBHOOK_SECRET,
 });
+source.ingestToken;  // write-once (ADR 0048) — capture it now
 
 const sources = await client.webhooks.listSources();
-await client.webhooks.deleteSource('stripe');
+const current = await client.webhooks.getSource(source.id);
+
+// Full-replace, not patch: omitted fields are cleared server-side.
+await client.webhooks.updateSource({
+  id: current.id,
+  name: 'Stripe production (EU)',
+  verifyHeader: current.verifyHeader,
+  verifyAlgorithm: current.verifyAlgorithm,
+  metadata: current.metadata,
+  expectedUpdatedAt: current.updatedAt,
+});
+
+// graceSeconds is tri-state: omit = server default, 0 = instant cutover, N = seconds.
+await client.webhooks.rotateSecret({ id: source.id, verifySecret: 'whsec_new' });
+await client.webhooks.expireSecretPrev(source.id);
+await client.webhooks.disableSignatureVerification({ id: source.id, graceSeconds: 0 });
+await client.webhooks.rotateIngestToken(source.id);
+
+await client.webhooks.deleteSource(source.id);
 
 const { deliveries } = await client.webhooks.listDeliveries({
-  sourceId: 'stripe',
+  sourceId: source.id,
   status: 'failed',
   limit: 25,
 });
@@ -1302,7 +1324,7 @@ Real-time event subscriptions via WebSocket with auto-reconnect, consumer groups
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `serverUrl` | `string` | -- | **Required.** Server URL (e.g., `"http://localhost:9123"`). |
-| `apiKey` | `string` | -- | API key for authentication. |
+| `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `environment` | `string` | -- | Environment for scoped subscriptions. |
 | `autoReconnect` | `boolean` | `true` | Enable automatic reconnection. |
 | `reconnectDelay` | `number` | `1000` | Initial reconnect delay in ms. |

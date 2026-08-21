@@ -38,7 +38,7 @@ export { patterns } from "@ironflow/core";
 export interface SubscriptionClientConfig {
   /** Server URL (e.g., "http://localhost:9123"). WebSocket URL is derived automatically. */
   serverUrl: string;
-  /** API key for authentication */
+  /** API key for authentication. Empty or unset falls back to the IRONFLOW_API_KEY env var. */
   apiKey?: string;
   /** Environment for environment-scoped subscriptions */
   environment?: string;
@@ -163,8 +163,9 @@ export class SubscriptionClient {
     if (config.environment) {
       params.push(`env=${encodeURIComponent(config.environment)}`);
     }
-    if (config.apiKey) {
-      params.push(`token=${encodeURIComponent(config.apiKey)}`);
+    const apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
+    if (apiKey) {
+      params.push(`token=${encodeURIComponent(apiKey)}`);
     }
     if (params.length > 0) {
       const separator = baseWsUrl.includes("?") ? "&" : "?";

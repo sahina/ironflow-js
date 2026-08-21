@@ -1420,7 +1420,12 @@ For projections backed by relational tables (Cloud / managed PG).
 ```typescript
 interface CreateSQLProjectionInput {
   name: string;
-  /** CREATE TABLE DDL for the projection table (must use proj_ prefix) */
+  /**
+   * DDL for the projection: one CREATE TABLE on a proj_-prefixed table, plus
+   * optional CREATE EXTENSION (vector, pg_trgm) before it and CREATE INDEX
+   * statements on that same table after it. Index names must start with the
+   * table name.
+   */
   tableSql: string;
   /** Map of event_name → parameterized SQL handler (INSERT/UPDATE/DELETE) */
   eventHandlers: Record<string, string>;
@@ -1429,8 +1434,8 @@ interface CreateSQLProjectionInput {
 }
 
 interface QuerySQLProjectionOptions {
-  where?: string; // e.g. "status = 'OPEN'"
-  orderBy?: string; // e.g. "created_at DESC"
+  where?: string; // e.g. "status = 'OPEN'" or "tsv @@ plainto_tsquery('revenue')"
+  orderBy?: string; // e.g. "created_at DESC" or "embedding <=> '[0.1,0.2]'"
   limit?: number; // default 100
   offset?: number; // pagination offset
 }
@@ -1438,9 +1443,18 @@ interface QuerySQLProjectionOptions {
 interface SQLProjectionQueryResult {
   columns: string[];
   rows: string[][]; // each row is string values in column order
+  typedRows: Array<Array<string | number | boolean | null>>; // SQL types preserved
   totalCount: number; // total matches before limit/offset
 }
 ```
+
+`where` and `orderBy` are parsed into bound parameters, never concatenated into
+SQL. Beyond ordinary filters they accept a fixed set of expressions: `@@` with
+`plainto_tsquery` / `websearch_to_tsquery` in `where`, and pgvector distance
+(`<->`, `<=>`, `<#>`) or `ts_rank(...)` in `orderBy`. Those expressions need the
+PostgreSQL backend. See the [browser SDK
+reference](../../../docs/reference/js-sdk/browser.md#querysqlprojection) for the
+full grammar.
 
 ### Projection Management Types
 
@@ -2385,12 +2399,16 @@ Distinct from the in-process `WebhookConfig` (handler) — these are the registr
 
 ```typescript
 interface WebhookSource {
-  id: string;
+  id: string;                       // server-generated (`wh_` + UUID)
+  name?: string;                    // operator display label; NOT unique
   eventPrefix: string;
   verifyHeader?: string;
   verifyAlgorithm?: string;
   sourceType?: string;
   metadata?: Record<string, unknown>;
+  verifySecretSet?: boolean;        // a current secret is configured
+  verifySecretPrevSet?: boolean;    // a previous secret is still held
+  verifySecretPrevExpiresAt?: string; // grace window ends; active only if also prevSet
   ingestTokenPrefix?: string;       // display fragment (ifwh_ + 8 chars)
   ingestToken?: string;             // raw token — returned ONLY on create/rotate (ADR 0048); without it the source cannot receive deliveries
   verifyConfig?: WebhookVerifyConfig; // signature descriptor (ADR 0049); absent means legacy verification
@@ -2399,13 +2417,38 @@ interface WebhookSource {
 }
 
 interface CreateWebhookSourceInput {
-  id: string;
+  name: string;                     // required; the ID is server-generated
   eventPrefix: string;
   verifyHeader?: string;
   verifyAlgorithm?: string;
   verifySecret?: string;
   metadata?: Record<string, unknown>;
   verifyConfig?: WebhookVerifyConfig; // signature descriptor (ADR 0049)
+}
+
+// Full-replace, not patch: an omitted field is cleared server-side.
+// verifyConfig is the exception — omitting it PRESERVES the stored descriptor.
+interface UpdateWebhookSourceInput {
+  id: string;
+  name: string;
+  verifyHeader?: string;
+  verifyAlgorithm?: string;
+  verifyConfig?: WebhookVerifyConfig;
+  metadata?: Record<string, unknown>;
+  expectedUpdatedAt?: string;       // optimistic concurrency; ABORTED if the row moved
+}
+
+interface RotateWebhookSecretInput {
+  id: string;
+  verifySecret: string;             // must be non-empty
+  graceSeconds?: number;            // tri-state: omit = server default, 0 = instant, N = seconds (cap 604800)
+  expectedUpdatedAt?: string;
+}
+
+interface DisableWebhookSignatureVerificationInput {
+  id: string;
+  graceSeconds?: number;            // same tri-state as above
+  expectedUpdatedAt?: string;
 }
 
 interface WebhookDelivery {
@@ -2415,6 +2458,7 @@ interface WebhookDelivery {
   status: string;
   eventId?: string;
   error?: string;
+  signatureKey?: string;            // current | prev | none | invalid
   createdAt?: string;
 }
 

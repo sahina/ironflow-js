@@ -5080,6 +5080,112 @@ describe("IronflowClient (real module)", () => {
       expect(assertDefined(result.deliveries[0]).sourceId).toBe("stripe");
       expect(result.totalCount).toBe(1);
     });
+
+    // ── Source management (#1526) ─────────────────────────────────────────────
+
+    const okJson = (body: unknown) => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(body),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      return mockFetch;
+    };
+    const sentBody = (mockFetch: ReturnType<typeof vi.fn>) =>
+      JSON.parse(assertDefined(mockFetch.mock.calls[0])[1].body);
+
+    it("sends name (not id) on create and surfaces the write-once token", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = okJson({
+        id: "wh_1",
+        name: "Stripe",
+        event_prefix: "stripe.",
+        ingest_token: "ifwh_rawsecret",
+      });
+
+      const source = await ironflow.webhooks.create({
+        name: "Stripe",
+        eventPrefix: "stripe.",
+      });
+
+      const body = sentBody(mockFetch);
+      expect(body.name).toBe("Stripe");
+      expect(body).not.toHaveProperty("id");
+      expect(source.ingestToken).toBe("ifwh_rawsecret");
+    });
+
+    it("fetches a single source with the secret-state flags", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = okJson({
+        id: "wh_1",
+        name: "Stripe",
+        event_prefix: "stripe.",
+        verify_secret_set: true,
+        verify_secret_prev_set: true,
+        verify_secret_prev_expires_at: "2026-03-29T00:00:00Z",
+      });
+
+      const source = await ironflow.webhooks.getSource("wh_1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.WebhookService/GetWebhookSource",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ id: "wh_1" }) })
+      );
+      expect(source.verifySecretSet).toBe(true);
+      expect(source.verifySecretPrevSet).toBe(true);
+      expect(source.verifySecretPrevExpiresAt).toBe("2026-03-29T00:00:00Z");
+    });
+
+    it("sends the concurrency token on update", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = okJson({ id: "wh_1", name: "renamed", event_prefix: "stripe." });
+
+      await ironflow.webhooks.updateSource({
+        id: "wh_1",
+        name: "renamed",
+        expectedUpdatedAt: "2026-03-28T00:00:00Z",
+      });
+
+      expect(sentBody(mockFetch).expected_updated_at).toBe("2026-03-28T00:00:00Z");
+      // Preserve-on-omit only works while the key is absent entirely.
+      expect(sentBody(mockFetch)).not.toHaveProperty("verify_config");
+    });
+
+    it("treats graceSeconds as tri-state", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const response = { id: "wh_1", name: "Stripe", event_prefix: "stripe." };
+
+      // Omitted → absent key, so the server's configured default wins.
+      let mockFetch = okJson(response);
+      await ironflow.webhooks.rotateSecret({ id: "wh_1", verifySecret: "whsec_new" });
+      expect(sentBody(mockFetch)).not.toHaveProperty("grace_seconds");
+
+      // 0 → instant cutover, which a truthiness check would collapse into
+      // "server default" and leave the old secret verifying for 24 h.
+      mockFetch = okJson(response);
+      await ironflow.webhooks.rotateSecret({ id: "wh_1", verifySecret: "whsec_new", graceSeconds: 0 });
+      expect(sentBody(mockFetch).grace_seconds).toBe(0);
+
+      mockFetch = okJson(response);
+      await ironflow.webhooks.disableSignatureVerification({ id: "wh_1", graceSeconds: 0 });
+      expect(sentBody(mockFetch).grace_seconds).toBe(0);
+    });
+
+    it("expires the previous secret slot and rotates the ingest token", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+
+      let mockFetch = okJson({ id: "wh_1", name: "Stripe", event_prefix: "stripe." });
+      await ironflow.webhooks.expireSecretPrev("wh_1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.WebhookService/ExpireWebhookSecretPrev",
+        expect.objectContaining({ method: "POST", body: JSON.stringify({ id: "wh_1" }) })
+      );
+
+      mockFetch = okJson({ id: "wh_1", name: "Stripe", event_prefix: "stripe.", ingest_token: "ifwh_new" });
+      const rotated = await ironflow.webhooks.rotateIngestToken("wh_1", "2026-03-28T00:00:00Z");
+      expect(sentBody(mockFetch).expected_updated_at).toBe("2026-03-28T00:00:00Z");
+      expect(rotated.ingestToken).toBe("ifwh_new");
+    });
   });
 
   describe("users", () => {

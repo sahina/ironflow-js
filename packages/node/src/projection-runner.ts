@@ -23,6 +23,11 @@ import type {
   ManagedProjectionHandler,
   ExternalProjectionHandler,
 } from "@ironflow/core";
+import {
+  UnauthenticatedError,
+  UnauthorizedError,
+  throwIfAuthError,
+} from "@ironflow/core";
 
 export interface ProjectionRunnerConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,6 +110,10 @@ export class ProjectionRunner {
       }
     );
     if (!resp.ok) {
+      throwIfAuthError(
+        resp.status,
+        `Failed to register projection ${projection.config.name}`
+      );
       throw new Error(`Failed to register projection: ${resp.status}`);
     }
   }
@@ -170,12 +179,10 @@ export class ProjectionRunner {
               `Server does not support StreamProjectionEvents (${status})`
             );
           }
-          // Auth failures (401/403) are non-transient — break out of the reconnect loop
-          if (status === 401 || status === 403) {
-            throw new StreamingUnsupportedError(
-              `Stream authentication failed (${status}) — check credentials`
-            );
-          }
+          // Auth failures (401/403) are non-transient. NOT StreamingUnsupported:
+          // that would fall back to polling, which 401-loops at 10s instead of
+          // surfacing anything actionable (#1673).
+          throwIfAuthError(status, `Projection ${name} stream`);
           throw new Error(`Stream request failed: ${status}`);
         }
 
@@ -270,6 +277,14 @@ export class ProjectionRunner {
 
         // Re-throw StreamingUnsupportedError so caller can fall back to polling
         if (err instanceof StreamingUnsupportedError) {
+          throw err;
+        }
+
+        // Auth failures will not fix themselves on the reconnect cadence (#1673).
+        if (
+          err instanceof UnauthenticatedError ||
+          err instanceof UnauthorizedError
+        ) {
           throw err;
         }
 
@@ -452,6 +467,15 @@ export class ProjectionRunner {
           this.backoffMs = Math.min(this.backoffMs * 2, 10000);
         }
       } catch (err) {
+        // Auth failure: stop this runner with an actionable message rather than
+        // polling a 401 forever (#1673). The worker keeps running.
+        if (
+          err instanceof UnauthenticatedError ||
+          err instanceof UnauthorizedError
+        ) {
+          this.running = false;
+          throw err;
+        }
         this.config.logger.error(`Projection poll error: ${err}`);
         await this.sleep(this.backoffMs);
         this.backoffMs = Math.min(this.backoffMs * 2, 10000);
@@ -484,7 +508,10 @@ export class ProjectionRunner {
         }),
       }
     );
-    if (!resp.ok) throw new Error(`Poll failed: ${resp.status}`);
+    if (!resp.ok) {
+      throwIfAuthError(resp.status, `Projection ${projection.config.name} poll`);
+      throw new Error(`Poll failed: ${resp.status}`);
+    }
 
     const data = (await resp.json()) as PollResponse;
     const events = data.events || [];

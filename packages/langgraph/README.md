@@ -238,6 +238,7 @@ as `IronflowError` instances from the underlying `IronflowClient` call.
 pnpm -C sdk/js/langgraph test
 
 # Integration tests (against a running server)
+make embed build            # from the repo root; a plain `make build` cannot serve
 ./build/ironflow serve --dev
 IRONFLOW_INTEGRATION=1 pnpm -C sdk/js/langgraph test
 

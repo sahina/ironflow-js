@@ -226,6 +226,10 @@ export const JobAssignmentSchema = z.object({
   attempt: z.number(),
   event: JobEventSchema,
   completed_steps: z.array(JobCompletedStepSchema),
+  // Sequence this execution's first step takes (#1670). Server-computed from
+  // ALL persisted step rows, so a resumed run does not renumber over a sleeping
+  // or failed row that completed_steps filters out. Absent on older servers.
+  step_sequence_base: z.number().optional(),
   actor_id: z.string().optional(),
   context: JobContextSchema.optional(),
   // Execution fence (#1206, ADR 0037, T9). Present on capacity-mode assignments;

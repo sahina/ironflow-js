@@ -396,6 +396,23 @@ export interface StepClient {
 
   /**
    * Execute multiple branches in parallel (allSettled mode)
+   *
+   * WHY: A branch is NOT itself a recorded step. `parallel` only calls your
+   * callback with a scoped step client — durability comes from what that
+   * callback does with it. `(step) => step.run("fetch", ...)` persists a step;
+   * `() => fetch(...)` persists nothing, memoizes nothing, and re-runs in full
+   * on every retry. Both typecheck, so the SDK logs a warning when EVERY branch
+   * in one call skipped the scoped client. That check is a best-effort lint,
+   * not a guarantee — it stays silent when any branch throws or yields, and
+   * when only some branches skip.
+   *
+   * Reaching for the enclosing function's step client is a third case: it does
+   * record real steps, just outside this parallel's scope. Migrating such a
+   * branch to the scoped client CHANGES its step id, and nothing bridges the
+   * two — let in-flight runs drain first or they re-execute completed steps.
+   *
+   * @param name Unique step name within the function
+   * @param branches One callback per branch, each handed its own step client
    */
   parallel<T extends unknown[]>(
     name: string,
@@ -405,6 +422,10 @@ export interface StepClient {
 
   /**
    * Execute multiple branches in parallel
+   *
+   * WHY: A branch is NOT itself a recorded step — durability comes from using
+   * the scoped step client each callback is handed. See the allSettled
+   * overload above.
    */
   parallel<T extends unknown[]>(
     name: string,
@@ -414,6 +435,35 @@ export interface StepClient {
 
   /**
    * Map over a collection executing steps in parallel (allSettled mode)
+   *
+   * WHY: A branch is NOT itself a recorded step. `map` persists one step per
+   * item only if your callback uses the scoped step client it is handed:
+   *
+   * ```ts
+   * // One memoized step per file — retries skip finished files. `branchStep`
+   * // is the scoped client; naming it `step` would shadow the outer one and
+   * // make the durable and non-durable shapes look identical.
+   * await step.map("ingest", docIds, (docId, branchStep) =>
+   *   branchStep.run(`ingest:${docId}`, () => ingest(docId)));
+   *
+   * // Persists NOTHING — the whole map re-runs on every retry.
+   * await step.map("ingest", docIds, (docId) => ingest(docId));
+   * ```
+   *
+   * Keep "." out of a step ID: it goes verbatim into the NATS subject
+   * `system.run.{runId}.step.{stepId}.{event}`, so a filename-derived ID adds
+   * a subject token and fixed-arity consumers stop matching it.
+   *
+   * Both typecheck, so the SDK logs a warning when EVERY branch in one call
+   * skipped the scoped client. That check is a best-effort lint, not a
+   * guarantee — it stays silent when any branch throws or yields, and when only
+   * some branches skip. Migrating an existing branch off the enclosing
+   * function's step client CHANGES its step id, and nothing bridges the two —
+   * let in-flight runs drain first or they re-execute completed steps.
+   *
+   * @param name Unique step name within the function
+   * @param items Items to map over
+   * @param fn Callback per item, handed its own scoped step client
    */
   map<T, R>(
     name: string,
@@ -424,6 +474,9 @@ export interface StepClient {
 
   /**
    * Map over a collection executing steps in parallel
+   *
+   * WHY: A branch is NOT itself a recorded step — you get one step per item
+   * only by using the scoped step client. See the allSettled overload above.
    */
   map<T, R>(
     name: string,
@@ -494,6 +547,15 @@ export interface ParallelOptions {
    * - "allSettled": All branches complete, errors collected in results
    */
   onError?: "failFast" | "allSettled";
+  /**
+   * Whether branches are expected to use the scoped step client (default: true).
+   *
+   * Set false to silence the #1671 warning for a fan-out that deliberately has
+   * nothing to memoize — a pure in-memory transform run through `map` only for
+   * its concurrency limit. It suppresses the diagnostic only; nothing about
+   * durability changes either way.
+   */
+  expectScopedClient?: boolean;
 }
 
 /**
@@ -1522,12 +1584,25 @@ export interface WebhookVerifyConfig {
  * A registered webhook source.
  */
 export interface WebhookSource {
+  /** Server-generated (`wh_` + UUID). Legacy rows carry their original ID. */
   id: string;
+  /** Operator-friendly display label. NOT unique. */
+  name?: string;
   eventPrefix: string;
   verifyHeader?: string;
   verifyAlgorithm?: string;
   sourceType?: string;
   metadata?: Record<string, unknown>;
+  /** True when a verify secret is set server-side. The raw value never returns. */
+  verifySecretSet?: boolean;
+  /**
+   * True when the previous secret slot is populated. A rotation grace window
+   * is active only when this is true AND `verifySecretPrevExpiresAt` is in
+   * the future — the slot is not cleared when it expires.
+   */
+  verifySecretPrevSet?: boolean;
+  /** Expiry of the previous secret slot. Absent when no prev is configured. */
+  verifySecretPrevExpiresAt?: string;
   /** Short display fragment of the ingest token (ifwh_ + 8 chars). */
   ingestTokenPrefix?: string;
   /**
@@ -1545,9 +1620,14 @@ export interface WebhookSource {
 
 /**
  * Input for creating a webhook source.
+ *
+ * The ID is server-generated — `CreateWebhookSourceRequest` reserved the
+ * caller-supplied `id` field, and `name` took its place as the required
+ * identifier a human reads.
  */
 export interface CreateWebhookSourceInput {
-  id: string;
+  /** Operator-friendly display label (required, NOT unique). */
+  name: string;
   eventPrefix: string;
   verifyHeader?: string;
   verifyAlgorithm?: string;
@@ -1562,6 +1642,92 @@ export interface CreateWebhookSourceInput {
 }
 
 /**
+ * Input for updating a webhook source.
+ *
+ * `name` and `metadata` are full-replace — omitting `metadata` clears the
+ * column. `verifyHeader`, `verifyAlgorithm` and `verifyConfig` are
+ * PRESERVE-ON-OMIT, because clearing them is how signature verification gets
+ * switched off by accident (see each field). Fetch the source first and copy
+ * across whatever you do not intend to change:
+ *
+ * ```typescript
+ * const current = await client.webhooks.getSource(id);
+ * await client.webhooks.updateSource({
+ *   id,
+ *   name: "new name",
+ *   verifyHeader: current.verifyHeader,       // preserve
+ *   verifyAlgorithm: current.verifyAlgorithm, // preserve
+ *   metadata: current.metadata,               // preserve
+ *   expectedUpdatedAt: current.updatedAt,     // guard the write
+ * });
+ * ```
+ *
+ * `verifySecret` is not editable here — use `rotateSecret`. `eventPrefix` and
+ * `sourceType` are immutable after create.
+ */
+export interface UpdateWebhookSourceInput {
+  id: string;
+  /** Operator-friendly display label (required). */
+  name: string;
+  /**
+   * Preserve-on-omit: leaving this out keeps the stored header. Clearing it on
+   * a source with no `verifyConfig` would make the server stop checking
+   * signatures entirely while still reporting `verifySecretSet: true`. Use
+   * `disableSignatureVerification` to turn verification off deliberately.
+   */
+  verifyHeader?: string;
+  /** Preserve-on-omit; see `verifyHeader`. */
+  verifyAlgorithm?: string;
+  /**
+   * Signature descriptor (ADR 0049). Preserve-on-omit for the same reason —
+   * a partial update would otherwise downgrade the source to legacy body-only
+   * verification and every real delivery would then fail.
+   */
+  verifyConfig?: WebhookVerifyConfig;
+  /** Replaces the metadata blob entirely. Omitting it clears the column. */
+  metadata?: Record<string, unknown>;
+  /**
+   * Optimistic-concurrency token: pass the `updatedAt` you last read and the
+   * write is rejected with ABORTED if the row moved. Worth sending precisely
+   * because `verifyConfig` is preserve-on-omit — an unguarded rename can
+   * otherwise revert someone else's descriptor change. Omit to skip the check.
+   */
+  expectedUpdatedAt?: string;
+}
+
+/**
+ * Input for rotating a webhook source's verify secret (ADR 0024).
+ */
+export interface RotateWebhookSecretInput {
+  id: string;
+  /**
+   * The new secret. Must be non-empty — to stop verifying signatures
+   * altogether use `disableSignatureVerification`.
+   */
+  verifySecret: string;
+  /**
+   * Seconds during which the prior current secret keeps verifying as prev.
+   * Tri-state: omit for the server default (24 h, or whatever
+   * `IRONFLOW_WEBHOOK_SECRET_GRACE_HOURS_DEFAULT` sets), `0` for an instant
+   * cutover, or N seconds. The server rejects anything above 604800 (7 d).
+   */
+  graceSeconds?: number;
+  /** Optimistic-concurrency token; see {@link UpdateWebhookSourceInput}. */
+  expectedUpdatedAt?: string;
+}
+
+/**
+ * Input for disabling signature verification on a webhook source.
+ */
+export interface DisableWebhookSignatureVerificationInput {
+  id: string;
+  /** Same tri-state grace window as {@link RotateWebhookSecretInput}. */
+  graceSeconds?: number;
+  /** Optimistic-concurrency token; see {@link UpdateWebhookSourceInput}. */
+  expectedUpdatedAt?: string;
+}
+
+/**
  * A single webhook delivery record.
  */
 export interface WebhookDelivery {
@@ -1571,6 +1737,11 @@ export interface WebhookDelivery {
   status: string;
   eventId?: string;
   error?: string;
+  /**
+   * Which signature slot matched: "current" | "prev" | "none" | "invalid".
+   * Absent on rows recorded before migration 033.
+   */
+  signatureKey?: string;
   createdAt?: string;
 }
 
@@ -1718,8 +1889,9 @@ export function webhookVerifyConfigToWire(
 /**
  * Reads a verify config from a snake_case wire payload.
  *
- * Needed by BOTH JS clients. The server marshals every ConnectRPC response
- * with UseProtoNames=true, so responses are snake_case regardless of transport.
+ * Used by {@link webhookSourceFromWire}; exported as the response-direction
+ * counterpart to {@link webhookVerifyConfigToWire}, which both JS clients do
+ * still import directly for the request direction.
  */
 export function webhookVerifyConfigFromWire(
   raw: Record<string, unknown> | undefined,
@@ -1739,5 +1911,106 @@ export function webhookVerifyConfigFromWire(
     toleranceSeconds: (raw.tolerance_seconds as number) || undefined,
     eventNamePath: str("event_name_path"),
     dedupIdPath: str("dedup_id_path"),
+  };
+}
+
+/** Server-side cap on a secret-rotation grace window: 7 days. */
+export const WEBHOOK_SECRET_GRACE_CAP_SECONDS = 604800;
+
+/**
+ * Renders the tri-state grace window into the request body.
+ *
+ * Tri-state, so this tests for `undefined` and NOT for falsy: `0` means
+ * "cut over now" and a truthiness check would silently turn it into the
+ * server's 24 h default.
+ *
+ * It also rejects a non-finite or out-of-range number rather than letting it
+ * reach the wire. `JSON.stringify(NaN)` is `null`, protojson reads null as
+ * unset, and the server then applies its DEFAULT grace — so
+ * `rotateSecret({ graceSeconds: NaN })` would leave the old secret valid for
+ * 24 h while the caller believed they had asked for something else.
+ */
+export function webhookGraceToWire(
+  graceSeconds: number | undefined,
+): Record<string, number> {
+  if (graceSeconds === undefined) return {};
+  if (!Number.isInteger(graceSeconds)) {
+    throw new RangeError(
+      `graceSeconds must be an integer number of seconds, got ${graceSeconds}`,
+    );
+  }
+  if (graceSeconds < 0 || graceSeconds > WEBHOOK_SECRET_GRACE_CAP_SECONDS) {
+    throw new RangeError(
+      `graceSeconds must be between 0 and ${WEBHOOK_SECRET_GRACE_CAP_SECONDS} (7 days), got ${graceSeconds}`,
+    );
+  }
+  return { grace_seconds: graceSeconds };
+}
+
+/**
+ * Reads a {@link WebhookSource} from a snake_case wire payload.
+ *
+ * Every WebhookService RPC that returns a source returns the SAME message, so
+ * both clients route all seven through this. It also has to exist in one
+ * place: `listSources` used to read `eventPrefix`/`createdAt` off the response
+ * and got `undefined` for both.
+ *
+ * WebhookService — and ONLY WebhookService — registers `snakeJSONCodec`
+ * (`SnakeJSONHandlerOptions()`, applied at exactly one call site in
+ * `internal/server/server.go`). Every other Connect handler still emits
+ * camelCase; see ADR 0023. Do not copy this mapper's snake_case assumption
+ * into a client for another service.
+ */
+export function webhookSourceFromWire(
+  raw: Record<string, unknown> | undefined,
+): WebhookSource {
+  const r = raw ?? {};
+  const str = (k: string) => (r[k] as string) || undefined;
+  const bool = (k: string) =>
+    typeof r[k] === "boolean" ? (r[k] as boolean) : undefined;
+  return {
+    id: (r.id as string) ?? "",
+    name: str("name"),
+    eventPrefix: (r.event_prefix as string) ?? "",
+    verifyHeader: str("verify_header"),
+    verifyAlgorithm: str("verify_algorithm"),
+    sourceType: str("source_type"),
+    metadata: r.metadata as Record<string, unknown> | undefined,
+    // typeof, not `|| undefined`: an explicit false and an absent key are
+    // different answers to "is a secret configured". EmitUnpopulated=false
+    // means the server omits false today, so this is about not baking that
+    // into the mapper — a caller reading `=== false` should not silently get
+    // undefined if the server ever starts emitting it.
+    verifySecretSet: bool("verify_secret_set"),
+    verifySecretPrevSet: bool("verify_secret_prev_set"),
+    verifySecretPrevExpiresAt: str("verify_secret_prev_expires_at"),
+    ingestTokenPrefix: str("ingest_token_prefix"),
+    ingestToken: str("ingest_token"),
+    verifyConfig: webhookVerifyConfigFromWire(
+      r.verify_config as Record<string, unknown> | undefined,
+    ),
+    createdAt: str("created_at"),
+    updatedAt: str("updated_at"),
+  };
+}
+
+/**
+ * Reads a {@link WebhookDelivery} from a snake_case wire payload. Same
+ * reasoning as {@link webhookSourceFromWire}.
+ */
+export function webhookDeliveryFromWire(
+  raw: Record<string, unknown> | undefined,
+): WebhookDelivery {
+  const r = raw ?? {};
+  const str = (k: string) => (r[k] as string) || undefined;
+  return {
+    id: (r.id as string) ?? "",
+    sourceId: (r.source_id as string) ?? "",
+    externalId: str("external_id"),
+    status: (r.status as string) ?? "",
+    eventId: str("event_id"),
+    error: str("error"),
+    signatureKey: str("signature_key"),
+    createdAt: str("created_at"),
   };
 }

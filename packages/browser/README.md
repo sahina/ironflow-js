@@ -364,7 +364,7 @@ before `emit()` resolves.
 **They are not delivered in the background.** Nothing drains while the page is
 frozen or closed; delivery happens the next time the app is open. Tell users
 "saved, will sync when you're back", never "sent in the background". True
-background delivery needs a service worker — see ADR 0052, Alternative A.
+background delivery needs a service worker — see ADR 0053, Alternative A.
 
 **Storage is best-effort.** Safari evicts an origin's IndexedDB after roughly
 seven days with no interaction.

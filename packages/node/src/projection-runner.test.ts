@@ -1126,4 +1126,18 @@ describe("ProjectionRunner", () => {
       );
     });
   });
+  describe("auth failure (#1673)", () => {
+    it("stops the poll loop with an actionable message instead of 401-looping", async () => {
+      mockFetch.mockResolvedValue(mockJsonResponse({}, false, 401));
+      const logger = createMockLogger();
+      const runner = createProjectionRunner(createRunnerConfig({ logger }));
+
+      await expect(runner.start()).rejects.toThrow(/IRONFLOW_API_KEY/);
+      // register() 401s on the first call — no poll retry cadence behind it.
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(logger.error).not.toHaveBeenCalledWith(
+        expect.stringContaining("Projection poll error")
+      );
+    });
+  });
 });

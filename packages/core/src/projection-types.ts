@@ -320,12 +320,21 @@ export interface QuerySQLProjectionOptions {
   offset?: number;
 }
 
+/** A single SQL projection cell with its type preserved */
+export type SQLProjectionValue = string | number | boolean | null;
+
 /** Result of querying a SQL projection */
 export interface SQLProjectionQueryResult {
   /** Column names */
   columns: string[];
   /** Row data (each row is an array of string values matching column order) */
   rows: string[][];
+  /**
+   * Row data with SQL types preserved: numeric columns arrive as numbers,
+   * booleans as booleans, NULL as null. Exact-precision columns (numeric,
+   * decimal, money) arrive as strings so no digits are lost.
+   */
+  typedRows: SQLProjectionValue[][];
   /** Total matching row count (before limit/offset) */
   totalCount: number;
 }

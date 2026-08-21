@@ -1,5 +1,5 @@
 /**
- * Shared types for the offline write queue (ADR 0052).
+ * Shared types for the offline write queue (ADR 0053).
  */
 
 /** The record schema version this SDK writes and understands. */

@@ -6,7 +6,7 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
     // jsdom has no indexedDB; the setup file supplies fake-indexeddb so the
-    // offline write queue (ADR 0052) is testable at all. See vitest.setup.ts.
+    // offline write queue (ADR 0053) is testable at all. See vitest.setup.ts.
     setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',

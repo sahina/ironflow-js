@@ -165,6 +165,9 @@ export type {
   // Webhook management types
   WebhookSource,
   CreateWebhookSourceInput,
+  UpdateWebhookSourceInput,
+  RotateWebhookSecretInput,
+  DisableWebhookSignatureVerificationInput,
   WebhookDelivery,
   ListWebhookDeliveriesOptions,
 
@@ -207,7 +210,7 @@ export {
 } from "@ironflow/core";
 
 // ============================================================================
-// Offline write queue (ADR 0052)
+// Offline write queue (ADR 0053)
 // ============================================================================
 
 // Opt-in via a factory rather than a flag on the `ironflow` singleton:

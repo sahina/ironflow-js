@@ -160,6 +160,9 @@ export type {
   WebhookSource,
   WebhookVerifyConfig,
   CreateWebhookSourceInput,
+  UpdateWebhookSourceInput,
+  RotateWebhookSecretInput,
+  DisableWebhookSignatureVerificationInput,
   WebhookDelivery,
   ListWebhookDeliveriesOptions,
 
@@ -277,6 +280,8 @@ export {
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
+  AUTH_HELP,
+  throwIfAuthError,
   QueueFullError,
   isRetryable,
   isIronflowError,
@@ -403,6 +408,7 @@ export type {
   CreateSQLProjectionInput,
   QuerySQLProjectionOptions,
   SQLProjectionQueryResult,
+  SQLProjectionValue,
 } from "./projection-types.js";
 
 export { peelProjectionEnvelope } from "./projection-types.js";
@@ -413,6 +419,10 @@ export { peelProjectionEnvelope } from "./projection-types.js";
 export {
   webhookVerifyConfigToWire,
   webhookVerifyConfigFromWire,
+  webhookSourceFromWire,
+  webhookDeliveryFromWire,
+  webhookGraceToWire,
+  WEBHOOK_SECRET_GRACE_CAP_SECONDS,
 } from "./types.js";
 
 // ============================================================================

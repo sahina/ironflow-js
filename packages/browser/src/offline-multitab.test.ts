@@ -1,5 +1,5 @@
 /**
- * Multi-tab and re-authentication behaviour (ADR 0052, PR2).
+ * Multi-tab and re-authentication behaviour (ADR 0053, PR2).
  *
  * "Two tabs" is simulated by two OfflineQueue instances over one IndexedDB
  * database, which is exactly what two real tabs are. The Web Locks fake is

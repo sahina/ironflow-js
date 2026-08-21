@@ -375,6 +375,20 @@ export type UpdateWebhookSourceRequest = Message<"ironflow.v1.UpdateWebhookSourc
   name: string;
 
   /**
+   * Legacy signature fields. PRESERVE-ON-OMIT, each independently: an empty
+   * value leaves the stored column alone rather than clearing it.
+   *
+   * They used to be full-replace, which was a fail-open on any source with no
+   * verify_config. There is nothing for the descriptor mirror to rewrite these
+   * from on such a source, so a partial update (a rename) wrote both columns
+   * empty while verify_secret stayed set — webhooksig.ConfigFor then returned
+   * nil and the ingest path stopped checking signatures altogether, silently.
+   * Both are preserved because ConfigFor needs BOTH to be non-empty, so
+   * half-clearing disables verification just as completely.
+   *
+   * To stop verifying, use DisableWebhookSignatureVerification: it keeps the
+   * prior secret in the prev slot for the grace window and is auditable.
+   *
    * @generated from field: string verify_header = 3;
    */
   verifyHeader: string;
