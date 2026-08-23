@@ -94,7 +94,12 @@ jobs:
           NPM_TAG: ${{ steps.resolve.outputs.npm_tag }}
           VERSION: ${{ steps.resolve.outputs.version }}
         run: |
-          set -eu
+          # pipefail is load-bearing: the publish below pipes into `tee`, and
+          # without it `if` tests tee's status (always 0), so a failed publish
+          # silently took the `continue` branch and the job reported success.
+          # Cost a full v0.30.0 release: all four packages 404'd on auth, job
+          # went green in 36s, npm stayed on 0.29.0.
+          set -euo pipefail
           for pkg in core node browser langgraph; do
             dir="packages/${pkg}"
             echo "==> Publishing @ironflow/${pkg} from ${dir}"
