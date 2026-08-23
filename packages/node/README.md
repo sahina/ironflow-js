@@ -1627,7 +1627,7 @@ These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. C
 | `NonRetryableError` | Marks an error as non-retryable (triggers compensations). |
 | `UnauthenticatedError` | Missing or invalid authentication (HTTP 401). |
 | `UnauthorizedError` | Insufficient permissions (HTTP 403). |
-| `EnterpriseRequiredError` | Feature requires enterprise license (HTTP 402). |
+| `EnterpriseRequiredError` | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility. |
 
 ### Utility functions
 

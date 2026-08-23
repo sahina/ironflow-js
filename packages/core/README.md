@@ -1577,7 +1577,7 @@ class IronflowError extends Error {
 | `NoRunCreatedError` | `NO_RUN_CREATED` | false | Trigger response carried no `runIds` (has `functionName`) |
 | `MemoryCatchupTimeoutError` | `MEMORY_CATCHUP_TIMEOUT` | true | `agents.readMemory()` waited past `timeoutMs` for projection catch-up (has `projection`, `minSeq`, `timeoutMs`) |
 | `UnauthenticatedError` | `UNAUTHENTICATED` | false | No/invalid API key (HTTP 401) |
-| `EnterpriseRequiredError` | `ENTERPRISE_REQUIRED` | false | Enterprise license needed (HTTP 402) |
+| `EnterpriseRequiredError` | `ENTERPRISE_REQUIRED` | false | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility |
 | `UnauthorizedError` | `UNAUTHORIZED` | false | Insufficient permissions (HTTP 403) |
 
 ### Utility Functions
