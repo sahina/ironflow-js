@@ -120,12 +120,25 @@ export class BrowserKVBucketHandle {
       .replace("https://", "wss://")
       .replace("http://", "ws://");
 
-    let path = `/api/v1/kv/buckets/${enc(this.bucketName)}/watch`;
-    if (options?.key) {
-      path += `?key=${encodeURIComponent(options.key)}`;
+    const path = `/api/v1/kv/buckets/${enc(this.bucketName)}/watch`;
+    const params: string[] = [];
+
+    if (this.config.environment) {
+      params.push(`env=${encodeURIComponent(this.config.environment)}`);
     }
 
-    const ws = new WebSocket(`${wsUrl}${path}`);
+    const credential =
+      this.config.auth?.apiKey || this.config.auth?.token;
+    if (credential) {
+      params.push(`token=${encodeURIComponent(credential)}`);
+    }
+
+    if (options?.key) {
+      params.push(`key=${encodeURIComponent(options.key)}`);
+    }
+
+    const query = params.length > 0 ? `?${params.join("&")}` : "";
+    const ws = new WebSocket(`${wsUrl}${path}${query}`);
 
     ws.onmessage = (event) => {
       try {
@@ -178,8 +191,10 @@ export class BrowserKVBucketHandle {
             : "application/json";
       }
 
-      if (this.config.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config.auth.apiKey}`;
+      const credential =
+        this.config.auth?.apiKey || this.config.auth?.token;
+      if (credential) {
+        headers["Authorization"] = `Bearer ${credential}`;
       }
 
       if (extraHeaders) {
@@ -317,8 +332,10 @@ export class BrowserKVClient {
         headers["Content-Type"] = "application/json";
       }
 
-      if (this.config.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config.auth.apiKey}`;
+      const credential =
+        this.config.auth?.apiKey || this.config.auth?.token;
+      if (credential) {
+        headers["Authorization"] = `Bearer ${credential}`;
       }
 
       const response = await fetch(url, {

@@ -1483,6 +1483,142 @@ describe("IronflowClient (real module)", () => {
   });
 
   // --------------------------------------------------------------------------
+  // KV and config authentication
+  // --------------------------------------------------------------------------
+
+  describe("KV and config authentication", () => {
+    it("uses a bearer token for KV bucket requests", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        auth: { token: "session-token" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ buckets: [], count: 0 }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.kv().listBuckets();
+
+      const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
+      expect(headers["Authorization"]).toBe("Bearer session-token");
+    });
+
+    it("uses a bearer token for KV key requests", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        auth: { token: "session-token" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            key: "user-1",
+            value: { active: true },
+            revision: 1,
+            created_at: "2026-08-23T00:00:00Z",
+            operation: "put",
+          }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.kv().bucket("sessions").get("user-1");
+
+      const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
+      expect(headers["Authorization"]).toBe("Bearer session-token");
+    });
+
+    it("uses a bearer token for config requests", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        auth: { token: "session-token" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ configs: [] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.configManager().list();
+
+      const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
+      expect(headers["Authorization"]).toBe("Bearer session-token");
+    });
+
+    it("prefers the API key for KV and config requests", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        auth: { apiKey: "api-key", token: "session-token" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            buckets: [],
+            configs: [],
+            key: "user-1",
+            value: { active: true },
+            revision: 1,
+            created_at: "2026-08-23T00:00:00Z",
+            operation: "put",
+          }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.kv().listBuckets();
+      await ironflow.kv().bucket("sessions").get("user-1");
+      await ironflow.configManager().list();
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      for (const call of mockFetch.mock.calls) {
+        const headers = assertDefined(call[1]).headers;
+        expect(headers["Authorization"]).toBe("Bearer api-key");
+      }
+    });
+
+    it("falls back to the token when the API key is empty", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        auth: { apiKey: "", token: "session-token" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            buckets: [],
+            configs: [],
+            key: "user-1",
+            value: { active: true },
+            revision: 1,
+            created_at: "2026-08-23T00:00:00Z",
+            operation: "put",
+          }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.kv().listBuckets();
+      await ironflow.kv().bucket("sessions").get("user-1");
+      await ironflow.configManager().list();
+
+      expect(mockFetch).toHaveBeenCalledTimes(3);
+      for (const call of mockFetch.mock.calls) {
+        const headers = assertDefined(call[1]).headers;
+        expect(headers["Authorization"]).toBe("Bearer session-token");
+      }
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // ensureConfigured (tested via public methods before configure)
   // --------------------------------------------------------------------------
 
@@ -3494,6 +3630,74 @@ describe("IronflowClient (real module)", () => {
       await expect(ironflow.getProjection("order-stats")).rejects.toThrow(
         /projection envelope drift/
       );
+    });
+  });
+
+  describe("waitForEvent", () => {
+    it("uses the configured bearer token", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        environment: "staging",
+        auth: { token: "session-token-123" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            caughtUp: true,
+            currentSeq: 42,
+            targetSeq: 42,
+          }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.waitForEvent("evt-42", "order-stats");
+
+      const [url, opts] = assertDefined(mockFetch.mock.calls[0]);
+      expect(url).toBe(
+        "http://localhost:9123/api/v1/projections/wait-for-event"
+      );
+      expect(opts.headers["Authorization"]).toBe("Bearer session-token-123");
+      expect(opts.headers["X-Ironflow-Environment"]).toBe("staging");
+    });
+
+    it("prefers an API key when both credentials are configured", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        auth: { apiKey: "api-key-123", token: "session-token-123" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ caughtUp: true }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.waitForEvent("evt-42", "order-stats");
+
+      const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
+      expect(headers["Authorization"]).toBe("Bearer api-key-123");
+    });
+  });
+
+  describe("waitForProjectionCatchup", () => {
+    it("uses the configured bearer token", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        auth: { token: "session-token-123" },
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ caughtUp: true }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.waitForProjectionCatchup("order-stats", { minSeq: 42 });
+
+      const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
+      expect(headers["Authorization"]).toBe("Bearer session-token-123");
     });
   });
 

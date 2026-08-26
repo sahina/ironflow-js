@@ -114,8 +114,10 @@ export class BrowserConfigClient {
         headers["Content-Type"] = "application/json";
       }
 
-      if (this.config.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config.auth.apiKey}`;
+      const credential =
+        this.config.auth?.apiKey || this.config.auth?.token;
+      if (credential) {
+        headers["Authorization"] = `Bearer ${credential}`;
       }
 
       const response = await fetch(url, {

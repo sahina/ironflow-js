@@ -558,9 +558,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -599,9 +597,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -642,9 +638,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -695,9 +689,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -765,9 +757,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -827,9 +817,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -922,9 +910,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -989,9 +975,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -1051,9 +1035,7 @@ class IronflowClient {
       const headers: Record<string, string> = {
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "GET",
@@ -1090,9 +1072,7 @@ class IronflowClient {
       const headers: Record<string, string> = {
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "GET",
@@ -1575,9 +1555,7 @@ class IronflowClient {
       const headers: Record<string, string> = {
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "GET",
@@ -1661,9 +1639,7 @@ class IronflowClient {
       const headers: Record<string, string> = {
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "GET",
@@ -1721,9 +1697,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "POST",
@@ -1781,9 +1755,7 @@ class IronflowClient {
       const headers: Record<string, string> = {
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
       const response = await fetch(url, {
         method: "GET",
         headers,
@@ -1853,7 +1825,7 @@ class IronflowClient {
       interceptors: [
         (next) => async (req) => {
           req.header.set(HEADERS.ENVIRONMENT, this.config!.environment);
-          const token = this.config!.auth?.apiKey || this.config!.auth?.token;
+          const token = this.authCredential();
           if (token) req.header.set("Authorization", `Bearer ${token}`);
           return next(req);
         },
@@ -1901,9 +1873,7 @@ class IronflowClient {
         "Content-Type": "application/json",
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
       const body: Record<string, unknown> = { eventId, projection };
       if (opts.timeoutMs !== undefined) body.timeoutMs = opts.timeoutMs;
       if (opts.partition) body.partition = opts.partition;
@@ -1950,9 +1920,7 @@ class IronflowClient {
       const headers: Record<string, string> = {
         [HEADERS.ENVIRONMENT]: this.config!.environment,
       };
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      }
+      this.applyAuthHeader(headers);
 
       const response = await fetch(url, {
         method: "GET",
@@ -2796,6 +2764,17 @@ class IronflowClient {
     }
   }
 
+  private authCredential(): string | undefined {
+    return this.config!.auth?.apiKey || this.config!.auth?.token;
+  }
+
+  private applyAuthHeader(headers: Record<string, string>): void {
+    const credential = this.authCredential();
+    if (credential) {
+      headers["Authorization"] = `Bearer ${credential}`;
+    }
+  }
+
   private cleanup(): void {
     if (this.visibilityHandler) {
       document.removeEventListener("visibilitychange", this.visibilityHandler);
@@ -2885,11 +2864,7 @@ class IronflowClient {
         headers["Content-Type"] = "application/json";
       }
 
-      if (this.config!.auth?.apiKey) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.apiKey}`;
-      } else if (this.config!.auth?.token) {
-        headers["Authorization"] = `Bearer ${this.config!.auth.token}`;
-      }
+      this.applyAuthHeader(headers);
 
       const fetchOptions: RequestInit = {
         method,

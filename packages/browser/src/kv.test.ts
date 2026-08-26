@@ -570,7 +570,7 @@ describe("watch", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch"
+      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=test-env"
     );
   });
 
@@ -581,7 +581,7 @@ describe("watch", () => {
 
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "wss://example.com/api/v1/kv/buckets/bucket/watch"
+      "wss://example.com/api/v1/kv/buckets/bucket/watch?env=test-env"
     );
   });
 
@@ -591,8 +591,50 @@ describe("watch", () => {
 
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?key=user.*"
+      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=test-env&key=user.*"
     );
+  });
+
+  it("includes the environment and API key in the URL", () => {
+    const handle = new BrowserKVBucketHandle(
+      "test-bucket",
+      makeConfig({
+        environment: "prod/us",
+        auth: { apiKey: "ifkey/a+b" },
+      })
+    );
+    handle.watch({ onUpdate: vi.fn() });
+
+    const ws = assertDefined(MockWebSocket.instances[0]);
+    expect(ws.url).toBe(
+      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=prod%2Fus&token=ifkey%2Fa%2Bb"
+    );
+  });
+
+  it("uses the configured token query parameter when the API key is empty", () => {
+    const handle = new BrowserKVBucketHandle(
+      "test-bucket",
+      makeConfig({ auth: { apiKey: "", token: "session/token" } })
+    );
+    handle.watch({ onUpdate: vi.fn() });
+
+    const ws = assertDefined(MockWebSocket.instances[0]);
+    expect(ws.url).toContain("env=test-env");
+    expect(ws.url).toContain("token=session%2Ftoken");
+  });
+
+  it("prefers the API key over the bearer token", () => {
+    const handle = new BrowserKVBucketHandle(
+      "test-bucket",
+      makeConfig({
+        auth: { apiKey: "api-key", token: "session-token" },
+      })
+    );
+    handle.watch({ onUpdate: vi.fn() });
+
+    const ws = assertDefined(MockWebSocket.instances[0]);
+    expect(ws.url).toContain("token=api-key");
+    expect(ws.url).not.toContain("session-token");
   });
 
   it("stop() calls ws.close()", () => {
