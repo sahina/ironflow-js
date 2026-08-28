@@ -40,7 +40,7 @@ importers:
         version: link:../core
       zod:
         specifier: ^4.4.3
-        version: 4.4.3
+        version: 4.5.1
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -68,7 +68,7 @@ importers:
     dependencies:
       zod:
         specifier: ^4.4.3
-        version: 4.4.3
+        version: 4.5.1
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -101,7 +101,7 @@ importers:
         version: 1.2.9(ws@8.21.3)
       '@langchain/langgraph':
         specifier: ^1.4.12
-        version: 1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.4.3)
+        version: 1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.5.1)
       '@langchain/langgraph-checkpoint':
         specifier: ^1.1.5
         version: 1.1.5(@langchain/core@1.2.9(ws@8.21.3))
@@ -122,7 +122,7 @@ importers:
         version: link:../core
       zod:
         specifier: ^4.4.3
-        version: 4.4.3
+        version: 4.5.1
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -1353,8 +1353,8 @@ packages:
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
-  zod@4.4.3:
-    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+  zod@4.5.1:
+    resolution: {integrity: sha512-P3GqeAEOEDqKvafVGLezbg+39YW/ze4xrD4qdS0adOY8eoI3zfjv1PQM4UwQzgT8mZKXEbqtVt8K+ZKGqkMFKg==}
 
 snapshots:
 
@@ -1623,7 +1623,7 @@ snapshots:
       langsmith: 0.9.0(ws@8.21.3)
       mustache: 4.2.0
       p-queue: 6.6.2
-      zod: 4.4.3
+      zod: 4.5.1
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - '@opentelemetry/exporter-trace-otlp-proto'
@@ -1643,14 +1643,14 @@ snapshots:
       p-queue: 9.3.3
       p-retry: 7.1.1
 
-  '@langchain/langgraph@1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.4.3)':
+  '@langchain/langgraph@1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.5.1)':
     dependencies:
       '@langchain/core': 1.2.9(ws@8.21.3)
       '@langchain/langgraph-checkpoint': 1.1.5(@langchain/core@1.2.9(ws@8.21.3))
       '@langchain/langgraph-sdk': 1.10.0(@langchain/core@1.2.9(ws@8.21.3))
       '@langchain/protocol': 0.0.18
       '@standard-schema/spec': 1.1.0
-      zod: 4.4.3
+      zod: 4.5.1
     transitivePeerDependencies:
       - react
       - react-dom
@@ -2389,4 +2389,4 @@ snapshots:
 
   xmlchars@2.2.0: {}
 
-  zod@4.4.3: {}
+  zod@4.5.1: {}
