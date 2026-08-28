@@ -610,6 +610,8 @@ interface TriggerSyncResult {
 interface SubscribeOptions {
   /** Number of historical events to replay (0 = no replay) */
   replay?: number;
+  /** Resume after this stream sequence; 0 means from the beginning */
+  startAfterSequence?: number;
   /** Include event metadata (timestamp, sequence) */
   includeMetadata?: boolean;
   /** CEL expression for content-based filtering */
@@ -624,6 +626,12 @@ interface SubscribeOptions {
   backpressure?: BackpressureMode;
 }
 ```
+
+`startAfterSequence` cannot be combined with `replay` or `consumerGroup`. When
+set, the SDK advances the cursor to each delivered event and uses that position
+after a transport reconnect. Delivery remains at-least-once, so the frame in
+flight during a disconnect may repeat. Make the handler idempotent or dedupe on
+`event.meta.sequence`.
 
 ### AckMode, BackpressureMode, AckType
 
@@ -1532,7 +1540,9 @@ import {
   RunFailedError, RunCancelledError,
   AgentInvokeTimeoutError, NoRunCreatedError, MemoryCatchupTimeoutError,
   UnauthenticatedError, EnterpriseRequiredError, UnauthorizedError,
+  QueueFullError,
   isRetryable, isIronflowError, toError,
+  AUTH_HELP, throwIfAuthError,
 } from '@ironflow/core';
 ```
 
@@ -1579,6 +1589,7 @@ class IronflowError extends Error {
 | `UnauthenticatedError` | `UNAUTHENTICATED` | false | No/invalid API key (HTTP 401) |
 | `EnterpriseRequiredError` | `ENTERPRISE_REQUIRED` | false | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility |
 | `UnauthorizedError` | `UNAUTHORIZED` | false | Insufficient permissions (HTTP 403) |
+| `QueueFullError` | `QUEUE_FULL` | false | `@ironflow/browser`'s offline write queue hit its 500-write / 5 MB cap |
 
 ### Utility Functions
 
@@ -1591,6 +1602,11 @@ isIronflowError(error: unknown): error is IronflowError
 
 // Normalize any thrown value to an Error instance
 toError(error: unknown): Error
+
+// Throw UnauthenticatedError on 401 / UnauthorizedError on 403, both with
+// AUTH_HELP appended; returns silently on any other status. AUTH_HELP is the
+// shared "set IRONFLOW_API_KEY / see the startup banner" guidance string (#1673).
+throwIfAuthError(status: number, context: string): void
 ```
 
 Usage:
@@ -1809,6 +1825,48 @@ interface ClientRetryConfig {
   connectionRetryDelayMs?: number; // default: 2000
   onRetry?: (event: RetryEvent) => void;
 }
+```
+
+### Subscribe/Resume Helpers
+
+Values, not types. Both SDK transports share them so a WebSocket and a
+ConnectRPC subscription resume identically.
+
+```typescript
+import {
+  createWSSubscribeRequest,      // (pattern, options?) => WSSubscribeRequest
+  serializeWSSubscribeRequest,   // (request) => string; validates the cursor before sending
+  startAfterSequenceToBigInt,    // (number | bigint) => bigint; rejects unsafe/negative cursors
+  subscriptionOptionsForReconnect, // (options?) => options with `replay` stripped
+  advanceResumeCursor,           // (options, sequence) => options with startAfterSequence moved forward
+  resumeSequenceFromMetadata,    // (sequence?, sequenceExact?) => number | bigint | undefined
+} from '@ironflow/core';
+```
+
+`replay` applies only to the first subscribe, which is why
+`subscriptionOptionsForReconnect` drops it. `resumeSequenceFromMetadata` prefers
+the exact string form so sequences past `Number.MAX_SAFE_INTEGER` survive.
+
+### Wire Converters
+
+Server responses are snake_case on both transports (the Connect codec registers
+protojson with `UseProtoNames=true`), so these normalize one wire object into
+the camelCase type of the same name.
+
+```typescript
+import {
+  webhookVerifyConfigToWire,
+  webhookVerifyConfigFromWire,
+  webhookGraceToWire,               // tri-state grace → wire; throws above the cap
+  WEBHOOK_SECRET_GRACE_CAP_SECONDS, // 604800 (7 days)
+  webhookSourceFromWire,
+  webhookDeliveryFromWire,
+  registeredFunctionFromWire,
+  functionHistoryEntryFromWire,
+  storedEventFromWire,
+  runStepFromWire,
+  consumerGroupFromWire,
+} from '@ironflow/core';
 ```
 
 ---
@@ -2301,6 +2359,12 @@ interface SecretListEntry {
   name: string;
   created_at: string;
   updated_at: string;
+}
+
+/** Metadata-only update — the stored value is left untouched. */
+interface PatchSecretInput {
+  name?: string;
+  description?: string;
 }
 ```
 

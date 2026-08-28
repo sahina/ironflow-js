@@ -1376,9 +1376,11 @@ describe("createStepClient (real implementation)", () => {
       });
       const step = createRealStepClient(ctx);
 
-      const result = await step.publish("order.processed", {
-        orderId: "123",
-      });
+      const result = await step.publish(
+        "order.processed",
+        { orderId: "123" },
+        { idempotencyKey: "publish-order-123" }
+      );
 
       expect(result.eventId).toBe("msg_abc");
       expect(result.sequence).toBe(7);
@@ -1399,6 +1401,7 @@ describe("createStepClient (real implementation)", () => {
       const body = JSON.parse(call[1]?.body as string);
       expect(body.topic).toBe("order.processed");
       expect(body.data).toEqual({ orderId: "123" });
+      expect(body.idempotencyKey).toBe("publish-order-123");
 
       // Verify step was recorded
       const executed = ctx.getExecutedSteps();

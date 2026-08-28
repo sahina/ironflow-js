@@ -15,9 +15,14 @@ import type {
   AckType,
 } from "@ironflow/core";
 import {
+  advanceResumeCursor,
+  createWSSubscribeRequest,
   getWebSocketUrl,
+  resumeSequenceFromMetadata,
+  serializeWSSubscribeRequest,
   WSServerMessageSchema,
   calculateBackoff,
+  subscriptionOptionsForReconnect,
 } from "@ironflow/core";
 import type {
   WSSubscribeRequest,
@@ -42,7 +47,7 @@ export interface SubscriptionClientConfig {
   apiKey?: string;
   /** Environment for environment-scoped subscriptions */
   environment?: string;
-  /** Enable automatic reconnection (default: true) */
+  /** Enable automatic reconnection (default: true). Cursor subscriptions reconnect regardless. */
   autoReconnect?: boolean;
   /** Initial reconnect delay in ms (default: 1000) */
   reconnectDelay?: number;
@@ -140,6 +145,8 @@ export class SubscriptionClient {
   private pending: Map<string, PendingSubscription> = new Map(); // pattern -> pending
   private subscriptions: Map<string, ActiveSubscription> = new Map(); // subId -> active
   private patternToId: Map<string, string> = new Map(); // pattern -> subId
+  private resubscribingPatterns: Set<string> = new Set();
+  private canceledResubscriptions: Set<string> = new Set();
 
   // Global callbacks
   private connectionCallbacks: Set<(state: ConnectionState) => void> =
@@ -213,6 +220,9 @@ export class SubscriptionClient {
           }
           this._connectionState = "disconnected";
           this.notifyConnectionChange("disconnected");
+          if (this.shouldReconnect()) {
+            this.scheduleReconnect();
+          }
           reject(new Error(`WebSocket connection timeout after ${timeout}ms`));
         }
       }, timeout);
@@ -228,7 +238,16 @@ export class SubscriptionClient {
 
           // Re-subscribe all active subscriptions on reconnect
           for (const sub of this.subscriptions.values()) {
-            this.sendSubscribe(sub.pattern, sub.options);
+            this.resubscribingPatterns.add(sub.pattern);
+            this.sendSubscribe(
+              sub.pattern,
+              subscriptionOptionsForReconnect(sub.options),
+            );
+          }
+          for (const pattern of this.pending.keys()) {
+            if (!this.resubscribingPatterns.has(pattern)) {
+              this.sendPendingSubscribe(pattern);
+            }
           }
 
           resolve();
@@ -238,10 +257,12 @@ export class SubscriptionClient {
           clearTimeout(timeoutId);
           const wasConnected = this._connectionState === "connected";
           this._connectionState = "disconnected";
+          this.resubscribingPatterns.clear();
+          this.canceledResubscriptions.clear();
           this.notifyConnectionChange("disconnected");
 
           if (
-            this.config.autoReconnect &&
+            (this.config.autoReconnect || this.hasCursorSubscription()) &&
             !this.closed &&
             event.code !== 1000
           ) {
@@ -262,14 +283,16 @@ export class SubscriptionClient {
 
         this.ws.onmessage = (event) => {
           const data =
-            typeof event.data === "string"
-              ? event.data
-              : event.data.toString();
+            typeof event.data === "string" ? event.data : event.data.toString();
           this.handleMessage(data);
         };
       } catch (error) {
         clearTimeout(timeoutId);
         this._connectionState = "disconnected";
+        this.notifyConnectionChange("disconnected");
+        if (this.shouldReconnect()) {
+          this.scheduleReconnect();
+        }
         reject(error);
       }
     });
@@ -297,6 +320,8 @@ export class SubscriptionClient {
     this.pending.clear();
     this.subscriptions.clear();
     this.patternToId.clear();
+    this.resubscribingPatterns.clear();
+    this.canceledResubscriptions.clear();
   }
 
   /**
@@ -330,24 +355,19 @@ export class SubscriptionClient {
    */
   async subscribe<T = unknown>(
     pattern: string,
-    callbacksAndOptions: SubscriptionCallbacks<T> & SubscribeOptions = {}
+    callbacksAndOptions: SubscriptionCallbacks<T> & SubscribeOptions = {},
   ): Promise<Subscription | AckableSubscription> {
     if (!this.isConnected) {
       throw new Error("Not connected to server");
     }
 
     // Check for duplicate
-    if (this.patternToId.has(pattern)) {
+    if (this.patternToId.has(pattern) || this.pending.has(pattern)) {
       throw new Error(`Already subscribed to pattern: ${pattern}`);
     }
 
     // Extract options from callbacks
-    const {
-      onEvent,
-      onError,
-      onStateChange,
-      ...options
-    } = callbacksAndOptions;
+    const { onEvent, onError, onStateChange, ...options } = callbacksAndOptions;
 
     const callbacks: SubscriptionCallbacks<T> = {
       onEvent,
@@ -355,18 +375,36 @@ export class SubscriptionClient {
       onStateChange,
     };
 
-    return new Promise<Subscription | AckableSubscription>((resolve, reject) => {
-      const pending: PendingSubscription = {
-        pattern,
-        options: Object.keys(options).length > 0 ? options : undefined,
-        callbacks: callbacks as SubscriptionCallbacks,
-        resolve: resolve as (sub: Subscription | AckableSubscription) => void,
-        reject,
-      };
+    return new Promise<Subscription | AckableSubscription>(
+      (resolve, reject) => {
+        const pending: PendingSubscription = {
+          pattern,
+          options: Object.keys(options).length > 0 ? options : undefined,
+          callbacks: callbacks as SubscriptionCallbacks,
+          resolve: resolve as (sub: Subscription | AckableSubscription) => void,
+          reject,
+        };
 
-      this.pending.set(pattern, pending);
-      this.sendSubscribe(pattern, pending.options);
+        this.pending.set(pattern, pending);
+        if (!this.canceledResubscriptions.has(pattern)) {
+          this.sendSubscribe(pattern, pending.options);
+        }
+      },
+    );
+  }
+
+  /** Join a durable consumer group with manual acknowledgements. */
+  async joinConsumerGroup<T = unknown>(
+    groupName: string,
+    pattern: string,
+    callbacksAndOptions: SubscriptionCallbacks<T> & SubscribeOptions = {},
+  ): Promise<AckableSubscription> {
+    const subscription = await this.subscribe<T>(pattern, {
+      ...callbacksAndOptions,
+      consumerGroup: groupName,
+      ackMode: "manual",
     });
+    return subscription as AckableSubscription;
   }
 
   /**
@@ -396,25 +434,12 @@ export class SubscriptionClient {
       return;
     }
 
-    const request: WSSubscribeRequest = {
-      type: "subscribe",
-      subscription: {
-        pattern,
-        options: options
-          ? {
-              replay: options.replay,
-              includeMetadata: options.includeMetadata,
-              filter: options.filter,
-              consumerGroup: options.consumerGroup,
-              ackMode: options.ackMode,
-              backpressure: options.backpressure,
-              namespace: options.namespace,
-            }
-          : undefined,
-      },
-    };
+    const request: WSSubscribeRequest = createWSSubscribeRequest(
+      pattern,
+      options,
+    );
 
-    this.ws.send(JSON.stringify(request));
+    this.ws.send(serializeWSSubscribeRequest(request));
   }
 
   private sendUnsubscribe(subscriptionId: string): void {
@@ -471,7 +496,7 @@ export class SubscriptionClient {
           } else {
             this.handleSubscribeFailed(
               sub.pattern,
-              new Error(sub.message ?? `Subscription failed: ${sub.code}`)
+              new Error(sub.message ?? `Subscription failed: ${sub.code}`),
             );
           }
         }
@@ -480,6 +505,13 @@ export class SubscriptionClient {
       case "event": {
         const active = this.subscriptions.get(message.subscriptionId);
         if (active) {
+          active.options = advanceResumeCursor(
+            active.options,
+            resumeSequenceFromMetadata(
+              message.meta?.sequence,
+              message.meta?.sequenceExact,
+            ),
+          );
           const event: SubscriptionEvent = {
             topic: message.topic,
             data: message.data,
@@ -524,8 +556,28 @@ export class SubscriptionClient {
   }
 
   private handleSubscribed(pattern: string, subscriptionId: string): void {
+    if (this.canceledResubscriptions.delete(pattern)) {
+      this.resubscribingPatterns.delete(pattern);
+      this.sendUnsubscribe(subscriptionId);
+      this.sendPendingSubscribe(pattern);
+      return;
+    }
+
     const pending = this.pending.get(pattern);
     if (!pending) {
+      const previousId = this.patternToId.get(pattern);
+      const active = previousId
+        ? this.subscriptions.get(previousId)
+        : undefined;
+      if (!previousId || !active) {
+        return;
+      }
+
+      this.subscriptions.delete(previousId);
+      active.id = subscriptionId;
+      this.subscriptions.set(subscriptionId, active);
+      this.patternToId.set(pattern, subscriptionId);
+      this.resubscribingPatterns.delete(pattern);
       return;
     }
 
@@ -542,13 +594,17 @@ export class SubscriptionClient {
     this.patternToId.set(pattern, subscriptionId);
 
     const isManualAck = pending.options?.ackMode === "manual";
+    const currentSubscriptionId = () =>
+      this.patternToId.get(pattern) ?? subscriptionId;
 
     if (isManualAck) {
       const ackableSub: AckableSubscription = {
-        id: subscriptionId,
+        get id() {
+          return currentSubscriptionId();
+        },
         pattern,
         connectionState: this._connectionState,
-        unsubscribe: () => this.unsubscribeById(subscriptionId),
+        unsubscribe: () => this.unsubscribeByPattern(pattern),
         ack: (eventId: string) => {
           this.sendAck(eventId, "ack");
           return Promise.resolve();
@@ -565,16 +621,45 @@ export class SubscriptionClient {
       pending.resolve(ackableSub);
     } else {
       const sub: Subscription = {
-        id: subscriptionId,
+        get id() {
+          return currentSubscriptionId();
+        },
         pattern,
         connectionState: this._connectionState,
-        unsubscribe: () => this.unsubscribeById(subscriptionId),
+        unsubscribe: () => this.unsubscribeByPattern(pattern),
       };
       pending.resolve(sub);
     }
   }
 
   private handleSubscribeFailed(pattern: string, error: Error): void {
+    if (this.canceledResubscriptions.delete(pattern)) {
+      this.resubscribingPatterns.delete(pattern);
+      this.sendPendingSubscribe(pattern);
+      return;
+    }
+    const wasResubscribing = this.resubscribingPatterns.delete(pattern);
+    if (wasResubscribing) {
+      const subscriptionId = this.patternToId.get(pattern);
+      const active = subscriptionId
+        ? this.subscriptions.get(subscriptionId)
+        : undefined;
+      if (subscriptionId) {
+        this.subscriptions.delete(subscriptionId);
+        this.patternToId.delete(pattern);
+      }
+      const errorInfo: SubscriptionErrorInfo = {
+        subscriptionId,
+        code: "RESUBSCRIBE_FAILED",
+        message: error.message,
+        retrying: false,
+      };
+      for (const callback of this.errorCallbacks) {
+        callback(errorInfo);
+      }
+      active?.callbacks.onError?.(errorInfo);
+      return;
+    }
     const pending = this.pending.get(pattern);
     if (!pending) {
       return;
@@ -593,6 +678,16 @@ export class SubscriptionClient {
     this.sendUnsubscribe(subscriptionId);
     this.subscriptions.delete(subscriptionId);
     this.patternToId.delete(active.pattern);
+  }
+
+  private unsubscribeByPattern(pattern: string): void {
+    const subscriptionId = this.patternToId.get(pattern);
+    if (subscriptionId) {
+      if (this.resubscribingPatterns.has(pattern)) {
+        this.canceledResubscriptions.add(pattern);
+      }
+      this.unsubscribeById(subscriptionId);
+    }
   }
 
   private notifyConnectionChange(state: ConnectionState): void {
@@ -618,15 +713,44 @@ export class SubscriptionClient {
       this.reconnectAttempt,
       this.config.reconnectDelay,
       this.config.maxReconnectDelay,
-      this.config.reconnectBackoff
+      this.config.reconnectBackoff,
     );
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect().catch(() => {
-        // Will trigger another reconnect via onclose
+        if (this.shouldReconnect()) {
+          this.scheduleReconnect();
+        }
       });
     }, delay);
+  }
+
+  private sendPendingSubscribe(pattern: string): void {
+    const pending = this.pending.get(pattern);
+    if (pending) {
+      this.sendSubscribe(pattern, pending.options);
+    }
+  }
+
+  private shouldReconnect(): boolean {
+    return (
+      (this.config.autoReconnect || this.hasCursorSubscription()) &&
+      !this.closed
+    );
+  }
+
+  private hasCursorSubscription(): boolean {
+    return (
+      [...this.subscriptions.values()].some(
+        (subscription) =>
+          subscription.options?.startAfterSequence !== undefined,
+      ) ||
+      [...this.pending.values()].some(
+        (subscription) =>
+          subscription.options?.startAfterSequence !== undefined,
+      )
+    );
   }
 
   private clearReconnectTimer(): void {
@@ -656,7 +780,7 @@ export class SubscriptionClient {
  * ```
  */
 export function createSubscriptionClient(
-  config: SubscriptionClientConfig
+  config: SubscriptionClientConfig,
 ): SubscriptionClient {
   return new SubscriptionClient(config);
 }

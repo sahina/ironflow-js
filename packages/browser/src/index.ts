@@ -96,11 +96,31 @@ export type {
   RunInfo,
   ListRunsOptions,
   ListRunsResult,
+  RunStep,
+  RunStepsResult,
+  RunStreamsResult,
+  FunctionStatus,
+  RegisteredFunction,
+  FunctionChangeType,
+  FunctionHistoryEntry,
+  ListFunctionHistoryOptions,
+  ListFunctionHistoryResult,
 
   // Event types
   IronflowEvent,
   EmitOptions,
   EmitResult,
+  TriggerBatchEvent,
+  StoredEvent,
+  ListEventsOptions,
+  ListEventsResult,
+  EventNameCount,
+  ListEventNamesOptions,
+  ListEventNamesResult,
+
+  // Developer pub/sub types
+  PublishOptions,
+  PublishResult,
 
   // Invoke/Trigger types
   InvokeResult,
@@ -124,6 +144,7 @@ export type {
   ConsumerGroupStatus,
   AckMode,
   BackpressureMode,
+  UpdateConsumerGroupInput,
 
   // Entity stream types
   AppendEventInput,
@@ -133,6 +154,8 @@ export type {
   StreamEvent,
   StreamInfo,
   EntitySubscribeOptions,
+  StreamListEntry,
+  EntityHistoryEntry,
 
   // Projection types
   ProjectionStatusInfo,
@@ -153,7 +176,6 @@ export type {
   // Config types
   ConfigResponse,
   ConfigEntry,
-  ConfigSetResult,
   ConfigWatchCallbacks,
   ConfigWatchEvent,
 
@@ -161,6 +183,7 @@ export type {
   AuditEvent,
   AuditTrailResult,
   GetAuditTrailOptions,
+  ListAuditEventsOptions,
 
   // Webhook management types
   WebhookSource,
@@ -171,13 +194,10 @@ export type {
   WebhookDelivery,
   ListWebhookDeliveriesOptions,
 
-  // User management types
-  User,
-  CreateUserInput,
-  UpdateUserInput,
-
   // Tenant management types
   Tenant,
+  ProvisionTenantInput,
+  ProvisionTenantResult,
 
   // Logger
   Logger,

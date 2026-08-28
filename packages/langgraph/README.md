@@ -40,8 +40,8 @@ Runtime dependencies (pulled in automatically):
 
 | Package | Version |
 |---|---|
-| `@ironflow/core` | `0.26.0` |
-| `@ironflow/node` | `0.26.0` |
+| `@ironflow/core` | `0.31.0` |
+| `@ironflow/node` | `0.31.0` |
 
 ## Quick Start
 

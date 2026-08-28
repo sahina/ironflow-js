@@ -2,13 +2,13 @@
  * Ironflow Browser Config Client
  *
  * Config management operations for browser-based applications.
- * Provides set, get, patch, list, delete, and watch capabilities.
+ * Provides read and watch capabilities. Config mutations are intentionally
+ * server-side and are not exposed to browser applications.
  */
 
 import type {
   ConfigResponse,
   ConfigEntry,
-  ConfigSetResult,
   ConfigWatchCallbacks,
   ConfigWatchEvent,
   Subscription,
@@ -39,24 +39,10 @@ export class BrowserConfigClient {
   }
 
   /**
-   * Set a config (full document replacement).
-   */
-  async set(name: string, data: Record<string, unknown>): Promise<ConfigSetResult> {
-    return this.restRequest<ConfigSetResult>("POST", `/api/v1/config/${enc(name)}`, data);
-  }
-
-  /**
    * Get a config by name.
    */
   async get(name: string): Promise<ConfigResponse> {
     return this.restRequest<ConfigResponse>("GET", `/api/v1/config/${enc(name)}`);
-  }
-
-  /**
-   * Patch a config (shallow merge).
-   */
-  async patch(name: string, data: Record<string, unknown>): Promise<ConfigSetResult> {
-    return this.restRequest<ConfigSetResult>("PATCH", `/api/v1/config/${enc(name)}`, data);
   }
 
   /**
@@ -65,13 +51,6 @@ export class BrowserConfigClient {
   async list(): Promise<ConfigEntry[]> {
     const result = await this.restRequest<{ configs: ConfigEntry[] }>("GET", "/api/v1/config");
     return result.configs;
-  }
-
-  /**
-   * Delete a config. Idempotent — succeeds silently if the config does not exist.
-   */
-  async delete(name: string): Promise<void> {
-    await this.restRequest<void>("DELETE", `/api/v1/config/${enc(name)}`);
   }
 
   /**
@@ -97,8 +76,7 @@ export class BrowserConfigClient {
 
   private async restRequest<T>(
     method: string,
-    path: string,
-    body?: unknown
+    path: string
   ): Promise<T> {
     const url = `${this.config.serverUrl}${path}`;
     const timeout = this.config.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
@@ -110,10 +88,6 @@ export class BrowserConfigClient {
         [HEADERS.ENVIRONMENT]: this.config.environment,
       };
 
-      if (body !== undefined) {
-        headers["Content-Type"] = "application/json";
-      }
-
       const credential =
         this.config.auth?.apiKey || this.config.auth?.token;
       if (credential) {
@@ -123,7 +97,6 @@ export class BrowserConfigClient {
       const response = await fetch(url, {
         method,
         headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
 

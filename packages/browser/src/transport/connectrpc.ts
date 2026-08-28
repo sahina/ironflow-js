@@ -13,7 +13,13 @@ import type {
   AckType,
   SubscriptionEvent,
 } from "@ironflow/core";
-import { calculateBackoff, HEADERS } from "@ironflow/core";
+import {
+  advanceResumeCursor,
+  calculateBackoff,
+  HEADERS,
+  subscriptionOptionsForReconnect,
+  startAfterSequenceToBigInt,
+} from "@ironflow/core";
 import { PubSubService } from "@ironflow/core/gen";
 import {
   SubscribeRequestSchema,
@@ -28,10 +34,14 @@ import {
 type PubSubClient = ReturnType<typeof createClient<any>> & {
   subscribe: (
     request: unknown,
-    options?: { signal?: AbortSignal }
+    options?: { signal?: AbortSignal },
   ) => AsyncIterable<ProtoSubscriptionEvent>;
 };
-import type { Transport, TransportCallbacks, TransportOptions } from "./types.js";
+import type {
+  Transport,
+  TransportCallbacks,
+  TransportOptions,
+} from "./types.js";
 
 /**
  * Active subscription tracking
@@ -41,6 +51,7 @@ interface ActiveSubscription {
   options?: CoreSubscribeOptions;
   abortController: AbortController;
   subscriptionId?: string;
+  accepted: boolean;
 }
 
 /**
@@ -103,14 +114,17 @@ export function isTransientNetworkError(error: unknown): boolean {
   if (error == null || typeof error !== "object") return false;
 
   if (error instanceof ConnectError) {
-    // Server temporarily unavailable
-    if (error.code === Code.Unavailable) return true;
-    // Stream aborted mid-reconnection (BodyStreamBuffer was aborted)
-    if (
-      error.code === Code.Unknown &&
-      /aborted|BodyStreamBuffer/i.test(error.message)
-    )
-      return true;
+    switch (error.code) {
+      case Code.Unknown:
+      case Code.DeadlineExceeded:
+      case Code.ResourceExhausted:
+      case Code.Aborted:
+      case Code.Internal:
+      case Code.Unavailable:
+        return true;
+      default:
+        break;
+    }
   }
 
   // Network-level fetch failures (server not ready, offline)
@@ -170,7 +184,9 @@ export class ConnectRPCTransport implements Transport {
       const envHeader = this.options.environment;
       const auth = this.options.auth;
 
-      const interceptors: Array<(next: (req: any) => Promise<any>) => (req: any) => Promise<any>> = [];
+      const interceptors: Array<
+        (next: (req: any) => Promise<any>) => (req: any) => Promise<any>
+      > = [];
 
       if (auth?.apiKey || auth?.token) {
         interceptors.push((next) => async (req) => {
@@ -196,7 +212,10 @@ export class ConnectRPCTransport implements Transport {
       // Create the PubSub client
       // Type assertion needed due to connect-es v1/v2 type mismatch
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.client = createClient(PubSubService as any, this.webTransport) as PubSubClient;
+      this.client = createClient(
+        PubSubService as any,
+        this.webTransport,
+      ) as PubSubClient;
 
       // Mark as connected
       this._connectionState = "connected";
@@ -239,8 +258,9 @@ export class ConnectRPCTransport implements Transport {
     // Track the subscription
     const activeSub: ActiveSubscription = {
       pattern,
-      options,
+      options: options ? { ...options } : undefined,
       abortController,
+      accepted: false,
     };
 
     this.activeSubscriptions.set(subscriptionId, activeSub);
@@ -266,7 +286,7 @@ export class ConnectRPCTransport implements Transport {
     throw new Error(
       `Manual acknowledgments are not yet supported in the browser transport. ` +
         `Cannot send ${type} for event ${eventId}. ` +
-        `Use ackMode: "auto" (default) or use WebSocket transport for manual acks.`
+        `Use ackMode: "auto" (default) or use WebSocket transport for manual acks.`,
     );
   }
 
@@ -297,22 +317,30 @@ export class ConnectRPCTransport implements Transport {
    */
   private async startSubscriptionStream(
     subscriptionId: string,
-    sub: ActiveSubscription
+    sub: ActiveSubscription,
   ): Promise<void> {
     if (!this.client) return;
 
     try {
+      const options = sub.accepted
+        ? subscriptionOptionsForReconnect(sub.options)
+        : sub.options;
+
       // Build subscribe request using protobuf create()
       const request = create(SubscribeRequestSchema, {
         pattern: sub.pattern,
         options: create(SubscribeOptionsSchema, {
-          replay: sub.options?.replay ?? 0,
-          includeMetadata: sub.options?.includeMetadata ?? false,
-          filter: sub.options?.filter ?? "",
-          namespace: sub.options?.namespace ?? "default",
-          consumerGroup: sub.options?.consumerGroup ?? "",
-          ackMode: toProtoAckMode(sub.options?.ackMode),
-          backpressure: toProtoBackpressureMode(sub.options?.backpressure),
+          replay: options?.replay ?? 0,
+          startAfterSequence:
+            options?.startAfterSequence !== undefined
+              ? startAfterSequenceToBigInt(options.startAfterSequence)
+              : undefined,
+          includeMetadata: options?.includeMetadata ?? false,
+          filter: options?.filter ?? "",
+          namespace: options?.namespace ?? "default",
+          consumerGroup: options?.consumerGroup ?? "",
+          ackMode: toProtoAckMode(options?.ackMode),
+          backpressure: toProtoBackpressureMode(options?.backpressure),
         }),
       });
 
@@ -332,8 +360,15 @@ export class ConnectRPCTransport implements Transport {
           break;
         }
 
+        sub.accepted = true;
+
         // Convert protobuf event to SDK event
         const subscriptionEvent = this.convertProtoEvent(event);
+
+        sub.options = advanceResumeCursor(
+          sub.options,
+          event.sequence > 0n ? event.sequence : undefined,
+        );
 
         // Invoke callback
         this.callbacks?.onEvent(subscriptionId, subscriptionEvent);
@@ -351,11 +386,13 @@ export class ConnectRPCTransport implements Transport {
       // is off, these fall through to onError so users can react.
       if (isTransientNetworkError(error)) {
         if (
-          this.options.autoReconnect &&
-          this._connectionState === "connected" &&
+          (this.options.autoReconnect ||
+            sub.options?.startAfterSequence !== undefined) &&
           this.activeSubscriptions.has(subscriptionId)
         ) {
-          this.handleDisconnect();
+          if (this._connectionState === "connected") {
+            this.handleDisconnect();
+          }
           return;
         }
         // autoReconnect is off — fall through to fire onError
@@ -385,18 +422,15 @@ export class ConnectRPCTransport implements Transport {
         }
       }
 
-      // Fire onError only for non-recoverable application errors
+      // Remove terminal state before invoking user callbacks so a throwing or
+      // reentrant handler cannot retain a dead subscription.
+      this.activeSubscriptions.delete(subscriptionId);
       this.callbacks?.onError(subscriptionId, {
         subscriptionId,
         code: errorCode,
         message: errorMessage,
-        retrying: this.options.autoReconnect,
+        retrying: false,
       });
-
-      // Trigger reconnect if enabled
-      if (this.options.autoReconnect && this._connectionState === "connected") {
-        this.handleDisconnect();
-      }
     }
   }
 
@@ -420,6 +454,7 @@ export class ConnectRPCTransport implements Transport {
         ? {
             timestamp,
             sequence: Number(event.sequence),
+            sequenceExact: event.sequence.toString(),
           }
         : undefined,
       eventId: event.eventId,
@@ -437,8 +472,19 @@ export class ConnectRPCTransport implements Transport {
       this.callbacks?.onConnectionChange("disconnected");
     }
 
+    // A reconnect replaces the transport session. Stop every stream from the
+    // old session before starting replacements, including streams that still
+    // appear healthy.
+    for (const sub of this.activeSubscriptions.values()) {
+      sub.abortController.abort();
+      sub.abortController = new AbortController();
+    }
+
     // Schedule reconnection if enabled
-    if (this.options.autoReconnect && !this.paused) {
+    if (
+      (this.options.autoReconnect || this.hasCursorSubscription()) &&
+      !this.paused
+    ) {
       this.scheduleReconnect();
     }
   }
@@ -459,22 +505,23 @@ export class ConnectRPCTransport implements Transport {
       this.reconnectAttempt,
       this.options.reconnectDelay,
       this.options.maxReconnectDelay,
-      this.options.reconnectBackoff
+      this.options.reconnectBackoff,
     );
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-
-      // Reset abort controllers for reconnect
-      for (const sub of this.activeSubscriptions.values()) {
-        sub.abortController = new AbortController();
-      }
 
       this.connect().catch(() => {
         // Will trigger another reconnect via handleDisconnect
         this.handleDisconnect();
       });
     }, delay);
+  }
+
+  private hasCursorSubscription(): boolean {
+    return [...this.activeSubscriptions.values()].some(
+      (subscription) => subscription.options?.startAfterSequence !== undefined,
+    );
   }
 
   /**
@@ -493,7 +540,7 @@ export class ConnectRPCTransport implements Transport {
  */
 export function createConnectRPCTransport(
   serverUrl: string,
-  options: TransportOptions
+  options: TransportOptions,
 ): Transport {
   return new ConnectRPCTransport(serverUrl, options);
 }

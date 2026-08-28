@@ -100,6 +100,12 @@ export type {
   RetryConfig,
   ConcurrencyConfig,
   ExecutionMode,
+  FunctionStatus,
+  RegisteredFunction,
+  FunctionChangeType,
+  FunctionHistoryEntry,
+  ListFunctionHistoryOptions,
+  ListFunctionHistoryResult,
 
   // Event types
   IronflowEvent,
@@ -116,6 +122,11 @@ export type {
   RunStatus,
   ListRunsOptions,
   ListRunsResult,
+  RunStep,
+  RunStepsResult,
+  RunStreamsResult,
+  ListProjectionPartitionsOptions,
+  ListProjectionPartitionsResult,
 
   // Invoke/Trigger types
   InvokeResult,
@@ -126,6 +137,24 @@ export type {
   // Emit types
   EmitOptions,
   EmitResult,
+  TriggerBatchEvent,
+  StoredEvent,
+  ListEventsOptions,
+  ListEventsResult,
+  EventNameCount,
+  ListEventNamesOptions,
+  ListEventNamesResult,
+
+  // Consumer group types
+  AckMode,
+  BackpressureMode,
+  ConsumerGroupStatus,
+  ConsumerGroupConfig,
+  UpdateConsumerGroupInput,
+  ConsumerGroup,
+  ServerCapabilities,
+  ListAgentToolsResult,
+  VisibleAgentTool,
 
   // Entity stream types
   AppendEventInput,
@@ -134,6 +163,8 @@ export type {
   ReadStreamOptions,
   StreamEvent,
   StreamInfo,
+  StreamListEntry,
+  EntityHistoryEntry,
 
   // Secrets
   SecretsClient,
@@ -222,9 +253,18 @@ export type {
   User,
   CreateUserInput,
   UpdateUserInput,
+  ChangePasswordInput,
 
   // Tenant management types
   Tenant,
+  ProvisionTenantInput,
+  ProvisionTenantResult,
+
+  // Environment audit and secret metadata updates
+  AuditEvent,
+  AuditTrailResult,
+  ListAuditEventsOptions,
+  PatchSecretInput,
 } from "@ironflow/core";
 
 // Re-export branded ID creators

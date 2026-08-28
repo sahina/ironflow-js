@@ -256,6 +256,66 @@ export interface CancelOnConfig {
  */
 export type ExecutionMode = "push" | "pull";
 
+/** Lifecycle status of a registered workflow function. */
+export type FunctionStatus = "active" | "paused" | "archived" | "unspecified";
+
+/** A function definition returned by the management API. */
+export interface RegisteredFunction {
+  id: string;
+  name: string;
+  description: string;
+  triggers: Trigger[];
+  retry?: RetryConfig;
+  timeoutMs: number;
+  concurrency?: ConcurrencyConfig;
+  debounce?: DebounceConfig;
+  preferredMode?: ExecutionMode;
+  endpointUrl: string;
+  actorKey: string;
+  status: FunctionStatus;
+  version: number;
+  createdAt?: string;
+  updatedAt?: string;
+  recording: boolean;
+  recordingRetention: string;
+  metadata?: Record<string, unknown>;
+  cancelOn: CancelOnConfig[];
+}
+
+/** Why a function history snapshot was recorded. */
+export type FunctionChangeType =
+  | "created"
+  | "update"
+  | "status_change"
+  | "rollback"
+  | "delete";
+
+/** Immutable function configuration snapshot. */
+export interface FunctionHistoryEntry {
+  eventId: string;
+  entityVersion: number;
+  functionId: string;
+  functionSnapshot?: RegisteredFunction;
+  actorId: string;
+  changeReason: string;
+  changeType: FunctionChangeType;
+  recordedAt?: string;
+}
+
+/** Keyset pagination options for function history. */
+export interface ListFunctionHistoryOptions {
+  /** Maximum entries to return. The server caps this at 200. */
+  limit?: number;
+  /** Return entries older than this entity version (exclusive). */
+  fromVersion?: number;
+}
+
+/** One page of function configuration history. */
+export interface ListFunctionHistoryResult {
+  entries: FunctionHistoryEntry[];
+  hasMore: boolean;
+}
+
 // ============================================================================
 // Secrets Client
 // ============================================================================
@@ -530,7 +590,11 @@ export interface StepClient {
    * @param data Message payload
    * @returns The publish result with eventId and sequence number
    */
-  publish(topic: string, data: unknown): Promise<PublishResult>;
+  publish(
+    topic: string,
+    data: unknown,
+    options?: PublishOptions
+  ): Promise<PublishResult>;
 }
 
 /**
@@ -671,6 +735,56 @@ export interface ListRunsResult {
   totalCount: number;
 }
 
+/** One durable step recorded for a run. */
+export interface RunStep {
+  id: string;
+  runId: string;
+  stepId: string;
+  stepType: string;
+  sequence: number;
+  status: string;
+  input?: unknown;
+  output?: unknown;
+  originalOutput?: unknown;
+  error?: unknown;
+  inputHash?: string;
+  attempt: number;
+  durationMs?: number;
+  startedAt?: string;
+  endedAt?: string;
+  sleepUntil?: string;
+  waitEventName?: string;
+  waitTimeout?: string;
+  patchedAt?: string;
+  patchedBy?: string;
+  compensationFor?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Durable steps recorded for a run. */
+export interface RunStepsResult {
+  steps: RunStep[];
+  count: number;
+}
+
+/** Entity streams touched by a run. */
+export interface RunStreamsResult {
+  entityIds: string[];
+}
+
+/** Filters for projection partition keys. */
+export interface ListProjectionPartitionsOptions {
+  query?: string;
+  limit?: number;
+}
+
+/** Projection partition keys returned by the server. */
+export interface ListProjectionPartitionsResult {
+  partitions: string[];
+  returned: number;
+}
+
 // ============================================================================
 // Invoke Types
 // ============================================================================
@@ -763,6 +877,78 @@ export interface EmitResult {
   eventId: string;
 }
 
+/** One event in a batch trigger request. */
+export interface TriggerBatchEvent {
+  event: string;
+  data: unknown;
+  version?: number;
+  idempotencyKey?: string;
+  metadata?: Record<string, unknown>;
+}
+
+/** An event persisted in Ironflow's event log. */
+export interface StoredEvent {
+  id: string;
+  name: string;
+  timestamp: string;
+  data: unknown;
+  source: string;
+  metadata?: unknown;
+  idempotencyKey?: string;
+  processed: boolean;
+  createdAt: string;
+  entityId?: string;
+  entityType?: string;
+  runId?: string;
+}
+
+/** Filters and keyset cursor for event-log reads. */
+export interface ListEventsOptions {
+  name?: string;
+  names?: string[];
+  sources?: string[];
+  search?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  cursor?: string;
+  before?: string;
+}
+
+/** One keyset-paginated event-log page. */
+export interface ListEventsResult {
+  events: StoredEvent[];
+  count: number;
+  limit: number;
+  nextCursor?: string;
+  prevCursor?: string;
+  hasNext: boolean;
+  hasPrev: boolean;
+  approxTotal?: number;
+  approxTotalCapped: boolean;
+}
+
+/** One event name and its count in the bounded facet window. */
+export interface EventNameCount {
+  name: string;
+  count: number;
+}
+
+/** Filters for the event-name facet. */
+export interface ListEventNamesOptions {
+  sources?: string[];
+  since?: string;
+  until?: string;
+}
+
+/** Bounded event-name facet response. */
+export interface ListEventNamesResult {
+  names: EventNameCount[];
+  scanned: number;
+  truncated: boolean;
+  scanCap: number;
+}
+
 // ============================================================================
 // Subscription Types (Pub/Sub)
 // ============================================================================
@@ -788,7 +974,19 @@ export type AckType = "ack" | "nak" | "term";
 export interface SubscribeOptions {
   /** Number of historical events to replay (0 = no replay) */
   replay?: number;
-  /** Include event metadata (timestamp, sequence) */
+  /**
+   * Resume delivery after this stream sequence.
+   *
+   * Mutually exclusive with `replay` and `consumerGroup`. Setting a cursor
+   * also opts this subscription into cursor-aware reconnects. Delivery remains
+   * at-least-once, so the frame in flight during a disconnect may repeat.
+   * `0` means from the beginning and is distinct from leaving this unset.
+   */
+  startAfterSequence?: number | bigint;
+  /**
+   * Include event metadata (timestamp, sequence). WebSocket transports enable
+   * this on the wire when `startAfterSequence` is set so reconnects can advance.
+   */
   includeMetadata?: boolean;
   /** CEL expression for content-based filtering */
   filter?: string;
@@ -834,6 +1032,8 @@ export interface EventMetadata {
   timestamp: string;
   /** Event sequence number within the stream */
   sequence?: number;
+  /** Exact uint64 sequence for values that exceed Number.MAX_SAFE_INTEGER. */
+  sequenceExact?: string;
 }
 
 /**
@@ -938,6 +1138,19 @@ export interface ConsumerGroupConfig {
   redeliverDelayMs?: number;
   /** Custom metadata */
   metadata?: Record<string, unknown>;
+}
+
+/** Mutable consumer-group fields for a partial update. */
+export interface UpdateConsumerGroupInput {
+  pattern?: string;
+  filterExpr?: string;
+  ackMode?: AckMode;
+  backpressure?: BackpressureMode;
+  maxInflight?: number;
+  maxRedeliveries?: number;
+  redeliverDelayMs?: number;
+  metadata?: Record<string, unknown>;
+  status?: Exclude<ConsumerGroupStatus, "deleted">;
 }
 
 /**
@@ -1354,6 +1567,8 @@ export interface ServerCapabilities {
   features: string[];
   /** Server version */
   version: string;
+  /** Whether API requests require authentication */
+  authRequired?: boolean;
 }
 
 // ============================================================================
@@ -1383,6 +1598,12 @@ export interface GetAuditTrailOptions {
   toTimestamp?: string;
   limit?: number;
   cursor?: string;
+}
+
+/** Options for querying the environment-wide audit stream. */
+export interface ListAuditEventsOptions extends GetAuditTrailOptions {
+  runId?: string;
+  functionId?: string;
 }
 
 /**
@@ -1417,6 +1638,12 @@ export interface SecretListEntry {
   updated_at: string;
 }
 
+/** Rename a secret and/or update its description without changing its value. */
+export interface PatchSecretInput {
+  name?: string;
+  description?: string;
+}
+
 // ============================================================================
 // Entity Stream Extension Types
 // ============================================================================
@@ -1440,6 +1667,24 @@ export interface EntityHistoryEntry {
   data: unknown;
   version: number;
   timestamp: string;
+}
+
+// ============================================================================
+// Agent Tool Discovery Types
+// ============================================================================
+
+/** An agent tool visible to the calling API key. */
+export interface VisibleAgentTool {
+  qualifiedName: string;
+  description: string;
+  inputSchemaJson: string;
+  requiredScopes: string[];
+}
+
+/** Result from listing visible agent tools. */
+export interface ListAgentToolsResult {
+  tools: VisibleAgentTool[];
+  nextCursor?: string;
 }
 
 // ============================================================================
@@ -1791,6 +2036,12 @@ export interface UpdateUserInput {
   roles?: string[];
 }
 
+/** Input for changing the authenticated user's password. */
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
 // ============================================================================
 // Tenant Management Types
 // ============================================================================
@@ -1804,6 +2055,19 @@ export interface Tenant {
   envCount: number;
   keyCount: number;
   createdAt?: string;
+}
+
+/** Input for provisioning an organization, environment, and initial API key. */
+export interface ProvisionTenantInput {
+  orgName: string;
+  envName?: string;
+}
+
+/** Resources created by tenant provisioning. */
+export interface ProvisionTenantResult {
+  org: { id: string; name: string };
+  environment: { id: string; name: string };
+  apiKey: { key: string; roles: string[] };
 }
 
 /**
@@ -2012,5 +2276,187 @@ export function webhookDeliveryFromWire(
     error: str("error"),
     signatureKey: str("signature_key"),
     createdAt: str("created_at"),
+  };
+}
+
+function wireNumber(value: unknown): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+/** Normalize a ConnectRPC Function message into the public SDK shape. */
+export function registeredFunctionFromWire(
+  raw: Record<string, unknown> | undefined,
+): RegisteredFunction {
+  const r = raw ?? {};
+  const status = String(r.status ?? "unspecified")
+    .toLowerCase()
+    .replace(/^function_status_/, "") as FunctionStatus;
+  const mode = String(r.preferredMode ?? "")
+    .toLowerCase()
+    .replace(/^execution_mode_/, "") as ExecutionMode | "";
+  const retry = r.retry as Record<string, unknown> | undefined;
+  const concurrency = r.concurrency as Record<string, unknown> | undefined;
+  const debounce = r.debounce as Record<string, unknown> | undefined;
+
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    description: String(r.description ?? ""),
+    triggers: (r.triggers as Trigger[] | undefined) ?? [],
+    retry: retry
+      ? {
+          maxAttempts: wireNumber(retry.maxAttempts),
+          initialDelayMs: wireNumber(retry.initialDelayMs),
+          backoffFactor: wireNumber(retry.backoffFactor),
+          maxDelayMs: wireNumber(retry.maxDelayMs),
+        }
+      : undefined,
+    timeoutMs: wireNumber(r.timeoutMs),
+    concurrency: concurrency
+      ? {
+          limit: wireNumber(concurrency.limit),
+          key: String(concurrency.key ?? "") || undefined,
+        }
+      : undefined,
+    debounce: debounce
+      ? {
+          periodMs: wireNumber(debounce.periodMs),
+          key: String(debounce.key ?? "") || undefined,
+          maxWaitMs:
+            debounce.maxWaitMs === undefined
+              ? undefined
+              : wireNumber(debounce.maxWaitMs),
+        }
+      : undefined,
+    preferredMode: mode === "push" || mode === "pull" ? mode : undefined,
+    endpointUrl: String(r.endpointUrl ?? ""),
+    actorKey: String(r.actorKey ?? ""),
+    status:
+      status === "active" || status === "paused" || status === "archived"
+        ? status
+        : "unspecified",
+    version: wireNumber(r.version),
+    createdAt: r.createdAt ? String(r.createdAt) : undefined,
+    updatedAt: r.updatedAt ? String(r.updatedAt) : undefined,
+    recording: Boolean(r.recording),
+    recordingRetention: String(r.recordingRetention ?? ""),
+    metadata: r.metadata as Record<string, unknown> | undefined,
+    cancelOn: (r.cancelOn as CancelOnConfig[] | undefined) ?? [],
+  };
+}
+
+/** Normalize a ConnectRPC FunctionHistoryEntry message. */
+export function functionHistoryEntryFromWire(
+  raw: Record<string, unknown> | undefined,
+): FunctionHistoryEntry {
+  const r = raw ?? {};
+  const snapshot = r.functionSnapshot as Record<string, unknown> | undefined;
+  return {
+    eventId: String(r.eventId ?? ""),
+    entityVersion: wireNumber(r.entityVersion),
+    functionId: String(r.functionId ?? ""),
+    functionSnapshot: snapshot
+      ? registeredFunctionFromWire(snapshot)
+      : undefined,
+    actorId: String(r.actorId ?? ""),
+    changeReason: String(r.changeReason ?? ""),
+    changeType: String(r.changeType ?? "update") as FunctionChangeType,
+    recordedAt: r.recordedAt ? String(r.recordedAt) : undefined,
+  };
+}
+
+/** Normalize a REST event-log record into the public SDK shape. */
+export function storedEventFromWire(
+  raw: Record<string, unknown> | undefined,
+): StoredEvent {
+  const r = raw ?? {};
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    timestamp: String(r.timestamp ?? ""),
+    data: r.data,
+    source: String(r.source ?? ""),
+    metadata: r.metadata,
+    idempotencyKey: r.idempotency_key
+      ? String(r.idempotency_key)
+      : undefined,
+    processed: Boolean(r.processed),
+    createdAt: String(r.created_at ?? ""),
+    entityId: r.entity_id ? String(r.entity_id) : undefined,
+    entityType: r.entity_type ? String(r.entity_type) : undefined,
+    runId: r.run_id ? String(r.run_id) : undefined,
+  };
+}
+
+/** Normalize a REST run-step record into the public SDK shape. */
+export function runStepFromWire(
+  raw: Record<string, unknown> | undefined,
+): RunStep {
+  const r = raw ?? {};
+  const optionalString = (key: string) =>
+    r[key] === undefined || r[key] === null ? undefined : String(r[key]);
+  return {
+    id: String(r.id ?? ""),
+    runId: String(r.run_id ?? ""),
+    stepId: String(r.step_id ?? ""),
+    stepType: String(r.step_type ?? ""),
+    sequence: wireNumber(r.sequence),
+    status: String(r.status ?? ""),
+    input: r.input,
+    output: r.output,
+    originalOutput: r.original_output,
+    error: r.error,
+    inputHash: optionalString("input_hash"),
+    attempt: wireNumber(r.attempt),
+    durationMs:
+      r.duration_ms === undefined ? undefined : wireNumber(r.duration_ms),
+    startedAt: optionalString("started_at"),
+    endedAt: optionalString("ended_at"),
+    sleepUntil: optionalString("sleep_until"),
+    waitEventName: optionalString("wait_event_name"),
+    waitTimeout: optionalString("wait_timeout"),
+    patchedAt: optionalString("patched_at"),
+    patchedBy: optionalString("patched_by"),
+    compensationFor: optionalString("compensation_for"),
+    createdAt: String(r.created_at ?? ""),
+    updatedAt: String(r.updated_at ?? ""),
+  };
+}
+
+/** Normalize a ConnectRPC ConsumerGroup message. */
+export function consumerGroupFromWire(
+  raw: Record<string, unknown> | undefined,
+): ConsumerGroup {
+  const r = raw ?? {};
+  const ackMode = String(r.ackMode ?? "auto")
+    .toLowerCase()
+    .replace(/^ack_mode_/, "") as AckMode;
+  const backpressure = String(r.backpressure ?? "buffer")
+    .toLowerCase()
+    .replace(/^backpressure_mode_/, "") as BackpressureMode;
+  const status = String(r.status ?? "active")
+    .toLowerCase()
+    .replace(/^consumer_group_status_/, "") as ConsumerGroupStatus;
+  return {
+    id: String(r.id ?? ""),
+    namespace: String(r.namespace ?? ""),
+    name: String(r.name ?? ""),
+    pattern: String(r.pattern ?? ""),
+    filterExpr: r.filterExpr ? String(r.filterExpr) : undefined,
+    ackMode,
+    backpressure,
+    maxInflight: wireNumber(r.maxInflight),
+    maxRedeliveries: wireNumber(r.maxRedeliveries),
+    redeliverDelayMs: wireNumber(r.redeliverDelayMs),
+    metadata: r.metadata as Record<string, unknown> | undefined,
+    status,
+    memberCount: wireNumber(r.memberCount),
+    createdAt: new Date(String(r.createdAt ?? 0)),
+    updatedAt: new Date(String(r.updatedAt ?? 0)),
   };
 }

@@ -698,6 +698,42 @@ await client.emit('order.placed', { orderId: '123' }, {
 });
 ```
 
+### emitSync(eventName, data, options?)
+
+Emit and wait for the triggered run to reach a terminal state. Useful in tests
+and request/response paths; throws `RunFailedError` or `RunCancelledError`
+(import from `@ironflow/core`) if the run does not complete.
+
+```typescript
+const result = await client.emitSync('order.placed', { orderId: '123' }, { timeout: 30000 });
+console.log(result.runId, result.status, result.output, result.durationMs);
+```
+
+### triggerBatch(events)
+
+Emit many events in one round trip. Returns one `EmitResult` per event, in order.
+
+```typescript
+const results = await client.triggerBatch([
+  { event: 'order.placed', data: { orderId: '1' } },
+  { event: 'order.placed', data: { orderId: '2' }, idempotencyKey: 'order-2' },
+]);
+```
+
+### Reading stored events
+
+```typescript
+// Keyset-paginated page of the event log
+const page = await client.listEvents({ name: 'order.placed', limit: 50 });
+console.log(page.events, page.nextCursor);
+
+// One stored event
+const event = await client.getEvent('evt_abc123');
+
+// Distinct event names with counts
+const { names } = await client.listEventNames();
+```
+
 ### getRun(runId)
 
 Get a run by its ID.
@@ -750,6 +786,31 @@ Hot-patch a step's output. Useful for debugging or correcting bad data.
 await client.patchStep('step_xyz', { correctedValue: 42 }, 'fix bad data');
 ```
 
+### getRunSteps(runId) / getRunStreams(runId)
+
+```typescript
+const { steps, count } = await client.getRunSteps('run_abc123');
+const { entityIds } = await client.getRunStreams('run_abc123');
+```
+
+### Time-travel debugging
+
+Requires `recording: true` on the function. Reconstructs historical run state
+from the audit record.
+
+```typescript
+const snapshot = await client.getRunStateAt('run_abc123', new Date(Date.now() - 3600_000));
+const timeline = await client.getRunTimeline('run_abc123');
+const output   = await client.getStepOutputAt('run_abc123', 'step_xyz', new Date());
+```
+
+### getAuditTrail(runId) / listAuditEvents(options?)
+
+```typescript
+const entries = await client.getAuditTrail('run_abc123');           // one run
+const page    = await client.listAuditEvents({ eventType: 'run.failed', limit: 50 });
+```
+
 ### Scoped Injection
 
 Pause running workflows at step boundaries, inspect and modify step outputs, then resume:
@@ -786,6 +847,41 @@ List all connected workers.
 
 ```typescript
 const workers = await client.listWorkers();
+```
+
+### Function lifecycle and versioning
+
+Every `registerFunction` writes a new version, so a bad deploy can be rolled
+back from the registry without redeploying code.
+
+```typescript
+await client.registerFunction(processOrder);
+
+const fn = await client.getFunction('process-order');
+await client.updateFunctionStatus('process-order', 'paused');   // pause dispatch
+await client.deleteFunction('process-order');
+
+const history = await client.listFunctionHistory('process-order', { limit: 20 });
+const older   = await client.getFunctionAtVersion('process-order', 3);
+await client.rollbackFunction('process-order', 3, 'bad concurrency key');
+```
+
+### Consumer groups (`client.consumerGroups`)
+
+Manage the durable group definition; join it from a subscription client.
+
+```typescript
+const group = await client.consumerGroups.create({
+  name: 'order-processors',
+  pattern: 'events:order.*',
+  ackMode: 'manual',
+  maxInflight: 50,
+});
+
+const groups = await client.consumerGroups.list();
+const one    = await client.consumerGroups.get('order-processors');
+await client.consumerGroups.update('order-processors', { maxInflight: 100 });
+await client.consumerGroups.delete('order-processors');
 ```
 
 ### health()
@@ -854,6 +950,9 @@ const partitioned = await client.projections.get('order-detail-view', { partitio
 const statuses = await client.projections.list();
 const status   = await client.projections.getStatus('order-summary');
 
+// Partitions of a partitioned projection
+const parts = await client.projections.listPartitions('order-detail-view', { limit: 50 });
+
 // Lifecycle
 await client.projections.pause('order-summary');
 await client.projections.resume('order-summary');
@@ -913,6 +1012,7 @@ const result = await client.sqlProjections.query('board', {
 await client.secrets.set('stripe-key', 'sk_live_…');
 const secret = await client.secrets.get('stripe-key');
 await client.secrets.update('stripe-key', 'sk_live_new');
+await client.secrets.patch('stripe-key', { description: 'Payments production key' });
 const all = await client.secrets.list();    // names only, no values
 await client.secrets.delete('stripe-key');
 ```
@@ -997,16 +1097,17 @@ const { deliveries } = await client.webhooks.listDeliveries({
 });
 ```
 
-### Users and tenants (Enterprise)
+### Users and tenants
 
 ```typescript
 // User management
 const user = await client.users.create({ email: 'alice@example.com', password: 'secret', roles: ['admin'] });
 await client.users.list();
+await client.users.get(user.id);
 await client.users.update(user.id, { name: 'Alice' });
 await client.users.delete(user.id);
 
-// Tenant listing (enterprise-only)
+// Tenant listing. Both tenant calls require the `users:manage` permission.
 const tenants = await client.tenants.list();
 ```
 
@@ -1080,6 +1181,13 @@ try {
 | `expectedVersion` | `number` | Optimistic concurrency check. |
 | `idempotencyKey` | `string` | Prevent duplicate appends. |
 | `version` | `number` | Event schema version (default: 1). |
+
+List all streams or read an entity's unified history:
+
+```typescript
+const streams = await client.streams.listStreams();
+const history = await client.streams.getEntityHistory('order-123');
+```
 
 ### streams.read(entityId, options?)
 
@@ -1270,9 +1378,12 @@ console.log(rotated.key);
 await client.apiKeys.delete(key.id);
 ```
 
-### Organizations (Enterprise)
+### Organizations
 
-Requires an enterprise license.
+Gated by RBAC, not by a licence tier. Creating an org needs a **platform**
+credential (`ifplatform_`) — a tenant key gets `403 platform credential
+required`, because a tenant is pinned to one org (#660). Get/update/delete need
+`orgs:manage` and are scoped to the caller's own org.
 
 ```typescript
 const org = await client.orgs.create({ name: 'Acme Corp' });
@@ -1282,7 +1393,7 @@ await client.orgs.update(org.id, { name: 'Acme Inc' });
 await client.orgs.delete(org.id);
 ```
 
-### Roles (Enterprise)
+### Roles
 
 ```typescript
 const role = await client.roles.create({ name: 'deployer', org_id: orgId });
@@ -1293,11 +1404,12 @@ await client.roles.update(role.id, { name: 'senior-deployer' });
 // Assign/remove policies
 await client.roles.assignPolicy(role.id, policyId);
 await client.roles.removePolicy(role.id, policyId);
+const assignedPolicies = await client.roles.listPolicies(role.id);
 
 await client.roles.delete(role.id);
 ```
 
-### Policies (Enterprise)
+### Policies
 
 ```typescript
 const policy = await client.policies.create({
@@ -1311,6 +1423,19 @@ const policies = await client.policies.list(orgId);  // optional org filter
 const fetched = await client.policies.get(policy.id);
 await client.policies.update(policy.id, { name: 'allow-all-emit' });
 await client.policies.delete(policy.id);
+```
+
+### Administrative Discovery
+
+```typescript
+const capabilities = await client.getCapabilities();
+const tools = await client.agentTools.list();
+const audit = await client.listAuditEvents({ eventType: 'run.failed', limit: 50 });
+await client.users.changePassword(userId, {
+  currentPassword: 'old-password',
+  newPassword: 'new-password',
+});
+const tenant = await client.tenants.provision({ orgName: 'Acme' });
 ```
 
 ---
@@ -1359,6 +1484,16 @@ const replaySubscription = await sub.subscribe('system.run.>', {
   replay: 100,
   includeMetadata: true,
 });
+
+// Resume after an exact sequence. The SDK advances this cursor on reconnect.
+// Delivery is at-least-once, so make the handler idempotent.
+const resumedSubscription = await sub.subscribe('events:order.*', {
+  onEvent: (event) => processOrder(event),
+  startAfterSequence: 400,
+});
+
+// Reconnects preserve every identifying option but do not repeat `replay`.
+// Without a cursor or consumer group, fan-out resumes at the current tail.
 
 // Cleanup
 subscription.unsubscribe();
@@ -1892,7 +2027,7 @@ describe('transferFunds', () => {
 | `createWorker(config)` | Create pull mode worker (REST polling). |
 | `createStreamingWorker(config)` | Create pull mode worker (ConnectRPC streaming). Import from `@ironflow/node/worker-streaming`. |
 | `createProjection(config)` | Define a projection. |
-| `createProjectionRunner(config)` / `ProjectionRunner` | Lower-level projection runner (advanced). |
+| `createProjectionRunner(config)` / `ProjectionRunner` / `StreamingUnsupportedError` | Lower-level projection runner (advanced); the error signals a server without `StreamProjectionEvents`, so the caller can fall back to polling. |
 | `createClient(config)` / `IronflowClient` | Create server-side HTTP client. |
 | `createSubscriptionClient(config)` / `SubscriptionClient` | Create WebSocket subscription client. |
 | `createWebhook(config)` | Define a webhook source for `serve()`. |

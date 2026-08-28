@@ -54,7 +54,10 @@ class MockWebSocket {
   onclose: (() => void) | null = null;
   close = vi.fn();
 
-  constructor(public url: string) {
+  constructor(
+    public url: string,
+    public protocols?: string | string[],
+  ) {
     MockWebSocket.instances.push(this);
   }
 }
@@ -595,7 +598,7 @@ describe("watch", () => {
     );
   });
 
-  it("includes the environment and API key in the URL", () => {
+  it("puts the environment in the URL and the API key in subprotocol metadata", () => {
     const handle = new BrowserKVBucketHandle(
       "test-bucket",
       makeConfig({
@@ -607,11 +610,15 @@ describe("watch", () => {
 
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=prod%2Fus&token=ifkey%2Fa%2Bb"
+      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=prod%2Fus"
     );
+    expect(ws.protocols).toEqual([
+      "ironflow.v1",
+      "ironflow.auth.bearer.aWZrZXkvYSti",
+    ]);
   });
 
-  it("uses the configured token query parameter when the API key is empty", () => {
+  it("uses the configured token subprotocol when the API key is empty", () => {
     const handle = new BrowserKVBucketHandle(
       "test-bucket",
       makeConfig({ auth: { apiKey: "", token: "session/token" } })
@@ -620,7 +627,11 @@ describe("watch", () => {
 
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toContain("env=test-env");
-    expect(ws.url).toContain("token=session%2Ftoken");
+    expect(ws.url).not.toContain("token=");
+    expect(ws.protocols).toEqual([
+      "ironflow.v1",
+      "ironflow.auth.bearer.c2Vzc2lvbi90b2tlbg",
+    ]);
   });
 
   it("prefers the API key over the bearer token", () => {
@@ -633,8 +644,11 @@ describe("watch", () => {
     handle.watch({ onUpdate: vi.fn() });
 
     const ws = assertDefined(MockWebSocket.instances[0]);
-    expect(ws.url).toContain("token=api-key");
-    expect(ws.url).not.toContain("session-token");
+    expect(ws.url).not.toContain("token=");
+    expect(ws.protocols).toEqual([
+      "ironflow.v1",
+      "ironflow.auth.bearer.YXBpLWtleQ",
+    ]);
   });
 
   it("stop() calls ws.close()", () => {

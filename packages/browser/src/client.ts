@@ -13,10 +13,23 @@ import type {
   InvokeResult,
   EmitOptions,
   EmitResult,
+  PublishOptions,
+  PublishResult,
+  TriggerBatchEvent,
+  StoredEvent,
+  ListEventsOptions,
+  ListEventsResult,
+  ListEventNamesOptions,
+  ListEventNamesResult,
+  RunStepsResult,
+  RunStreamsResult,
   SubscriptionErrorInfo,
   SubscriptionCallbacks,
   Subscription,
   AckableSubscription,
+  ConsumerGroup,
+  ConsumerGroupConfig,
+  UpdateConsumerGroupInput,
   ConnectionState,
   AppendEventInput,
   AppendOptions,
@@ -25,9 +38,10 @@ import type {
   StreamEvent,
   StreamInfo,
   StreamSnapshot,
+  StreamListEntry,
+  EntityHistoryEntry,
   EntitySubscribeOptions,
   GetProjectionOptions,
-  RebuildProjectionOptions,
   ProjectionStatusInfo,
   WaitResult,
   WaitProgress,
@@ -65,10 +79,15 @@ import type {
   AuditEvent,
   AuditTrailResult,
   GetAuditTrailOptions,
-  User,
-  CreateUserInput,
-  UpdateUserInput,
+  ListAuditEventsOptions,
   Tenant,
+  ProvisionTenantInput,
+  ProvisionTenantResult,
+  FunctionStatus,
+  RegisteredFunction,
+  FunctionHistoryEntry,
+  ListFunctionHistoryOptions,
+  ListFunctionHistoryResult,
 } from "@ironflow/core";
 import {
   NotConfiguredError,
@@ -97,13 +116,18 @@ import {
   webhookGraceToWire,
   webhookSourceFromWire,
   webhookDeliveryFromWire,
+  registeredFunctionFromWire,
+  functionHistoryEntryFromWire,
+  storedEventFromWire,
+  runStepFromWire,
+  consumerGroupFromWire,
 } from "@ironflow/core";
 import type {
   AuthConfig,
   IronflowConfig,
   IronflowConfigOptions,
 } from "./config.js";
-import { mergeConfig } from "./config.js";
+import { mergeConfig, warnAboutLongLivedBrowserKey } from "./config.js";
 import {
   SubscriptionManager,
   type BrowserSubscribeOptions,
@@ -117,6 +141,19 @@ import { BrowserKVClient } from "./kv.js";
 import { BrowserConfigClient } from "./config-client.js";
 import { createAgentsNamespace, type AgentsNamespace } from "./agents/index.js";
 import type { z } from "zod";
+
+function auditEventFromWire(raw: Record<string, unknown>): AuditEvent {
+  return {
+    id: String(raw.id ?? ""),
+    runId: String(raw.run_id ?? raw.runId ?? ""),
+    functionId: String(raw.function_id ?? raw.functionId ?? ""),
+    stepId: (raw.step_id ?? raw.stepId) as string | undefined,
+    eventType: String(raw.event_type ?? raw.eventType ?? ""),
+    payload: (raw.payload as Record<string, unknown>) ?? {},
+    metadata: raw.metadata as Record<string, string> | undefined,
+    createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
+  };
+}
 
 /**
  * Key for the offline queue's replay entry point.
@@ -182,6 +219,7 @@ class IronflowClient {
    */
   configure(options: IronflowConfigOptions = {}): void {
     this.config = mergeConfig(options);
+    warnAboutLongLivedBrowserKey(this.config.auth);
 
     // Set up logger
     if (this.config.logger === false) {
@@ -495,6 +533,29 @@ class IronflowClient {
     );
 
     return this.mapRunResponse(response);
+  }
+
+  /** Get the durable steps recorded for a run. */
+  async getRunSteps(runId: string): Promise<RunStepsResult> {
+    this.ensureConfigured();
+    const response = await this.restRequest<{
+      steps?: Record<string, unknown>[];
+      count?: number;
+    }>("GET", `/api/v1/runs/${encodeURIComponent(runId)}/steps`);
+    return {
+      steps: (response.steps ?? []).map(runStepFromWire),
+      count: response.count ?? 0,
+    };
+  }
+
+  /** Get the entity stream IDs touched by a run. */
+  async getRunStreams(runId: string): Promise<RunStreamsResult> {
+    this.ensureConfigured();
+    const response = await this.restRequest<{ entity_ids?: string[] }>(
+      "GET",
+      `/api/v1/runs/${encodeURIComponent(runId)}/streams`
+    );
+    return { entityIds: response.entity_ids ?? [] };
   }
 
   /**
@@ -1020,9 +1081,96 @@ class IronflowClient {
     }
   }
 
-  /**
-   * List registered functions
-   */
+  /** Get a registered function by ID. */
+  async getFunction(functionId: string): Promise<RegisteredFunction> {
+    this.ensureConfigured();
+    const response = await this.streamRequest<Record<string, unknown>>(
+      "/ironflow.v1.IronflowService/GetFunction",
+      { id: functionId }
+    );
+    return registeredFunctionFromWire(response);
+  }
+
+  /** Change a function's lifecycle status. */
+  async updateFunctionStatus(
+    functionId: string,
+    status: Exclude<FunctionStatus, "unspecified">
+  ): Promise<RegisteredFunction> {
+    this.ensureConfigured();
+    const response = await this.streamRequest<Record<string, unknown>>(
+      "/ironflow.v1.IronflowService/UpdateFunctionStatus",
+      {
+        id: functionId,
+        status: `FUNCTION_STATUS_${status.toUpperCase()}`,
+      }
+    );
+    return registeredFunctionFromWire(response);
+  }
+
+  /** Permanently delete a registered function. */
+  async deleteFunction(functionId: string): Promise<void> {
+    this.ensureConfigured();
+    await this.streamRequest<Record<string, never>>(
+      "/ironflow.v1.IronflowService/DeleteFunction",
+      { id: functionId }
+    );
+  }
+
+  /** List immutable configuration snapshots, newest first. */
+  async listFunctionHistory(
+    functionId: string,
+    options: ListFunctionHistoryOptions = {}
+  ): Promise<ListFunctionHistoryResult> {
+    this.ensureConfigured();
+    const response = await this.streamRequest<{
+      entries?: Record<string, unknown>[];
+      hasMore?: boolean;
+    }>("/ironflow.v1.IronflowService/ListFunctionHistory", {
+      functionId,
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
+      ...(options.fromVersion !== undefined
+        ? { fromVersion: String(options.fromVersion) }
+        : {}),
+    });
+    return {
+      entries: (response.entries ?? []).map(functionHistoryEntryFromWire),
+      hasMore: response.hasMore ?? false,
+    };
+  }
+
+  /** Get one historical configuration snapshot by entity version. */
+  async getFunctionAtVersion(
+    functionId: string,
+    version: number
+  ): Promise<FunctionHistoryEntry> {
+    this.ensureConfigured();
+    const response = await this.streamRequest<{
+      entry?: Record<string, unknown>;
+    }>("/ironflow.v1.IronflowService/GetFunctionAtVersion", {
+      functionId,
+      version: String(version),
+    });
+    return functionHistoryEntryFromWire(response.entry);
+  }
+
+  /** Restore a function's configuration from a historical version. */
+  async rollbackFunction(
+    functionId: string,
+    version: number,
+    changeReason?: string
+  ): Promise<RegisteredFunction> {
+    this.ensureConfigured();
+    const response = await this.streamRequest<{
+      function?: Record<string, unknown>;
+    }>("/ironflow.v1.IronflowService/RollbackFunction", {
+      functionId,
+      version: String(version),
+      ...(changeReason ? { changeReason } : {}),
+    });
+    return registeredFunctionFromWire(response.function);
+  }
+
+  /** List registered functions. */
   async listFunctions(): Promise<unknown[]> {
     this.ensureConfigured();
 
@@ -1197,6 +1345,128 @@ class IronflowClient {
   }
 
   /**
+   * Publish a message to a developer pub/sub topic.
+   * Unlike emit(), this does not trigger workflow functions.
+   */
+  async publish(
+    topic: string,
+    data: unknown,
+    options?: PublishOptions
+  ): Promise<PublishResult> {
+    this.ensureConfigured();
+
+    const response = await this.streamRequest<{
+      eventId: string;
+      sequence: string | number;
+    }>("/ironflow.v1.PubSubService/Publish", {
+      topic,
+      data: data ?? {},
+      ...(options?.idempotencyKey
+        ? { idempotencyKey: options.idempotencyKey }
+        : {}),
+    });
+
+    return {
+      eventId: response.eventId,
+      sequence: Number(response.sequence) || 0,
+    };
+  }
+
+  /** Trigger multiple events in one request. */
+  async triggerBatch(events: TriggerBatchEvent[]): Promise<EmitResult[]> {
+    this.ensureConfigured();
+    const response = await this.streamRequest<{
+      results?: Array<{ runIds?: string[]; eventId: string }>;
+    }>("/ironflow.v1.IronflowService/TriggerBatch", {
+      events: events.map((event) => ({
+        event: event.event,
+        data: event.data,
+        ...(event.version !== undefined ? { version: event.version } : {}),
+        ...(event.idempotencyKey
+          ? { idempotencyKey: event.idempotencyKey }
+          : {}),
+        ...(event.metadata ? { metadata: event.metadata } : {}),
+      })),
+    });
+    return (response.results ?? []).map((result) => ({
+      runIds: result.runIds ?? [],
+      eventId: result.eventId,
+    }));
+  }
+
+  /** Read a keyset-paginated page from the event log. */
+  async listEvents(options: ListEventsOptions = {}): Promise<ListEventsResult> {
+    this.ensureConfigured();
+    const query = new URLSearchParams();
+    if (options.name) query.set("name", options.name);
+    if (options.names?.length) query.set("names", options.names.join(","));
+    if (options.sources?.length) query.set("source", options.sources.join(","));
+    if (options.search) query.set("search", options.search);
+    if (options.since) query.set("since", options.since);
+    if (options.until) query.set("until", options.until);
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.before) query.set("before", options.before);
+    const suffix = query.size ? `?${query}` : "";
+    const response = await this.restRequest<{
+      events?: Record<string, unknown>[];
+      count?: number;
+      limit?: number;
+      next_cursor?: string;
+      prev_cursor?: string;
+      has_next?: boolean;
+      has_prev?: boolean;
+      approx_total?: number;
+      approx_total_capped?: boolean;
+    }>("GET", `/api/v1/events${suffix}`);
+    return {
+      events: (response.events ?? []).map(storedEventFromWire),
+      count: response.count ?? 0,
+      limit: response.limit ?? options.limit ?? 20,
+      nextCursor: response.next_cursor,
+      prevCursor: response.prev_cursor,
+      hasNext: response.has_next ?? false,
+      hasPrev: response.has_prev ?? false,
+      approxTotal: response.approx_total,
+      approxTotalCapped: response.approx_total_capped ?? false,
+    };
+  }
+
+  /** Get one persisted event by ID. */
+  async getEvent(eventId: string): Promise<StoredEvent> {
+    this.ensureConfigured();
+    const response = await this.restRequest<Record<string, unknown>>(
+      "GET",
+      `/api/v1/events/${encodeURIComponent(eventId)}`
+    );
+    return storedEventFromWire(response);
+  }
+
+  /** List event names and counts for filter UIs. */
+  async listEventNames(
+    options: ListEventNamesOptions = {}
+  ): Promise<ListEventNamesResult> {
+    this.ensureConfigured();
+    const query = new URLSearchParams();
+    if (options.sources?.length) query.set("source", options.sources.join(","));
+    if (options.since) query.set("since", options.since);
+    if (options.until) query.set("until", options.until);
+    const suffix = query.size ? `?${query}` : "";
+    const response = await this.restRequest<{
+      names?: Array<{ name: string; count: number }>;
+      scanned?: number;
+      truncated?: boolean;
+      scan_cap?: number;
+    }>("GET", `/api/v1/events/names${suffix}`);
+    return {
+      names: response.names ?? [],
+      scanned: response.scanned ?? 0,
+      truncated: response.truncated ?? false,
+      scanCap: response.scan_cap ?? 0,
+    };
+  }
+
+  /**
    * Emit an event synchronously — waits for the triggered run to complete and returns the result.
    *
    * Calls the TriggerSync endpoint, which blocks until the run finishes or the timeout elapses.
@@ -1272,6 +1542,111 @@ class IronflowClient {
 
     return sub as AckableSubscription;
   }
+
+  /** Consumer-group lifecycle management. */
+  readonly consumerGroups = {
+    create: async (config: ConsumerGroupConfig): Promise<ConsumerGroup> => {
+      this.ensureConfigured();
+      const response = await this.streamRequest<Record<string, unknown>>(
+        "/ironflow.v1.PubSubService/CreateConsumerGroup",
+        {
+          name: config.name,
+          pattern: config.pattern,
+          namespace: config.namespace ?? "default",
+          ...(config.filterExpr !== undefined ? { filter_expr: config.filterExpr } : {}),
+          ...(config.ackMode ? { ack_mode: `ACK_MODE_${config.ackMode.toUpperCase()}` } : {}),
+          ...(config.backpressure
+            ? { backpressure: `BACKPRESSURE_MODE_${config.backpressure.toUpperCase()}` }
+            : {}),
+          ...(config.maxInflight !== undefined ? { max_inflight: config.maxInflight } : {}),
+          ...(config.maxRedeliveries !== undefined
+            ? { max_redeliveries: config.maxRedeliveries }
+            : {}),
+          ...(config.redeliverDelayMs !== undefined
+            ? { redeliver_delay_ms: config.redeliverDelayMs }
+            : {}),
+          ...(config.metadata !== undefined ? { metadata: config.metadata } : {}),
+        }
+      );
+      return consumerGroupFromWire(response);
+    },
+    get: async (name: string, namespace = "default"): Promise<ConsumerGroup> => {
+      this.ensureConfigured();
+      const response = await this.streamRequest<Record<string, unknown>>(
+        "/ironflow.v1.PubSubService/GetConsumerGroup",
+        { name, namespace }
+      );
+      return consumerGroupFromWire(response);
+    },
+    list: async (namespace?: string): Promise<ConsumerGroup[]> => {
+      this.ensureConfigured();
+      const groups: ConsumerGroup[] = [];
+      let cursor: string | undefined;
+      do {
+        const response = await this.streamRequest<{
+          groups?: Record<string, unknown>[];
+          nextCursor?: string;
+          next_cursor?: string;
+        }>("/ironflow.v1.PubSubService/ListConsumerGroups", {
+          ...(namespace ? { namespace } : {}),
+          limit: 100,
+          ...(cursor ? { cursor } : {}),
+        });
+        groups.push(...(response.groups ?? []).map(consumerGroupFromWire));
+        cursor = response.nextCursor || response.next_cursor || undefined;
+      } while (cursor);
+      return groups;
+    },
+    update: async (
+      name: string,
+      input: UpdateConsumerGroupInput,
+      namespace = "default"
+    ): Promise<ConsumerGroup> => {
+      this.ensureConfigured();
+      const group: Record<string, unknown> = { name, namespace };
+      const paths: string[] = [];
+      const set = (path: string, value: unknown) => {
+        if (value !== undefined) {
+          group[path] = value;
+          paths.push(path);
+        }
+      };
+      set("pattern", input.pattern);
+      set("filter_expr", input.filterExpr);
+      set("ack_mode", input.ackMode ? `ACK_MODE_${input.ackMode.toUpperCase()}` : undefined);
+      set(
+        "backpressure",
+        input.backpressure
+          ? `BACKPRESSURE_MODE_${input.backpressure.toUpperCase()}`
+          : undefined
+      );
+      set("max_inflight", input.maxInflight);
+      set("max_redeliveries", input.maxRedeliveries);
+      set("redeliver_delay_ms", input.redeliverDelayMs);
+      set("metadata", input.metadata);
+      set(
+        "status",
+        input.status
+          ? `CONSUMER_GROUP_STATUS_${input.status.toUpperCase()}`
+          : undefined
+      );
+      if (paths.length === 0) {
+        throw new ValidationError("Consumer group update requires at least one field");
+      }
+      const response = await this.streamRequest<Record<string, unknown>>(
+        "/ironflow.v1.PubSubService/UpdateConsumerGroup",
+        { group, update_mask: { paths } }
+      );
+      return consumerGroupFromWire(response);
+    },
+    delete: async (name: string, namespace = "default"): Promise<void> => {
+      this.ensureConfigured();
+      await this.streamRequest<Record<string, never>>(
+        "/ironflow.v1.PubSubService/DeleteConsumerGroup",
+        { name, namespace }
+      );
+    },
+  };
 
   // ============================================================================
   // Entity Streams
@@ -1467,6 +1842,40 @@ class IronflowClient {
         state: response.state ?? {},
         createdAt: response.createdAt ?? "",
       };
+    },
+
+    /** List entity streams visible in the current environment. */
+    listStreams: async (): Promise<StreamListEntry[]> => {
+      this.ensureConfigured();
+      const response = await this.restRequest<{
+        streams?: Array<Record<string, unknown>>;
+      }>("GET", "/api/v1/streams");
+      return (response.streams ?? []).map((stream) => ({
+        entityId: String(stream.entity_id ?? stream.entityId ?? ""),
+        entityType: String(stream.entity_type ?? stream.entityType ?? ""),
+        version: Number(stream.version ?? 0),
+        eventCount: Number(stream.event_count ?? stream.eventCount ?? 0),
+        lastEventAt: String(
+          stream.last_event_at ?? stream.lastEventAt ?? stream.updated_at ?? ""
+        ),
+      }));
+    },
+
+    /** Get the unified event history for an entity. */
+    getEntityHistory: async (entityId: string): Promise<EntityHistoryEntry[]> => {
+      this.ensureConfigured();
+      const response = await this.restRequest<{
+        entries?: Array<Record<string, unknown>>;
+      }>(
+        "GET",
+        `/api/v1/streams/${encodeURIComponent(entityId)}/history`
+      );
+      return (response.entries ?? []).map((entry) => ({
+        eventName: String(entry.event_name ?? entry.eventName ?? ""),
+        data: entry.event_data ?? entry.data,
+        version: Number(entry.entity_version ?? entry.version ?? 0),
+        timestamp: String(entry.timestamp ?? ""),
+      }));
     },
 
     /**
@@ -1668,59 +2077,6 @@ class IronflowClient {
         errorMessage: data.error_message || undefined,
         updatedAt: data.updated_at ? new Date(data.updated_at) : new Date(),
       };
-    } finally {
-      clearTimeout(timeoutId);
-    }
-  }
-
-  /**
-   * Trigger a rebuild of a projection
-   *
-   * @example
-   * ```typescript
-   * const result = await ironflow.rebuildProjection('order-stats');
-   * ```
-   */
-  async rebuildProjection(
-    name: string,
-    options?: RebuildProjectionOptions
-  ): Promise<{ status: string }> {
-    this.ensureConfigured();
-
-    const url = `${this.config!.serverUrl}/api/v1/projections/${encodeURIComponent(name)}/rebuild`;
-    const timeout = this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-    try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
-      };
-      this.applyAuthHeader(headers);
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          partition: options?.partition,
-          from_event_id: options?.fromEventId,
-          dry_run: options?.dryRun,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const error = safeJsonParse(await response.text()) as
-          | { message?: string; code?: string }
-          | undefined;
-        throw new IronflowError(
-          error?.message || `Rebuild projection failed: ${response.status}`,
-          { code: error?.code || "REBUILD_PROJECTION_FAILED" }
-        );
-      }
-
-      return response.json();
     } finally {
       clearTimeout(timeoutId);
     }
@@ -2040,11 +2396,8 @@ class IronflowClient {
    * @example
    * ```typescript
    * const cfg = ironflow.configManager();
-   * await cfg.set("app", { featureX: true, maxRetries: 3 });
    * const { data, revision } = await cfg.get("app");
-   * await cfg.patch("app", { maxRetries: 5 });
    * const configs = await cfg.list();
-   * await cfg.delete("app");
    *
    * // Watch for changes
    * const sub = await cfg.watch("app", {
@@ -2269,6 +2622,16 @@ class IronflowClient {
         `/api/v1/roles/${encodeURIComponent(roleId)}/policies/${encodeURIComponent(policyId)}`
       );
     },
+
+    /** List policies assigned to a role. */
+    listPolicies: async (roleId: string): Promise<Policy[]> => {
+      this.ensureConfigured();
+      const response = await this.restRequest<{ policies?: Policy[] }>(
+        "GET",
+        `/api/v1/roles/${encodeURIComponent(roleId)}/policies`
+      );
+      return response.policies ?? [];
+    },
   };
 
   /**
@@ -2458,6 +2821,32 @@ class IronflowClient {
       })),
       totalCount: response.total_count ?? 0,
       nextCursor: response.next_cursor,
+    };
+  }
+
+  /** Query the environment-wide audit stream. */
+  async listAuditEvents(
+    options: ListAuditEventsOptions = {}
+  ): Promise<AuditTrailResult> {
+    this.ensureConfigured();
+    const query = new URLSearchParams();
+    if (options.runId) query.set("run_id", options.runId);
+    if (options.functionId) query.set("function_id", options.functionId);
+    if (options.eventType) query.set("event_type", options.eventType);
+    if (options.fromTimestamp) query.set("from", options.fromTimestamp);
+    if (options.toTimestamp) query.set("to", options.toTimestamp);
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.cursor) query.set("cursor", options.cursor);
+    const suffix = query.size ? `?${query}` : "";
+    const response = await this.restRequest<{
+      events?: Record<string, unknown>[];
+      total_count?: number;
+      next_cursor?: string;
+    }>("GET", `/api/v1/audit${suffix}`);
+    return {
+      events: (response.events ?? []).map(auditEventFromWire),
+      totalCount: response.total_count ?? 0,
+      nextCursor: response.next_cursor || undefined,
     };
   }
 
@@ -2673,61 +3062,6 @@ class IronflowClient {
     },
   };
 
-  // ============================================================================
-  // User Management
-  // ============================================================================
-
-  /**
-   * User management operations
-   *
-   * @example
-   * ```typescript
-   * // List all users
-   * const users = await ironflow.users.list();
-   *
-   * // Create a user
-   * const user = await ironflow.users.create({
-   *   email: "alice@example.com",
-   *   password: "secret",
-   *   roles: ["admin"],
-   * });
-   *
-   * // Update a user
-   * await ironflow.users.update(user.id, { name: "Alice" });
-   * ```
-   */
-  readonly users = {
-    /** Create a new user (admin only) */
-    create: async (input: CreateUserInput): Promise<User> => {
-      this.ensureConfigured();
-      return this.restRequest<User>("POST", "/api/v1/users", input);
-    },
-
-    /** List all users in the current organization (admin only) */
-    list: async (): Promise<User[]> => {
-      this.ensureConfigured();
-      return this.restRequest<User[]>("GET", "/api/v1/users");
-    },
-
-    /** Get a user by ID */
-    get: async (id: string): Promise<User> => {
-      this.ensureConfigured();
-      return this.restRequest<User>("GET", `/api/v1/users/${encodeURIComponent(id)}`);
-    },
-
-    /** Update a user's profile (admin only) */
-    update: async (id: string, input: UpdateUserInput): Promise<User> => {
-      this.ensureConfigured();
-      return this.restRequest<User>("PATCH", `/api/v1/users/${encodeURIComponent(id)}`, input);
-    },
-
-    /** Delete a user (admin only) */
-    delete: async (id: string): Promise<void> => {
-      this.ensureConfigured();
-      await this.restRequest<void>("DELETE", `/api/v1/users/${encodeURIComponent(id)}`);
-    },
-  };
-
   /**
    * Tenant management operations (enterprise-only)
    *
@@ -2742,6 +3076,23 @@ class IronflowClient {
     list: async (): Promise<Tenant[]> => {
       this.ensureConfigured();
       return this.restRequest<Tenant[]>("GET", "/api/v1/tenants");
+    },
+    /** Provision an organization, environment, and initial administrator key. */
+    provision: async (input: ProvisionTenantInput): Promise<ProvisionTenantResult> => {
+      this.ensureConfigured();
+      const response = await this.restRequest<{
+        org: { id: string; name: string };
+        environment: { id: string; name: string };
+        api_key: { key: string; roles?: string[] };
+      }>("POST", "/api/v1/tenants/provision", {
+        org_name: input.orgName,
+        env_name: input.envName ?? "production",
+      });
+      return {
+        org: response.org,
+        environment: response.environment,
+        apiKey: { key: response.api_key.key, roles: response.api_key.roles ?? [] },
+      };
     },
   };
 

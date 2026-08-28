@@ -4,7 +4,13 @@
  * WebSocket and HTTP protocol types for communication with the Ironflow server.
  */
 
-import type { AckMode, AckType, BackpressureMode, EventMetadata } from "./types.js";
+import type {
+  AckMode,
+  AckType,
+  BackpressureMode,
+  EventMetadata,
+  SubscribeOptions,
+} from "./types.js";
 
 // ============================================================================
 // Push Mode Protocol (HTTP)
@@ -137,6 +143,7 @@ export interface WSSubscribeRequest {
     pattern: string;
     options?: {
       replay?: number;
+      startAfterSequence?: number | bigint;
       includeMetadata?: boolean;
       filter?: string;
       consumerGroup?: string;
@@ -145,6 +152,116 @@ export interface WSSubscribeRequest {
       namespace?: string;
     };
   };
+}
+
+/** Build the WebSocket wire request shared by the browser and Node clients. */
+export function createWSSubscribeRequest(
+  pattern: string,
+  options?: SubscribeOptions
+): WSSubscribeRequest {
+  return {
+    type: "subscribe",
+    subscription: {
+      pattern,
+      options: options
+        ? {
+            replay: options.replay,
+            startAfterSequence: options.startAfterSequence,
+            includeMetadata:
+              options.includeMetadata || options.startAfterSequence !== undefined,
+            filter: options.filter,
+            consumerGroup: options.consumerGroup,
+            ackMode: options.ackMode,
+            backpressure: options.backpressure,
+            namespace: options.namespace,
+          }
+        : undefined,
+    },
+  };
+}
+
+/** Serialize a WebSocket subscribe request without rounding uint64 cursors. */
+export function serializeWSSubscribeRequest(request: WSSubscribeRequest): string {
+  const cursor = request.subscription.options?.startAfterSequence;
+  if (cursor !== undefined) {
+    startAfterSequenceToBigInt(cursor);
+  }
+  if (typeof cursor !== "bigint") {
+    return JSON.stringify(request);
+  }
+
+  const quotedCursor = `"startAfterSequence":"${cursor}"`;
+  const serialized = JSON.stringify(request, (_key, value) =>
+    typeof value === "bigint" ? value.toString() : value
+  );
+  if (!serialized.includes(quotedCursor)) {
+    throw new Error("failed to serialize startAfterSequence");
+  }
+  return serialized.replace(
+    quotedCursor,
+    `"startAfterSequence":${cursor}`
+  );
+}
+
+/** Convert a public cursor to protobuf uint64 without accepting rounded numbers. */
+export function startAfterSequenceToBigInt(
+  cursor: number | bigint
+): bigint {
+  if (
+    (typeof cursor === "number" &&
+      (!Number.isSafeInteger(cursor) || cursor < 0)) ||
+    (typeof cursor === "bigint" &&
+      (cursor < 0n || cursor > 18_446_744_073_709_551_615n))
+  ) {
+    throw new RangeError(
+      "startAfterSequence must be a non-negative safe integer or uint64 bigint"
+    );
+  }
+  return BigInt(cursor);
+}
+
+/** Preserve subscription identity while applying replay only to the first request. */
+export function subscriptionOptionsForReconnect(
+  options?: SubscribeOptions
+): SubscribeOptions | undefined {
+  return options ? { ...options, replay: undefined } : undefined;
+}
+
+/** Advance an opted-in resume cursor after an event reaches the caller. */
+export function advanceResumeCursor(
+  options: SubscribeOptions | undefined,
+  sequence: number | bigint | undefined
+): SubscribeOptions | undefined {
+  if (
+    options?.startAfterSequence === undefined ||
+    sequence === undefined ||
+    (typeof sequence === "bigint" ? sequence <= 0n : sequence <= 0)
+  ) {
+    return options;
+  }
+  return {
+    ...options,
+    replay: undefined,
+    startAfterSequence: sequence,
+  };
+}
+
+/** Prefer the exact WebSocket uint64 sequence when the server supplies it. */
+export function resumeSequenceFromMetadata(
+  sequence: number | undefined,
+  sequenceExact?: string
+): number | bigint | undefined {
+  if (sequenceExact !== undefined) {
+    try {
+      const exact = BigInt(sequenceExact);
+      if (exact >= 0n && exact <= 18_446_744_073_709_551_615n) {
+        return exact;
+      }
+    } catch {
+      // Fall back to the compatible numeric field.
+    }
+  }
+  return sequence;
 }
 
 /**

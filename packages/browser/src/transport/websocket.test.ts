@@ -86,6 +86,7 @@ function createWebSocketTransport(serverUrl: string, options: TransportOptions):
 // Inline WebSocketTransport implementation (not exported from package, used only for type)
 class WebSocketTransport {
   private readonly wsUrl: string;
+  private readonly protocols: string[];
   private readonly options: TransportOptions;
   private callbacks?: TransportCallbacks;
   private ws: MockWebSocket | null = null;
@@ -102,17 +103,19 @@ class WebSocketTransport {
     if (options.environment) {
       params.push(`env=${encodeURIComponent(options.environment)}`);
     }
-    if (options.auth?.apiKey) {
-      params.push(`token=${encodeURIComponent(options.auth.apiKey)}`);
-    } else if (options.auth?.token) {
-      params.push(`token=${encodeURIComponent(options.auth.token)}`);
-    }
 
     if (params.length > 0) {
       const separator = baseWsUrl.includes("?") ? "&" : "?";
       this.wsUrl = `${baseWsUrl}${separator}${params.join("&")}`;
     } else {
       this.wsUrl = baseWsUrl;
+    }
+    const credential = options.auth?.apiKey || options.auth?.token;
+    this.protocols = ["ironflow.v1"];
+    if (credential) {
+      this.protocols.push(
+        `ironflow.auth.bearer.${btoa(credential).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "")}`,
+      );
     }
     this.options = options;
   }
@@ -307,6 +310,10 @@ class WebSocketTransport {
 
   getWsUrl(): string {
     return this.wsUrl;
+  }
+
+  getProtocols(): string[] {
+    return this.protocols;
   }
 }
 
@@ -646,20 +653,28 @@ describe("WebSocketTransport", () => {
   });
 
   describe("URL construction", () => {
-    it("should append token query param when auth.apiKey is set", () => {
+    it("should put auth.apiKey in subprotocol metadata", () => {
       transport = createWebSocketTransport("http://localhost:9123", {
         auth: { apiKey: "my-api-key" },
       });
 
-      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?token=my-api-key");
+      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws");
+      expect(transport.getProtocols()).toEqual([
+        "ironflow.v1",
+        "ironflow.auth.bearer.bXktYXBpLWtleQ",
+      ]);
     });
 
-    it("should append token query param when auth.token is set", () => {
+    it("should put auth.token in subprotocol metadata", () => {
       transport = createWebSocketTransport("http://localhost:9123", {
         auth: { token: "my-token" },
       });
 
-      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?token=my-token");
+      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws");
+      expect(transport.getProtocols()).toEqual([
+        "ironflow.v1",
+        "ironflow.auth.bearer.bXktdG9rZW4",
+      ]);
     });
 
     it("should prefer auth.apiKey over auth.token", () => {
@@ -667,16 +682,24 @@ describe("WebSocketTransport", () => {
         auth: { apiKey: "api-key", token: "token" },
       });
 
-      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?token=api-key");
+      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws");
+      expect(transport.getProtocols()).toEqual([
+        "ironflow.v1",
+        "ironflow.auth.bearer.YXBpLWtleQ",
+      ]);
     });
 
-    it("should include both env and token params", () => {
+    it("should keep env in the URL and token out of it", () => {
       transport = createWebSocketTransport("http://localhost:9123", {
         environment: "staging",
         auth: { apiKey: "my-key" },
       });
 
-      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?env=staging&token=my-key");
+      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?env=staging");
+      expect(transport.getProtocols()).toEqual([
+        "ironflow.v1",
+        "ironflow.auth.bearer.bXkta2V5",
+      ]);
     });
 
     it("should not include token when no auth is set", () => {

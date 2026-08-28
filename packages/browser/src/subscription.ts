@@ -46,7 +46,7 @@ export interface SubscriptionGroup {
   /** Add a subscription to the group */
   add<T = unknown>(
     pattern: string,
-    callbacks: SubscriptionCallbacks<T> & BrowserSubscribeOptions
+    callbacks: SubscriptionCallbacks<T> & BrowserSubscribeOptions,
   ): Promise<Subscription | AckableSubscription>;
   /** Unsubscribe all subscriptions in the group */
   unsubscribeAll(): void;
@@ -70,8 +70,10 @@ export class SubscriptionManager {
   private pendingPatterns: Map<string, SubscriptionState> = new Map();
   /** Maps pattern to array of pending lookupKeys for O(1) lookup */
   private patternToPendingKeys: Map<string, string[]> = new Map();
-  private connectionChangeCallbacks: Set<(state: ConnectionState) => void> = new Set();
-  private errorCallbacks: Set<(error: SubscriptionErrorInfo) => void> = new Set();
+  private connectionChangeCallbacks: Set<(state: ConnectionState) => void> =
+    new Set();
+  private errorCallbacks: Set<(error: SubscriptionErrorInfo) => void> =
+    new Set();
   /** Shared in-flight connect promise so concurrent subscribe() calls don't double-connect. */
   private connectPromise: Promise<void> | null = null;
   /** Wired in constructor; removed in disconnect(). SSR-guarded. */
@@ -89,7 +91,8 @@ export class SubscriptionManager {
 
   constructor(transport: Transport, logger?: Logger | false) {
     this.transport = transport;
-    this._logger = logger === false ? createNoopLogger() : (logger ?? createNoopLogger());
+    this._logger =
+      logger === false ? createNoopLogger() : (logger ?? createNoopLogger());
     this._logger.debug("SubscriptionManager initialized");
     this.autoConnectTimeoutMs = DEFAULT_AUTO_CONNECT_TIMEOUT_MS;
 
@@ -106,7 +109,10 @@ export class SubscriptionManager {
     // Wire Page Visibility API: on return to foreground, if the transport has
     // silently died (mobile Safari / long-backgrounded tab), trigger a
     // reconnect health-check instead of waiting for the next user interaction.
-    if (typeof document !== "undefined" && typeof document.addEventListener === "function") {
+    if (
+      typeof document !== "undefined" &&
+      typeof document.addEventListener === "function"
+    ) {
       const listener = () => {
         if (document.hidden) {
           return;
@@ -128,7 +134,7 @@ export class SubscriptionManager {
    */
   async subscribe<T = unknown>(
     pattern: string | string[],
-    callbacksAndOptions: SubscriptionCallbacks<T> & BrowserSubscribeOptions
+    callbacksAndOptions: SubscriptionCallbacks<T> & BrowserSubscribeOptions,
   ): Promise<Subscription | AckableSubscription> {
     // Handle array of patterns
     if (Array.isArray(pattern)) {
@@ -169,11 +175,12 @@ export class SubscriptionManager {
 
   private async subscribeSingle<T = unknown>(
     pattern: string,
-    callbacksAndOptions: SubscriptionCallbacks<T> & BrowserSubscribeOptions
+    callbacksAndOptions: SubscriptionCallbacks<T> & BrowserSubscribeOptions,
   ): Promise<Subscription | AckableSubscription> {
     // Extract options and callbacks
     const {
       replay,
+      startAfterSequence,
       includeMetadata,
       filter,
       namespace,
@@ -186,6 +193,7 @@ export class SubscriptionManager {
 
     const options: BrowserSubscribeOptions = {
       replay,
+      startAfterSequence,
       includeMetadata,
       filter,
       namespace,
@@ -197,65 +205,69 @@ export class SubscriptionManager {
 
     // Generate lookup key: for consumer groups, allow multiple subscriptions to same pattern
     // by appending a unique ID; for broadcast, use pattern directly to prevent duplicates
-    const lookupKey = consumerGroup
-      ? `${pattern}:cg:${generateId()}`
-      : pattern;
+    const lookupKey = consumerGroup ? `${pattern}:cg:${generateId()}` : pattern;
 
     // Check if already subscribed (only for broadcast subscriptions)
     if (!consumerGroup && this.patternToId.has(lookupKey)) {
       throw new Error(`Already subscribed to pattern: ${pattern}`);
     }
 
-    return new Promise<Subscription | AckableSubscription>((resolve, reject) => {
-      const tempId = generateId();
+    return new Promise<Subscription | AckableSubscription>(
+      (resolve, reject) => {
+        const tempId = generateId();
 
-      const pending: SubscriptionState<T> = {
-        id: tempId,
-        pattern,
-        lookupKey,
-        options,
-        callbacks: callbacks as SubscriptionCallbacks<unknown>,
-        connectionState: this.transport.connectionState,
-        resolve: resolve as (sub: Subscription | AckableSubscription) => void,
-        reject,
-      };
+        const pending: SubscriptionState<T> = {
+          id: tempId,
+          pattern,
+          lookupKey,
+          options,
+          callbacks: callbacks as SubscriptionCallbacks<unknown>,
+          connectionState: this.transport.connectionState,
+          resolve: resolve as (sub: Subscription | AckableSubscription) => void,
+          reject,
+        };
 
-      this.pendingPatterns.set(lookupKey, pending as SubscriptionState);
+        this.pendingPatterns.set(lookupKey, pending as SubscriptionState);
 
-      // Track lookupKey by pattern for efficient lookup when server responds
-      const pendingKeys = this.patternToPendingKeys.get(pattern) ?? [];
-      pendingKeys.push(lookupKey);
-      this.patternToPendingKeys.set(pattern, pendingKeys);
+        // Track lookupKey by pattern for efficient lookup when server responds
+        const pendingKeys = this.patternToPendingKeys.get(pattern) ?? [];
+        pendingKeys.push(lookupKey);
+        this.patternToPendingKeys.set(pattern, pendingKeys);
 
-      // Auto-connect: callers shouldn't need to call connect() before
-      // subscribe(). When already connected, we call transport.subscribe
-      // synchronously (fast path — matches pre-#536 behavior). Otherwise we
-      // await connect and then subscribe, rejecting the promise if connect
-      // fails or times out. Fixes #536 Defect A, where watch()/subscribe()
-      // would hang forever waiting on a connect nobody kicked off.
-      if (this.transport.connectionState === "connected") {
-        this.transport.subscribe(pattern, options);
-        return;
-      }
-
-      this.ensureConnected().then(
-        () => {
-          // Guard against disconnect() racing with connect: disconnect()
-          // clears pendingPatterns, so if ours is gone, settle the outer
-          // promise with a clear rejection instead of hanging — hanging
-          // forever is the exact class of bug this PR fixes.
-          if (!this.pendingPatterns.has(lookupKey)) {
-            reject(new Error("ironflow: subscription canceled before connect completed"));
-            return;
-          }
+        // Auto-connect: callers shouldn't need to call connect() before
+        // subscribe(). When already connected, we call transport.subscribe
+        // synchronously (fast path — matches pre-#536 behavior). Otherwise we
+        // await connect and then subscribe, rejecting the promise if connect
+        // fails or times out. Fixes #536 Defect A, where watch()/subscribe()
+        // would hang forever waiting on a connect nobody kicked off.
+        if (this.transport.connectionState === "connected") {
           this.transport.subscribe(pattern, options);
-        },
-        (err) => {
-          this.removePending(pattern, lookupKey);
-          reject(err instanceof Error ? err : new Error(String(err)));
-        },
-      );
-    });
+          return;
+        }
+
+        this.ensureConnected().then(
+          () => {
+            // Guard against disconnect() racing with connect: disconnect()
+            // clears pendingPatterns, so if ours is gone, settle the outer
+            // promise with a clear rejection instead of hanging — hanging
+            // forever is the exact class of bug this PR fixes.
+            if (!this.pendingPatterns.has(lookupKey)) {
+              reject(
+                new Error(
+                  "ironflow: subscription canceled before connect completed",
+                ),
+              );
+              return;
+            }
+            this.transport.subscribe(pattern, options);
+          },
+          (err) => {
+            this.removePending(pattern, lookupKey);
+            reject(err instanceof Error ? err : new Error(String(err)));
+          },
+        );
+      },
+    );
   }
 
   /** Remove a pending subscription entry from both tracking maps. */
@@ -296,6 +308,13 @@ export class SubscriptionManager {
     this.patternToId.delete(state.lookupKey);
   }
 
+  private unsubscribeByLookupKey(lookupKey: string): void {
+    const subscriptionId = this.patternToId.get(lookupKey);
+    if (subscriptionId) {
+      this.unsubscribeById(subscriptionId);
+    }
+  }
+
   /**
    * Create a subscription group for batch management
    */
@@ -305,7 +324,7 @@ export class SubscriptionManager {
     return {
       add: async <T = unknown>(
         pattern: string,
-        callbacks: SubscriptionCallbacks<T> & BrowserSubscribeOptions
+        callbacks: SubscriptionCallbacks<T> & BrowserSubscribeOptions,
       ) => {
         const sub = await this.subscribe<T>(pattern, callbacks);
         subscriptions.push(sub);
@@ -366,12 +385,19 @@ export class SubscriptionManager {
 
     const promise = new Promise<void>((resolve, reject) => {
       let settled = false;
-      let timeoutHandle: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(new Error(`ironflow: connect timeout after ${this.autoConnectTimeoutMs}ms`));
-      }, this.autoConnectTimeoutMs);
+      let timeoutHandle: ReturnType<typeof setTimeout> | null = setTimeout(
+        () => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(
+            new Error(
+              `ironflow: connect timeout after ${this.autoConnectTimeoutMs}ms`,
+            ),
+          );
+        },
+        this.autoConnectTimeoutMs,
+      );
 
       const cleanup = () => {
         if (timeoutHandle) {
@@ -473,7 +499,19 @@ export class SubscriptionManager {
     state.callbacks.onEvent?.(event);
   }
 
-  private handleError(subscriptionId: string, error: SubscriptionErrorInfo): void {
+  private handleError(
+    subscriptionId: string,
+    error: SubscriptionErrorInfo,
+  ): void {
+    const state = subscriptionId
+      ? this.subscriptions.get(subscriptionId)
+      : undefined;
+    if (state && error.retrying === false) {
+      this.transport.unsubscribe(subscriptionId);
+      this.subscriptions.delete(subscriptionId);
+      this.patternToId.delete(state.lookupKey);
+    }
+
     // Call global error handlers
     for (const callback of this.errorCallbacks) {
       callback(error);
@@ -481,7 +519,6 @@ export class SubscriptionManager {
 
     // Call subscription-specific error handler
     if (subscriptionId) {
-      const state = this.subscriptions.get(subscriptionId);
       state?.callbacks.onError?.(error);
     }
   }
@@ -499,10 +536,41 @@ export class SubscriptionManager {
     }
   }
 
-  private handleSubscribed(pattern: string, subscriptionId: string): void {
+  private handleSubscribed(
+    pattern: string,
+    subscriptionId: string,
+    previousSubscriptionId?: string,
+  ): void {
     // Find pending subscription using pattern-to-keys map for O(1) lookup
     const pendingKeys = this.patternToPendingKeys.get(pattern);
     if (!pendingKeys || pendingKeys.length === 0) {
+      if (previousSubscriptionId) {
+        const active = this.subscriptions.get(previousSubscriptionId);
+        if (!active) {
+          return;
+        }
+        this.subscriptions.delete(previousSubscriptionId);
+        active.id = subscriptionId;
+        this.subscriptions.set(subscriptionId, active);
+        this.patternToId.set(active.lookupKey, subscriptionId);
+        return;
+      }
+
+      if (this.subscriptions.has(subscriptionId)) {
+        return;
+      }
+      const matches = [...this.subscriptions.entries()].filter(
+        ([, state]) => state.pattern === pattern,
+      );
+      if (matches.length !== 1) {
+        return;
+      }
+
+      const [previousId, active] = matches[0]!;
+      this.subscriptions.delete(previousId);
+      active.id = subscriptionId;
+      this.subscriptions.set(subscriptionId, active);
+      this.patternToId.set(active.lookupKey, subscriptionId);
       return;
     }
 
@@ -526,14 +594,18 @@ export class SubscriptionManager {
 
     // Create subscription object
     const isManualAck = pending.options?.ackMode === "manual";
+    const currentSubscriptionId = () =>
+      this.patternToId.get(pending.lookupKey) ?? subscriptionId;
 
     if (isManualAck) {
       const ackableSub: AckableSubscription = {
-        id: subscriptionId,
+        get id() {
+          return currentSubscriptionId();
+        },
         pattern,
         connectionState: pending.connectionState,
         lastEvent: pending.lastEvent,
-        unsubscribe: () => this.unsubscribeById(subscriptionId),
+        unsubscribe: () => this.unsubscribeByLookupKey(pending.lookupKey),
         ack: (eventId: string) => this.transport.ack(eventId, "ack"),
         nak: (eventId: string, delay?: number) =>
           this.transport.ack(eventId, "nak", delay),
@@ -542,17 +614,33 @@ export class SubscriptionManager {
       pending.resolve?.(ackableSub);
     } else {
       const sub: Subscription = {
-        id: subscriptionId,
+        get id() {
+          return currentSubscriptionId();
+        },
         pattern,
         connectionState: pending.connectionState,
         lastEvent: pending.lastEvent,
-        unsubscribe: () => this.unsubscribeById(subscriptionId),
+        unsubscribe: () => this.unsubscribeByLookupKey(pending.lookupKey),
       };
       pending.resolve?.(sub);
     }
   }
 
-  private handleSubscribeFailed(pattern: string, error: Error): void {
+  private handleSubscribeFailed(
+    pattern: string,
+    error: Error,
+    previousSubscriptionId?: string,
+  ): void {
+    if (previousSubscriptionId) {
+      this.handleError(previousSubscriptionId, {
+        subscriptionId: previousSubscriptionId,
+        code: "RESUBSCRIBE_FAILED",
+        message: error.message,
+        retrying: false,
+      });
+      return;
+    }
+
     // Find pending subscription using pattern-to-keys map for O(1) lookup
     const pendingKeys = this.patternToPendingKeys.get(pattern);
     if (!pendingKeys || pendingKeys.length === 0) {

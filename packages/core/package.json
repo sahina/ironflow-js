@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/core",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "description": "Core types, schemas, and protocol definitions for Ironflow SDK",
   "type": "module",
   "main": "./dist/index.js",

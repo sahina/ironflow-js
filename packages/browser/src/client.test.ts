@@ -1763,9 +1763,9 @@ describe("IronflowClient (real module)", () => {
       ).rejects.toThrow("Client not configured");
     });
 
-    it("rebuildProjection throws NotConfiguredError", async () => {
+    it("publish throws NotConfiguredError", async () => {
       await expect(
-        ironflow.rebuildProjection("order-stats")
+        ironflow.publish("notifications", { message: "hello" })
       ).rejects.toThrow("Client not configured");
     });
 
@@ -2311,6 +2311,55 @@ describe("IronflowClient (real module)", () => {
   });
 
   // --------------------------------------------------------------------------
+  // publish
+  // --------------------------------------------------------------------------
+
+  describe("publish", () => {
+    it("publishes topic data and maps the sequence to a number", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ eventId: "evt_pub", sequence: "42" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await ironflow.publish(
+        "notifications",
+        { message: "hello" },
+        { idempotencyKey: "publish-1" }
+      );
+
+      expect(result).toEqual({ eventId: "evt_pub", sequence: 42 });
+      const [url, opts] = assertDefined(mockFetch.mock.calls[0]);
+      expect(url).toBe(
+        "http://localhost:9123/ironflow.v1.PubSubService/Publish"
+      );
+      expect(opts.method).toBe("POST");
+      expect(JSON.parse(opts.body)).toEqual({
+        topic: "notifications",
+        data: { message: "hello" },
+        idempotencyKey: "publish-1",
+      });
+    });
+
+    it("uses an empty object when data is null", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ eventId: "evt_pub", sequence: 1 }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.publish("notifications", null);
+
+      const body = JSON.parse(
+        assertDefined(mockFetch.mock.calls[0]?.[1]).body as string
+      );
+      expect(body).toEqual({ topic: "notifications", data: {} });
+    });
+  });
+
+  // --------------------------------------------------------------------------
   // emitSync
   // --------------------------------------------------------------------------
 
@@ -2566,6 +2615,164 @@ describe("IronflowClient (real module)", () => {
       await expect(ironflow.resumeRun("run_fail")).rejects.toThrow(
         "internal error"
       );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Function lifecycle
+  // --------------------------------------------------------------------------
+
+  describe("function lifecycle", () => {
+    it("wraps all function versioning operations", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ id: "fn-1", status: "FUNCTION_STATUS_ACTIVE" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ id: "fn-1", status: "FUNCTION_STATUS_ARCHIVED" }),
+        })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            entries: [{ eventId: "evt-1", entityVersion: "8", functionId: "fn-1", changeType: "update" }],
+            hasMore: false,
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            entry: { eventId: "evt-2", entityVersion: "4", functionId: "fn-1", changeType: "update" },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ function: { id: "fn-1", status: "FUNCTION_STATUS_ACTIVE" } }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+
+      expect((await ironflow.getFunction("fn-1")).status).toBe("active");
+      expect((await ironflow.updateFunctionStatus("fn-1", "archived")).status).toBe("archived");
+      await ironflow.deleteFunction("fn-1");
+      expect((await ironflow.listFunctionHistory("fn-1", { limit: 10, fromVersion: 9 })).entries[0]?.entityVersion).toBe(8);
+      expect((await ironflow.getFunctionAtVersion("fn-1", 4)).entityVersion).toBe(4);
+      expect((await ironflow.rollbackFunction("fn-1", 4, "restore")).status).toBe("active");
+
+      const calls = mockFetch.mock.calls.map(([url, init]) => ({
+        path: new URL(url as string).pathname,
+        body: JSON.parse((init as RequestInit).body as string),
+      }));
+      expect(calls.map((call) => call.path)).toEqual([
+        "/ironflow.v1.IronflowService/GetFunction",
+        "/ironflow.v1.IronflowService/UpdateFunctionStatus",
+        "/ironflow.v1.IronflowService/DeleteFunction",
+        "/ironflow.v1.IronflowService/ListFunctionHistory",
+        "/ironflow.v1.IronflowService/GetFunctionAtVersion",
+        "/ironflow.v1.IronflowService/RollbackFunction",
+      ]);
+      expect(calls[1]?.body).toEqual({ id: "fn-1", status: "FUNCTION_STATUS_ARCHIVED" });
+      expect(calls[3]?.body).toEqual({ functionId: "fn-1", limit: 10, fromVersion: "9" });
+      expect(calls[5]?.body).toEqual({ functionId: "fn-1", version: "4", changeReason: "restore" });
+    });
+  });
+
+  describe("triggerBatch", () => {
+    it("sends multiple event inputs to TriggerBatch", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ results: [{ runIds: ["run-1"], eventId: "evt-1" }] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await expect(ironflow.triggerBatch([
+        { event: "order.placed", data: { id: "1" }, idempotencyKey: "order-1" },
+      ])).resolves.toEqual([{ runIds: ["run-1"], eventId: "evt-1" }]);
+
+      const [url, init] = assertDefined(mockFetch.mock.calls[0]);
+      expect(url).toBe("http://localhost:9123/ironflow.v1.IronflowService/TriggerBatch");
+      expect(JSON.parse(init.body as string)).toEqual({
+        events: [{ event: "order.placed", data: { id: "1" }, idempotencyKey: "order-1" }],
+      });
+    });
+  });
+
+  describe("event reads", () => {
+    it("lists events, gets one event, and lists name facets", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            events: [{
+              id: "evt-1",
+              name: "order.placed",
+              timestamp: "2026-08-27T12:00:00.123Z",
+              source: "sdk",
+              processed: true,
+              created_at: "2026-08-27T12:00:00.123Z",
+              run_id: "run-1",
+            }],
+            count: 1,
+            limit: 20,
+            has_next: false,
+            has_prev: false,
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            id: "evt-1",
+            name: "order.placed",
+            timestamp: "2026-08-27T12:00:00.123Z",
+            source: "sdk",
+            processed: true,
+            created_at: "2026-08-27T12:00:00.123Z",
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ names: [], scanned: 0, truncated: false, scan_cap: 10000 }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+
+      expect((await ironflow.listEvents({ search: "evt", before: "prev" })).events[0]?.runId).toBe("run-1");
+      expect((await ironflow.getEvent("evt-1")).id).toBe("evt-1");
+      expect((await ironflow.listEventNames()).scanCap).toBe(10000);
+      expect(mockFetch.mock.calls.map(([url]) => url)).toEqual([
+        "http://localhost:9123/api/v1/events?search=evt&before=prev",
+        "http://localhost:9123/api/v1/events/evt-1",
+        "http://localhost:9123/api/v1/events/names",
+      ]);
+    });
+  });
+
+  describe("run introspection", () => {
+    it("returns durable steps and touched entity streams", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            steps: [{ id: "row-1", run_id: "run-1", step_id: "charge", step_type: "invoke", sequence: 1, status: "completed", attempt: 1, created_at: "now", updated_at: "now" }],
+            count: 1,
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ entity_ids: ["order-1"] }) });
+      vi.stubGlobal("fetch", mockFetch);
+
+      expect((await ironflow.getRunSteps("run-1")).steps[0]?.stepId).toBe("charge");
+      expect(await ironflow.getRunStreams("run-1")).toEqual({ entityIds: ["order-1"] });
+      expect(mockFetch.mock.calls.map(([url]) => url)).toEqual([
+        "http://localhost:9123/api/v1/runs/run-1/steps",
+        "http://localhost:9123/api/v1/runs/run-1/streams",
+      ]);
     });
   });
 
@@ -3817,101 +4024,6 @@ describe("IronflowClient (real module)", () => {
 
       const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
       expect(headers["Authorization"]).toBe("Bearer secret-key");
-    });
-  });
-
-  // --------------------------------------------------------------------------
-  // rebuildProjection
-  // --------------------------------------------------------------------------
-
-  describe("rebuildProjection", () => {
-    it("sends POST request with empty options", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: "rebuilding" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      await ironflow.rebuildProjection("order-stats");
-
-      const [url, opts] = assertDefined(mockFetch.mock.calls[0]);
-      expect(url).toBe(
-        "http://localhost:9123/api/v1/projections/order-stats/rebuild"
-      );
-      expect(opts.method).toBe("POST");
-      expect(opts.headers["Content-Type"]).toBe("application/json");
-    });
-
-    it("sends all options in body when provided", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: "rebuilding" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      await ironflow.rebuildProjection("order-stats", {
-        partition: "customer-1",
-        fromEventId: "evt-50",
-        dryRun: true,
-      });
-
-      const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
-      expect(body.partition).toBe("customer-1");
-      expect(body.from_event_id).toBe("evt-50");
-      expect(body.dry_run).toBe(true);
-    });
-
-    it("returns status from server", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve({ status: "rebuilding" }),
-        })
-      );
-
-      const result = await ironflow.rebuildProjection("order-stats");
-      expect(result).toEqual({ status: "rebuilding" });
-    });
-
-    it("throws IronflowError when response is not ok", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: false,
-          status: 409,
-          text: () =>
-            Promise.resolve(
-              JSON.stringify({ message: "rebuild already in progress" })
-            ),
-        })
-      );
-
-      await expect(
-        ironflow.rebuildProjection("order-stats")
-      ).rejects.toThrow("rebuild already in progress");
-    });
-
-    it("includes auth header when configured", async () => {
-      ironflow.configure({
-        serverUrl: "http://localhost:9123",
-        auth: { apiKey: "rebuild-key" },
-        logger: false,
-      });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: "rebuilding" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      await ironflow.rebuildProjection("order-stats");
-
-      const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
-      expect(headers["Authorization"]).toBe("Bearer rebuild-key");
     });
   });
 
@@ -5392,98 +5504,88 @@ describe("IronflowClient (real module)", () => {
     });
   });
 
-  describe("users", () => {
-    it("lists users", async () => {
+  describe("remaining parity wrappers", () => {
+    it("lists streams and maps entity history", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
           ok: true,
-          json: () =>
-            Promise.resolve([
-              { id: "user-1", email: "alice@example.com", name: "Alice" },
-            ]),
+          status: 200,
+          json: () => Promise.resolve({ streams: [{ entity_id: "order-1", entity_type: "order", version: 2, event_count: 2, updated_at: "now" }] }),
         })
-      );
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ entries: [{ event_name: "order.placed", event_data: { total: 10 }, entity_version: 1, timestamp: "now" }] }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
 
-      const users = await ironflow.users.list();
-
-      expect(users).toHaveLength(1);
-      const u0 = assertDefined(users[0]);
-      expect(u0.id).toBe("user-1");
-      expect(u0.email).toBe("alice@example.com");
+      const streams = await ironflow.streams.listStreams();
+      const history = await ironflow.streams.getEntityHistory("order-1");
+      expect(streams[0]?.entityId).toBe("order-1");
+      expect(history[0]?.eventName).toBe("order.placed");
+      expect(history[0]?.version).toBe(1);
     });
 
-    it("creates a user", async () => {
+    it("manages consumer groups and rejects an empty update", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        status: 201,
-        json: () =>
-          Promise.resolve({
-            id: "user-2",
-            email: "bob@example.com",
-            roles: ["viewer"],
-          }),
+        status: 200,
+        json: () => Promise.resolve({ name: "orders", namespace: "default", pattern: "order.*" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const user = await ironflow.users.create({
-        email: "bob@example.com",
-        password: "secret",
-      });
-
-      expect(user.id).toBe("user-2");
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/users",
-        expect.objectContaining({ method: "POST" })
+      const group = await ironflow.consumerGroups.create({ name: "orders", pattern: "order.*" });
+      expect(group.name).toBe("orders");
+      await expect(ironflow.consumerGroups.update("orders", {})).rejects.toThrow(
+        "Consumer group update requires at least one field"
       );
+      await ironflow.consumerGroups.update("orders", { pattern: "order.>" });
+      const updateBody = JSON.parse(mockFetch.mock.calls.at(-1)?.[1]?.body as string);
+      expect(updateBody.update_mask.paths).toEqual(["pattern"]);
     });
 
-    it("gets a user by id", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve({ id: "user-1", email: "alice@example.com" }),
-        })
-      );
-
-      const user = await ironflow.users.get("user-1");
-      expect(user.id).toBe("user-1");
-    });
-
-    it("updates a user", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve({ id: "user-1", name: "Alice Smith", email: "alice@example.com" }),
-        })
-      );
-
-      const user = await ironflow.users.update("user-1", { name: "Alice Smith" });
-      expect(user.name).toBe("Alice Smith");
-    });
-
-    it("deletes a user", async () => {
+    it("queries environment audit events", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        status: 204,
-        json: () => Promise.resolve({}),
+        status: 200,
+        json: () => Promise.resolve({
+          events: [{ id: "a1", run_id: "run-1", function_id: "fn-1", event_type: "run.completed", payload: {}, created_at: "now" }],
+          total_count: 1,
+          next_cursor: "next",
+        }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      await ironflow.users.delete("user-1");
-
+      const result = await ironflow.listAuditEvents({ functionId: "fn-1", limit: 10 });
+      expect(result.events[0]?.functionId).toBe("fn-1");
+      expect(result.nextCursor).toBe("next");
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/users/user-1",
-        expect.objectContaining({ method: "DELETE" })
+        expect.stringContaining("/api/v1/audit?function_id=fn-1&limit=10"),
+        expect.objectContaining({ method: "GET" })
       );
     });
+
+    it("lists role policies", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ policies: [{ id: "p1" }] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const policies = await ironflow.roles.listPolicies("role/1");
+      expect(policies[0]?.id).toBe("p1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/roles/role%2F1/policies"),
+        expect.objectContaining({ method: "GET" })
+      );
+    });
+
   });
 
   describe("tenants", () => {
@@ -5520,6 +5622,27 @@ describe("IronflowClient (real module)", () => {
       );
 
       await expect(ironflow.tenants.list()).rejects.toThrow("enterprise license required");
+    });
+
+    it("provisions a tenant", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: () => Promise.resolve({
+          org: { id: "org-acme", name: "Acme" },
+          environment: { id: "env-prod", name: "production" },
+          api_key: { key: "ifkey_secret", roles: ["admin"] },
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await ironflow.tenants.provision({ orgName: "Acme" });
+      expect(result.apiKey.key).toBe("ifkey_secret");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/provision"),
+        expect.objectContaining({ method: "POST" })
+      );
     });
   });
 });

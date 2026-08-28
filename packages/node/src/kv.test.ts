@@ -36,6 +36,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 // ===========================================================================
@@ -459,5 +460,47 @@ describe("Auth", () => {
     const { init } = lastFetchCall();
     const headers = init.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer handle-key");
+  });
+});
+
+describe("KV watch", () => {
+  it("uses WebSocket subprotocol auth and dispatches updates", () => {
+    class MockWebSocket {
+      static instances: MockWebSocket[] = [];
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      close = vi.fn();
+
+      constructor(public url: string, public protocols: string[]) {
+        MockWebSocket.instances.push(this);
+      }
+    }
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const onUpdate = vi.fn();
+    const handle = new KVBucketHandle(
+      "orders",
+      defaultConfig({ apiKey: "secret-key" })
+    );
+
+    const watcher = handle.watch({ onUpdate }, { key: "order.*" });
+    const ws = assertDefined(MockWebSocket.instances[0]);
+    expect(ws.url).toBe(
+      "ws://localhost:9123/api/v1/kv/buckets/orders/watch?key=order.*"
+    );
+    expect(ws.protocols).toEqual([
+      "ironflow.v1",
+      `ironflow.auth.bearer.${Buffer.from("secret-key").toString("base64url")}`,
+    ]);
+    expect(ws.url).not.toContain("secret-key");
+
+    ws.onmessage?.({
+      data: JSON.stringify({ type: "kv_update", key: "order.1", operation: "put" }),
+    });
+    expect(onUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "order.1", operation: "put" })
+    );
+    watcher.stop();
+    expect(ws.close).toHaveBeenCalledOnce();
   });
 });

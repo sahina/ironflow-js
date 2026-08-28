@@ -246,6 +246,7 @@ export const JobAssignmentSchema = z.object({
 export const EventMetadataSchema = z.object({
   timestamp: z.string(),
   sequence: z.number().optional(),
+  sequenceExact: z.string().regex(/^\d+$/).optional(),
 });
 
 export const WSSubscriptionResultItemSchema = z.object({

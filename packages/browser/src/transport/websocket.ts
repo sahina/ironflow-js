@@ -9,20 +9,40 @@ import type {
   SubscriptionEvent,
 } from "@ironflow/core";
 import {
+  advanceResumeCursor,
+  createWSSubscribeRequest,
   getWebSocketUrl,
+  resumeSequenceFromMetadata,
+  serializeWSSubscribeRequest,
   WSServerMessageSchema,
   calculateBackoff,
+  subscriptionOptionsForReconnect,
   type WSSubscribeRequest,
   type WSUnsubscribeRequest,
   type WSAckRequest,
 } from "@ironflow/core";
-import type { Transport, TransportCallbacks, TransportOptions } from "./types.js";
+import type {
+  Transport,
+  TransportCallbacks,
+  TransportOptions,
+} from "./types.js";
+import { webSocketProtocols } from "../websocket-auth.js";
+
+interface PendingSubscription {
+  options?: SubscribeOptions;
+  sent: boolean;
+  accepted: boolean;
+  subscriptionId?: string;
+  awaitingResult: boolean;
+  canceled: boolean;
+}
 
 /**
  * WebSocket-based transport for subscriptions
  */
 export class WebSocketTransport implements Transport {
   private readonly wsUrl: string;
+  private readonly protocols: string[];
   private readonly options: TransportOptions;
   private callbacks?: TransportCallbacks;
   private ws: WebSocket | null = null;
@@ -30,7 +50,8 @@ export class WebSocketTransport implements Transport {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private paused = false;
-  private pendingSubscriptions: Map<string, SubscribeOptions | undefined> = new Map();
+  private pendingSubscriptions: Map<string, PendingSubscription[]> = new Map();
+  private subscriptionPatterns: Map<string, string> = new Map();
 
   constructor(serverUrl: string, options: TransportOptions) {
     const baseWsUrl = getWebSocketUrl(serverUrl);
@@ -39,18 +60,15 @@ export class WebSocketTransport implements Transport {
     if (options.environment) {
       params.push(`env=${encodeURIComponent(options.environment)}`);
     }
-    if (options.auth?.apiKey) {
-      params.push(`token=${encodeURIComponent(options.auth.apiKey)}`);
-    } else if (options.auth?.token) {
-      params.push(`token=${encodeURIComponent(options.auth.token)}`);
-    }
-
     if (params.length > 0) {
       const separator = baseWsUrl.includes("?") ? "&" : "?";
       this.wsUrl = `${baseWsUrl}${separator}${params.join("&")}`;
     } else {
       this.wsUrl = baseWsUrl;
     }
+    this.protocols = webSocketProtocols(
+      options.auth?.apiKey || options.auth?.token,
+    );
     this.options = options;
   }
 
@@ -88,13 +106,18 @@ export class WebSocketTransport implements Transport {
             this.ws = null;
           }
           this._connectionState = "disconnected";
+          this.subscriptionPatterns.clear();
+          this.discardCanceledSubscriptions();
           this.callbacks?.onConnectionChange("disconnected");
+          if (this.shouldReconnect()) {
+            this.scheduleReconnect();
+          }
           reject(new Error(`WebSocket connection timeout after ${timeout}ms`));
         }
       }, timeout);
 
       try {
-        this.ws = new WebSocket(this.wsUrl);
+        this.ws = new WebSocket(this.wsUrl, this.protocols);
 
         this.ws.onopen = () => {
           clearTimeout(timeoutId);
@@ -103,8 +126,16 @@ export class WebSocketTransport implements Transport {
           this.callbacks?.onConnectionChange("connected");
 
           // Re-subscribe all pending subscriptions
-          for (const [pattern, options] of this.pendingSubscriptions) {
-            this.sendSubscribe(pattern, options);
+          for (const [pattern, subscriptions] of this.pendingSubscriptions) {
+            for (const subscription of subscriptions) {
+              const options = subscription.accepted
+                ? subscriptionOptionsForReconnect(subscription.options)
+                : subscription.options;
+              if (this.sendSubscribe(pattern, options)) {
+                subscription.sent = true;
+                subscription.awaitingResult = true;
+              }
+            }
           }
 
           resolve();
@@ -114,10 +145,12 @@ export class WebSocketTransport implements Transport {
           clearTimeout(timeoutId);
           const wasConnected = this._connectionState === "connected";
           this._connectionState = "disconnected";
+          this.subscriptionPatterns.clear();
+          this.discardCanceledSubscriptions();
           this.callbacks?.onConnectionChange("disconnected");
 
           if (
-            this.options.autoReconnect &&
+            (this.options.autoReconnect || this.hasCursorSubscription()) &&
             !this.paused &&
             event.code !== 1000
           ) {
@@ -142,6 +175,12 @@ export class WebSocketTransport implements Transport {
       } catch (error) {
         clearTimeout(timeoutId);
         this._connectionState = "disconnected";
+        this.subscriptionPatterns.clear();
+        this.discardCanceledSubscriptions();
+        this.callbacks?.onConnectionChange("disconnected");
+        if (this.shouldReconnect()) {
+          this.scheduleReconnect();
+        }
         reject(error);
       }
     });
@@ -159,19 +198,55 @@ export class WebSocketTransport implements Transport {
 
     this._connectionState = "disconnected";
     this.pendingSubscriptions.clear();
+    this.subscriptionPatterns.clear();
   }
 
   subscribe(pattern: string, options?: SubscribeOptions): void {
-    this.pendingSubscriptions.set(pattern, options);
+    const storedOptions = options ? { ...options } : undefined;
+    const subscription: PendingSubscription = {
+      options: storedOptions,
+      sent: false,
+      accepted: false,
+      awaitingResult: false,
+      canceled: false,
+    };
+    const subscriptions = this.pendingSubscriptions.get(pattern) ?? [];
+    subscriptions.push(subscription);
+    this.pendingSubscriptions.set(pattern, subscriptions);
 
     if (this._connectionState === "connected") {
-      this.sendSubscribe(pattern, options);
+      subscription.sent = this.sendSubscribe(pattern, storedOptions);
+      subscription.awaitingResult = subscription.sent;
     }
   }
 
   unsubscribe(subscriptionId: string): void {
-    // Remove from pending if pattern matches
-    // Note: We don't have pattern->id mapping here, so we just send unsubscribe
+    const pattern =
+      this.subscriptionPatterns.get(subscriptionId) ??
+      [...this.pendingSubscriptions].find(([, subscriptions]) =>
+        subscriptions.some(
+          (subscription) => subscription.subscriptionId === subscriptionId,
+        ),
+      )?.[0];
+    if (pattern) {
+      const subscriptions = this.pendingSubscriptions.get(pattern);
+      const index = subscriptions?.findIndex(
+        (subscription) => subscription.subscriptionId === subscriptionId,
+      );
+      if (subscriptions && index !== undefined && index >= 0) {
+        const subscription = subscriptions[index]!;
+        if (subscription.awaitingResult) {
+          subscription.canceled = true;
+        } else {
+          subscriptions.splice(index, 1);
+          if (subscriptions.length === 0) {
+            this.pendingSubscriptions.delete(pattern);
+          }
+        }
+      }
+    }
+    this.subscriptionPatterns.delete(subscriptionId);
+
     if (this._connectionState === "connected" && this.ws) {
       const request: WSUnsubscribeRequest = {
         type: "unsubscribe",
@@ -219,30 +294,18 @@ export class WebSocketTransport implements Transport {
     });
   }
 
-  private sendSubscribe(pattern: string, options?: SubscribeOptions): void {
+  private sendSubscribe(pattern: string, options?: SubscribeOptions): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return;
+      return false;
     }
 
-    const request: WSSubscribeRequest = {
-      type: "subscribe",
-      subscription: {
-        pattern,
-        options: options
-          ? {
-              replay: options.replay,
-              includeMetadata: options.includeMetadata,
-              filter: options.filter,
-              consumerGroup: options.consumerGroup,
-              ackMode: options.ackMode,
-              backpressure: options.backpressure,
-              namespace: options.namespace,
-            }
-          : undefined,
-      },
-    };
+    const request: WSSubscribeRequest = createWSSubscribeRequest(
+      pattern,
+      options,
+    );
 
-    this.ws.send(JSON.stringify(request));
+    this.ws.send(serializeWSSubscribeRequest(request));
+    return true;
   }
 
   private handleMessage(data: string): void {
@@ -264,11 +327,57 @@ export class WebSocketTransport implements Transport {
       case "subscription_result":
         for (const sub of message.results) {
           if (sub.status === "ok" && sub.subscriptionId) {
-            this.callbacks?.onSubscribed(sub.pattern, sub.subscriptionId);
+            const subscriptions = this.pendingSubscriptions.get(sub.pattern);
+            const subscription = subscriptions?.find(
+              (candidate) => candidate.awaitingResult,
+            );
+            const previousSubscriptionId = subscription?.subscriptionId;
+            if (subscription?.canceled) {
+              subscription.awaitingResult = false;
+              this.removePendingSubscription(sub.pattern, subscription);
+              this.sendUnsubscribe(sub.subscriptionId);
+              continue;
+            }
+            if (subscription) {
+              subscription.awaitingResult = false;
+              subscription.accepted = true;
+              subscription.subscriptionId = sub.subscriptionId;
+            }
+            if (previousSubscriptionId) {
+              this.subscriptionPatterns.delete(previousSubscriptionId);
+            }
+            this.subscriptionPatterns.set(sub.subscriptionId, sub.pattern);
+            if (previousSubscriptionId) {
+              this.callbacks?.onSubscribed(
+                sub.pattern,
+                sub.subscriptionId,
+                previousSubscriptionId,
+              );
+            } else {
+              this.callbacks?.onSubscribed(sub.pattern, sub.subscriptionId);
+            }
           } else {
+            const subscriptions = this.pendingSubscriptions.get(sub.pattern);
+            const index = subscriptions?.findIndex(
+              (candidate) => candidate.awaitingResult,
+            );
+            let rejected: PendingSubscription | undefined;
+            if (subscriptions && index !== undefined && index >= 0) {
+              [rejected] = subscriptions.splice(index, 1);
+              if (rejected?.subscriptionId) {
+                this.subscriptionPatterns.delete(rejected.subscriptionId);
+              }
+              if (subscriptions.length === 0) {
+                this.pendingSubscriptions.delete(sub.pattern);
+              }
+              if (rejected?.canceled) {
+                continue;
+              }
+            }
             this.callbacks?.onSubscribeFailed(
               sub.pattern,
-              new Error(sub.message ?? `Subscription failed: ${sub.code}`)
+              new Error(sub.message ?? `Subscription failed: ${sub.code}`),
+              rejected?.subscriptionId,
             );
           }
         }
@@ -276,6 +385,24 @@ export class WebSocketTransport implements Transport {
 
       case "event":
         {
+          const pattern = this.subscriptionPatterns.get(message.subscriptionId);
+          const subscription = pattern
+            ? this.pendingSubscriptions
+                .get(pattern)
+                ?.find(
+                  (candidate) =>
+                    candidate.subscriptionId === message.subscriptionId,
+                )
+            : undefined;
+          if (subscription) {
+            subscription.options = advanceResumeCursor(
+              subscription.options,
+              resumeSequenceFromMetadata(
+                message.meta?.sequence,
+                message.meta?.sequenceExact,
+              ),
+            );
+          }
           const event: SubscriptionEvent = {
             topic: message.topic,
             data: message.data,
@@ -318,15 +445,72 @@ export class WebSocketTransport implements Transport {
       this.reconnectAttempt,
       this.options.reconnectDelay,
       this.options.maxReconnectDelay,
-      this.options.reconnectBackoff
+      this.options.reconnectBackoff,
     );
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect().catch(() => {
-        // Will trigger another reconnect via onclose
+        if (this.shouldReconnect()) {
+          this.scheduleReconnect();
+        }
       });
     }, delay);
+  }
+
+  private shouldReconnect(): boolean {
+    return (
+      (this.options.autoReconnect || this.hasCursorSubscription()) &&
+      !this.paused
+    );
+  }
+
+  private hasCursorSubscription(): boolean {
+    return [...this.pendingSubscriptions.values()].some((subscriptions) =>
+      subscriptions.some(
+        (subscription) =>
+          subscription.options?.startAfterSequence !== undefined,
+      ),
+    );
+  }
+
+  private removePendingSubscription(
+    pattern: string,
+    subscription: PendingSubscription,
+  ): void {
+    const subscriptions = this.pendingSubscriptions.get(pattern);
+    const index = subscriptions?.indexOf(subscription) ?? -1;
+    if (!subscriptions || index < 0) {
+      return;
+    }
+    subscriptions.splice(index, 1);
+    if (subscriptions.length === 0) {
+      this.pendingSubscriptions.delete(pattern);
+    }
+  }
+
+  private discardCanceledSubscriptions(): void {
+    for (const [pattern, subscriptions] of this.pendingSubscriptions) {
+      const active = subscriptions.filter(
+        (subscription) => !subscription.canceled,
+      );
+      if (active.length === 0) {
+        this.pendingSubscriptions.delete(pattern);
+      } else if (active.length !== subscriptions.length) {
+        this.pendingSubscriptions.set(pattern, active);
+      }
+    }
+  }
+
+  private sendUnsubscribe(subscriptionId: string): void {
+    if (this._connectionState !== "connected" || !this.ws) {
+      return;
+    }
+    const request: WSUnsubscribeRequest = {
+      type: "unsubscribe",
+      subscriptionId,
+    };
+    this.ws.send(JSON.stringify(request));
   }
 
   private clearReconnectTimer(): void {
@@ -342,7 +526,7 @@ export class WebSocketTransport implements Transport {
  */
 export function createWebSocketTransport(
   serverUrl: string,
-  options: TransportOptions
+  options: TransportOptions,
 ): Transport {
   return new WebSocketTransport(serverUrl, options);
 }

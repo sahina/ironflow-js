@@ -1,5 +1,82 @@
 import { describe, it, expect } from "vitest";
-import { patterns } from "./protocol.js";
+import {
+  advanceResumeCursor,
+  createWSSubscribeRequest,
+  patterns,
+  resumeSequenceFromMetadata,
+  serializeWSSubscribeRequest,
+  subscriptionOptionsForReconnect,
+} from "./protocol.js";
+
+describe("subscription reconnect protocol", () => {
+  it("preserves an explicit zero cursor and requests sequence metadata", () => {
+    expect(
+      createWSSubscribeRequest("orders.*", { startAfterSequence: 0 })
+    ).toEqual({
+      type: "subscribe",
+      subscription: {
+        pattern: "orders.*",
+        options: {
+          replay: undefined,
+          startAfterSequence: 0,
+          includeMetadata: true,
+          filter: undefined,
+          consumerGroup: undefined,
+          ackMode: undefined,
+          backpressure: undefined,
+          namespace: undefined,
+        },
+      },
+    });
+  });
+
+  it("removes replay without changing identifying options", () => {
+    expect(
+      subscriptionOptionsForReconnect({
+        replay: 25,
+        filter: "data.total > 100",
+        consumerGroup: "processors",
+      })
+    ).toEqual({
+      replay: undefined,
+      filter: "data.total > 100",
+      consumerGroup: "processors",
+    });
+  });
+
+  it("advances only subscriptions that opted into cursor resume", () => {
+    expect(advanceResumeCursor({ startAfterSequence: 400 }, 405)).toEqual({
+      replay: undefined,
+      startAfterSequence: 405,
+    });
+    expect(advanceResumeCursor({ replay: 25 }, 405)).toEqual({ replay: 25 });
+  });
+
+  it("preserves uint64 cursors beyond JavaScript's safe integer range", () => {
+    const sequence = 9_007_199_254_740_995n;
+    const request = createWSSubscribeRequest("orders.*", {
+      startAfterSequence: sequence,
+    });
+
+    expect(serializeWSSubscribeRequest(request)).toContain(
+      '"startAfterSequence":9007199254740995'
+    );
+    expect(
+      resumeSequenceFromMetadata(9_007_199_254_740_996, sequence.toString())
+    ).toBe(sequence);
+    expect(advanceResumeCursor({ startAfterSequence: 400 }, sequence)).toEqual({
+      replay: undefined,
+      startAfterSequence: sequence,
+    });
+    expect(() =>
+      serializeWSSubscribeRequest(
+        createWSSubscribeRequest("orders.*", {
+          startAfterSequence: 9_007_199_254_740_996,
+        })
+      )
+    ).toThrow(/safe integer or uint64 bigint/);
+  });
+});
 
 describe("patterns", () => {
   describe("allRuns", () => {

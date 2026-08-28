@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ConnectError, Code } from "@connectrpc/connect";
 import type { ConnectionState, AckType } from "@ironflow/core";
-import { isExplicitCancellation, isTransientNetworkError } from "./connectrpc.js";
+import {
+  isExplicitCancellation,
+  isTransientNetworkError,
+} from "./connectrpc.js";
 import { assertDefined } from "../internal/assert-defined.js";
 
 // Inline types to avoid complex imports
@@ -14,7 +17,15 @@ interface TransportOptions {
 
 interface TransportCallbacks {
   onEvent: (subscriptionId: string, event: unknown) => void;
-  onError: (subscriptionId: string, error: { subscriptionId?: string; code: string; message: string; retrying?: boolean }) => void;
+  onError: (
+    subscriptionId: string,
+    error: {
+      subscriptionId?: string;
+      code: string;
+      message: string;
+      retrying?: boolean;
+    },
+  ) => void;
   onConnectionChange: (state: ConnectionState) => void;
   onSubscribed: (pattern: string, subscriptionId: string) => void;
   onSubscribeFailed: (pattern: string, error: Error) => void;
@@ -44,14 +55,17 @@ function calculateBackoff(
   attempt: number,
   initialDelay: number,
   maxDelay: number,
-  multiplier: number = 2
+  multiplier: number = 2,
 ): number {
   const delay = initialDelay * Math.pow(multiplier, attempt - 1);
   return Math.min(delay, maxDelay);
 }
 
 // Factory function matching the public API
-function createConnectRPCTransport(serverUrl: string, options: TransportOptions): ConnectRPCTransport {
+function createConnectRPCTransport(
+  serverUrl: string,
+  options: TransportOptions,
+): ConnectRPCTransport {
   return new ConnectRPCTransport(serverUrl, options);
 }
 
@@ -63,7 +77,14 @@ class ConnectRPCTransport {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private paused = false;
-  private activeSubscriptions: Map<string, { pattern: string; options?: SubscribeOptions; abortController: AbortController }> = new Map();
+  private activeSubscriptions: Map<
+    string,
+    {
+      pattern: string;
+      options?: SubscribeOptions;
+      abortController: AbortController;
+    }
+  > = new Map();
   private subscriptionIdCounter = 0;
   private mockClient: { subscribe: ReturnType<typeof vi.fn> } | null = null;
 
@@ -145,8 +166,8 @@ class ConnectRPCTransport {
     // Manual acks are not supported in ConnectRPC browser transport
     throw new Error(
       `Manual acknowledgments are not yet supported in the browser transport. ` +
-      `Cannot send ${type}. ` +
-      `Use ackMode: "auto" (default) or use WebSocket transport for manual acks.`
+        `Cannot send ${type}. ` +
+        `Use ackMode: "auto" (default) or use WebSocket transport for manual acks.`,
     );
   }
 
@@ -170,7 +191,11 @@ class ConnectRPCTransport {
 
   private startSubscriptionStream(
     subscriptionId: string,
-    sub: { pattern: string; options?: SubscribeOptions; abortController: AbortController }
+    sub: {
+      pattern: string;
+      options?: SubscribeOptions;
+      abortController: AbortController;
+    },
   ): void {
     if (!this.mockClient) return;
 
@@ -192,7 +217,9 @@ class ConnectRPCTransport {
     const subscriptionEvent = {
       topic: event.topic,
       data: event.data ?? {},
-      meta: event.metadata ? { timestamp, sequence: Number(event.sequence) } : undefined,
+      meta: event.metadata
+        ? { timestamp, sequence: Number(event.sequence) }
+        : undefined,
       eventId: event.eventId,
     };
 
@@ -239,7 +266,7 @@ class ConnectRPCTransport {
       this.reconnectAttempt,
       this.options.reconnectDelay ?? 1000,
       this.options.maxReconnectDelay ?? 30000,
-      this.options.reconnectBackoff ?? 2
+      this.options.reconnectBackoff ?? 2,
     );
 
     this.reconnectTimer = setTimeout(() => {
@@ -339,11 +366,17 @@ describe("ConnectRPCTransport", () => {
     it("should notify onSubscribed when subscription starts", () => {
       transport.subscribe("events.*", { replay: 10 });
 
-      expect(callbacks.onSubscribed).toHaveBeenCalledWith("events.*", expect.stringContaining("crpc-sub-"));
+      expect(callbacks.onSubscribed).toHaveBeenCalledWith(
+        "events.*",
+        expect.stringContaining("crpc-sub-"),
+      );
     });
 
     it("should queue subscriptions when not connected", () => {
-      const offlineTransport = createConnectRPCTransport("http://localhost:9123", {});
+      const offlineTransport = createConnectRPCTransport(
+        "http://localhost:9123",
+        {},
+      );
       offlineTransport.setCallbacks(callbacks);
 
       offlineTransport.subscribe("offline.pattern");
@@ -352,20 +385,26 @@ describe("ConnectRPCTransport", () => {
     });
 
     it("should call onSubscribed after connect for queued subscriptions", async () => {
-      const queuedTransport = createConnectRPCTransport("http://localhost:9123", {});
+      const queuedTransport = createConnectRPCTransport(
+        "http://localhost:9123",
+        {},
+      );
       queuedTransport.setCallbacks(callbacks);
 
       queuedTransport.subscribe("queued.pattern");
       expect(callbacks.onSubscribed).not.toHaveBeenCalled();
 
       await queuedTransport.connect();
-      expect(callbacks.onSubscribed).toHaveBeenCalledWith("queued.pattern", expect.any(String));
+      expect(callbacks.onSubscribed).toHaveBeenCalledWith(
+        "queued.pattern",
+        expect.any(String),
+      );
     });
 
     it("should handle unsubscribe", () => {
       transport.subscribe("test.*");
       const subscriptionId = assertDefined(
-        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0]
+        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0],
       )[1] as string;
 
       transport.unsubscribe(subscriptionId);
@@ -391,7 +430,7 @@ describe("ConnectRPCTransport", () => {
 
     it("should invoke onEvent callback when event is received", () => {
       const subscriptionId = assertDefined(
-        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0]
+        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0],
       )[1] as string;
 
       transport.simulateEvent(subscriptionId, {
@@ -407,13 +446,13 @@ describe("ConnectRPCTransport", () => {
           topic: "events.created",
           data: { id: 123 },
           eventId: "evt-1",
-        })
+        }),
       );
     });
 
     it("should convert timestamp correctly", () => {
       const subscriptionId = assertDefined(
-        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0]
+        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0],
       )[1] as string;
       const timestamp = { seconds: 1704067200n, nanos: 500000000 }; // 2024-01-01T00:00:00.5Z
 
@@ -431,7 +470,7 @@ describe("ConnectRPCTransport", () => {
             timestamp: expect.any(String),
             sequence: 1,
           }),
-        })
+        }),
       );
     });
   });
@@ -450,7 +489,7 @@ describe("ConnectRPCTransport", () => {
 
     it("should invoke onError callback on stream error", () => {
       const subscriptionId = assertDefined(
-        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0]
+        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0],
       )[1] as string;
 
       transport.simulateStreamError(subscriptionId, "Stream closed");
@@ -465,7 +504,7 @@ describe("ConnectRPCTransport", () => {
 
     it("should trigger reconnect on stream error", () => {
       const subscriptionId = assertDefined(
-        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0]
+        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0],
       )[1] as string;
 
       transport.simulateStreamError(subscriptionId, "Connection lost");
@@ -483,19 +522,19 @@ describe("ConnectRPCTransport", () => {
 
     it("should throw error for ack", async () => {
       await expect(transport.ack("evt-1", "ack")).rejects.toThrow(
-        "Manual acknowledgments are not yet supported"
+        "Manual acknowledgments are not yet supported",
       );
     });
 
     it("should throw error for nak", async () => {
       await expect(transport.ack("evt-1", "nak", 5000)).rejects.toThrow(
-        "Manual acknowledgments are not yet supported"
+        "Manual acknowledgments are not yet supported",
       );
     });
 
     it("should throw error for term", async () => {
       await expect(transport.ack("evt-1", "term")).rejects.toThrow(
-        "Manual acknowledgments are not yet supported"
+        "Manual acknowledgments are not yet supported",
       );
     });
 
@@ -558,7 +597,7 @@ describe("ConnectRPCTransport", () => {
       transport.subscribe("events.*");
 
       const subscriptionId = assertDefined(
-        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0]
+        (callbacks.onSubscribed as ReturnType<typeof vi.fn>).mock.calls[0],
       )[1] as string;
       transport.simulateStreamError(subscriptionId, "Error");
 
@@ -590,7 +629,9 @@ describe("isExplicitCancellation", () => {
   });
 
   it("should NOT match network TypeError", () => {
-    const error = new TypeError("NetworkError when attempting to fetch resource.");
+    const error = new TypeError(
+      "NetworkError when attempting to fetch resource.",
+    );
     expect(isExplicitCancellation(error)).toBe(false);
   });
 
@@ -613,20 +654,41 @@ describe("isTransientNetworkError", () => {
     });
 
     it("should match ConnectError Code.Unknown with 'BodyStreamBuffer was aborted'", () => {
-      const error = new ConnectError("BodyStreamBuffer was aborted", Code.Unknown);
+      const error = new ConnectError(
+        "BodyStreamBuffer was aborted",
+        Code.Unknown,
+      );
       expect(isTransientNetworkError(error)).toBe(true);
     });
 
     it("should match ConnectError Code.Unknown with 'aborted' message", () => {
       const error = new ConnectError(
         "The stream was aborted during reconnection",
-        Code.Unknown
+        Code.Unknown,
       );
       expect(isTransientNetworkError(error)).toBe(true);
     });
 
+    it.each([
+      Code.DeadlineExceeded,
+      Code.ResourceExhausted,
+      Code.Aborted,
+      Code.Internal,
+    ])("should match retryable ConnectError code %s", (code) => {
+      expect(isTransientNetworkError(new ConnectError("retryable", code))).toBe(
+        true,
+      );
+    });
+
+    it("should match every Code.Unknown error", () => {
+      const error = new ConnectError("something unexpected", Code.Unknown);
+      expect(isTransientNetworkError(error)).toBe(true);
+    });
+
     it("should match TypeError with 'fetch' message", () => {
-      const error = new TypeError("NetworkError when attempting to fetch resource.");
+      const error = new TypeError(
+        "NetworkError when attempting to fetch resource.",
+      );
       expect(isTransientNetworkError(error)).toBe(true);
     });
 
@@ -643,7 +705,10 @@ describe("isTransientNetworkError", () => {
     });
 
     it("should NOT match ConnectError with Code.PermissionDenied", () => {
-      const error = new ConnectError("permission denied", Code.PermissionDenied);
+      const error = new ConnectError(
+        "permission denied",
+        Code.PermissionDenied,
+      );
       expect(isTransientNetworkError(error)).toBe(false);
     });
 
@@ -654,16 +719,6 @@ describe("isTransientNetworkError", () => {
 
     it("should NOT match ConnectError with Code.Unauthenticated", () => {
       const error = new ConnectError("missing auth", Code.Unauthenticated);
-      expect(isTransientNetworkError(error)).toBe(false);
-    });
-
-    it("should NOT match ConnectError with Code.Internal", () => {
-      const error = new ConnectError("internal error", Code.Internal);
-      expect(isTransientNetworkError(error)).toBe(false);
-    });
-
-    it("should NOT match ConnectError Code.Unknown without abort message", () => {
-      const error = new ConnectError("something unexpected", Code.Unknown);
       expect(isTransientNetworkError(error)).toBe(false);
     });
 

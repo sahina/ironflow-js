@@ -19,6 +19,7 @@ import type {
 } from "@ironflow/core";
 import { IronflowError, DEFAULT_TIMEOUTS, HEADERS } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
+import { webSocketProtocols } from "./websocket-auth.js";
 
 /**
  * KV bucket handle for key-level operations in the browser.
@@ -129,16 +130,16 @@ export class BrowserKVBucketHandle {
 
     const credential =
       this.config.auth?.apiKey || this.config.auth?.token;
-    if (credential) {
-      params.push(`token=${encodeURIComponent(credential)}`);
-    }
 
     if (options?.key) {
       params.push(`key=${encodeURIComponent(options.key)}`);
     }
 
     const query = params.length > 0 ? `?${params.join("&")}` : "";
-    const ws = new WebSocket(`${wsUrl}${path}${query}`);
+    const ws = new WebSocket(
+      `${wsUrl}${path}${query}`,
+      webSocketProtocols(credential),
+    );
 
     ws.onmessage = (event) => {
       try {

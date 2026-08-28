@@ -21,6 +21,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     UnauthenticatedError: actual.UnauthenticatedError,
     EnterpriseRequiredError: actual.EnterpriseRequiredError,
     UnauthorizedError: actual.UnauthorizedError,
+    ValidationError: actual.ValidationError,
     peelProjectionEnvelope: actual.peelProjectionEnvelope,
     // Pure wire mappers — pass them through rather than stubbing, since the
     // webhook tests below assert on exactly the shape they produce.
@@ -28,6 +29,11 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     webhookGraceToWire: actual.webhookGraceToWire,
     webhookSourceFromWire: actual.webhookSourceFromWire,
     webhookDeliveryFromWire: actual.webhookDeliveryFromWire,
+    registeredFunctionFromWire: actual.registeredFunctionFromWire,
+    functionHistoryEntryFromWire: actual.functionHistoryEntryFromWire,
+    storedEventFromWire: actual.storedEventFromWire,
+    runStepFromWire: actual.runStepFromWire,
+    consumerGroupFromWire: actual.consumerGroupFromWire,
   };
 });
 
@@ -163,7 +169,117 @@ describe("IronflowClient", () => {
     });
   });
 
+  describe("function lifecycle", () => {
+    it("wraps get, status, delete, history, version, and rollback RPCs", async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            id: "fn-1",
+            status: "FUNCTION_STATUS_ACTIVE",
+            preferredMode: "EXECUTION_MODE_PULL",
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            id: "fn-1",
+            status: "FUNCTION_STATUS_PAUSED",
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            entries: [{
+              eventId: "evt-1",
+              entityVersion: "12",
+              functionId: "fn-1",
+              changeType: "update",
+            }],
+            hasMore: true,
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            entry: {
+              eventId: "evt-2",
+              entityVersion: "9",
+              functionId: "fn-1",
+              changeType: "update",
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            function: { id: "fn-1", status: "FUNCTION_STATUS_ACTIVE" },
+          }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      expect((await client.getFunction("fn-1")).preferredMode).toBe("pull");
+      expect((await client.updateFunctionStatus("fn-1", "paused")).status).toBe("paused");
+      await client.deleteFunction("fn-1");
+      const history = await client.listFunctionHistory("fn-1", {
+        limit: 20,
+        fromVersion: 13,
+      });
+      expect(history).toMatchObject({ hasMore: true, entries: [{ entityVersion: 12 }] });
+      expect((await client.getFunctionAtVersion("fn-1", 9)).entityVersion).toBe(9);
+      expect((await client.rollbackFunction("fn-1", 9, "bad deploy")).status).toBe("active");
+
+      const calls = mockFetch.mock.calls.map(([url, init]) => ({
+        path: new URL(url as string).pathname,
+        body: JSON.parse((init as RequestInit).body as string),
+      }));
+      expect(calls).toEqual([
+        { path: "/ironflow.v1.IronflowService/GetFunction", body: { id: "fn-1" } },
+        {
+          path: "/ironflow.v1.IronflowService/UpdateFunctionStatus",
+          body: { id: "fn-1", status: "FUNCTION_STATUS_PAUSED" },
+        },
+        { path: "/ironflow.v1.IronflowService/DeleteFunction", body: { id: "fn-1" } },
+        {
+          path: "/ironflow.v1.IronflowService/ListFunctionHistory",
+          body: { functionId: "fn-1", limit: 20, fromVersion: "13" },
+        },
+        {
+          path: "/ironflow.v1.IronflowService/GetFunctionAtVersion",
+          body: { functionId: "fn-1", version: "9" },
+        },
+        {
+          path: "/ironflow.v1.IronflowService/RollbackFunction",
+          body: { functionId: "fn-1", version: "9", changeReason: "bad deploy" },
+        },
+      ]);
+    });
+  });
+
   describe("emit", () => {
+    it("should trigger a batch of events", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ results: [{ runIds: ["run-1"], eventId: "evt-1" }] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      const result = await client.triggerBatch([
+        { event: "order.placed", data: { id: "1" }, version: 2, idempotencyKey: "order-1" },
+      ]);
+
+      expect(result).toEqual([{ runIds: ["run-1"], eventId: "evt-1" }]);
+      const [url, init] = assertDefined(mockFetch.mock.calls[0]);
+      expect(url).toBe("http://localhost:9123/ironflow.v1.IronflowService/TriggerBatch");
+      expect(JSON.parse(init.body as string)).toEqual({
+        events: [{ event: "order.placed", data: { id: "1" }, version: 2, idempotencyKey: "order-1" }],
+      });
+    });
+
     it("should make POST request to Trigger endpoint", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -211,6 +327,203 @@ describe("IronflowClient", () => {
       const call = assertDefined(mockFetch.mock.calls[mockFetch.mock.calls.length - 1]);
       const body = JSON.parse(call[1]?.body as string);
       expect(body.version).toBe(2);
+    });
+  });
+
+  describe("event reads", () => {
+    it("lists events, gets one event, and lists name facets", async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            events: [{
+              id: "evt-1",
+              name: "order.placed",
+              timestamp: "2026-08-27T12:00:00.123Z",
+              data: { id: "1" },
+              source: "sdk",
+              processed: true,
+              created_at: "2026-08-27T12:00:00.123Z",
+              idempotency_key: "order-1",
+            }],
+            count: 1,
+            limit: 25,
+            next_cursor: "next",
+            has_next: true,
+            has_prev: false,
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            id: "evt-1",
+            name: "order.placed",
+            timestamp: "2026-08-27T12:00:00.123Z",
+            source: "sdk",
+            processed: true,
+            created_at: "2026-08-27T12:00:00.123Z",
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            names: [{ name: "order.placed", count: 8 }],
+            scanned: 8,
+            truncated: false,
+            scan_cap: 10000,
+          }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      const page = await client.listEvents({
+        names: ["order.placed", "order.shipped"],
+        sources: ["sdk"],
+        limit: 25,
+        cursor: "cur",
+      });
+      expect(page.events[0]).toMatchObject({ id: "evt-1", idempotencyKey: "order-1" });
+      expect(page.hasNext).toBe(true);
+      expect((await client.getEvent("evt-1")).id).toBe("evt-1");
+      expect((await client.listEventNames({ sources: ["sdk"] })).scanCap).toBe(10000);
+
+      expect(mockFetch.mock.calls.map(([url]) => url)).toEqual([
+        "http://localhost:9123/api/v1/events?names=order.placed%2Corder.shipped&source=sdk&limit=25&cursor=cur",
+        "http://localhost:9123/api/v1/events/evt-1",
+        "http://localhost:9123/api/v1/events/names?source=sdk",
+      ]);
+    });
+  });
+
+  describe("run introspection", () => {
+    it("returns durable steps and touched entity streams", async () => {
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({
+            steps: [{ id: "row-1", run_id: "run-1", step_id: "charge", step_type: "invoke", sequence: 1, status: "completed", attempt: 1, created_at: "now", updated_at: "now" }],
+            count: 1,
+          }),
+        })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ entity_ids: ["order-1"] }) });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      expect((await client.getRunSteps("run-1")).steps[0]?.stepId).toBe("charge");
+      expect(await client.getRunStreams("run-1")).toEqual({ entityIds: ["order-1"] });
+      expect(mockFetch.mock.calls.map(([url]) => url)).toEqual([
+        "http://localhost:9123/api/v1/runs/run-1/steps",
+        "http://localhost:9123/api/v1/runs/run-1/streams",
+      ]);
+    });
+  });
+
+  describe("consumer group management", () => {
+    it("wraps create, get, list, partial update, and delete", async () => {
+      const group = {
+        id: "cg-1",
+        namespace: "default",
+        name: "orders",
+        pattern: "order.*",
+        ackMode: "ACK_MODE_MANUAL",
+        backpressure: "BACKPRESSURE_MODE_BUFFER",
+        maxInflight: 50,
+        maxRedeliveries: 3,
+        redeliverDelayMs: 5000,
+        status: "CONSUMER_GROUP_STATUS_ACTIVE",
+        memberCount: 0,
+        createdAt: "2026-08-27T12:00:00Z",
+        updatedAt: "2026-08-27T12:00:00Z",
+      };
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(group) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(group) })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ groups: [group] }) })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ ...group, status: "CONSUMER_GROUP_STATUS_PAUSED", maxInflight: 0 }),
+        })
+        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({}) });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      expect((await client.consumerGroups.create({ name: "orders", pattern: "order.*", ackMode: "manual" })).ackMode).toBe("manual");
+      expect((await client.consumerGroups.get("orders")).name).toBe("orders");
+      expect(await client.consumerGroups.list()).toHaveLength(1);
+      expect((await client.consumerGroups.update("orders", { status: "paused", maxInflight: 0 })).status).toBe("paused");
+      await client.consumerGroups.delete("orders");
+
+      const bodies = mockFetch.mock.calls.map(([, init]) =>
+        JSON.parse((init as RequestInit).body as string)
+      );
+      expect(bodies[3]).toEqual({
+        group: {
+          name: "orders",
+          namespace: "default",
+          maxInflight: 0,
+          status: "CONSUMER_GROUP_STATUS_PAUSED",
+        },
+        updateMask: { paths: ["max_inflight", "status"] },
+      });
+      expect(mockFetch.mock.calls.map(([url]) => new URL(url as string).pathname)).toEqual([
+        "/ironflow.v1.PubSubService/CreateConsumerGroup",
+        "/ironflow.v1.PubSubService/GetConsumerGroup",
+        "/ironflow.v1.PubSubService/ListConsumerGroups",
+        "/ironflow.v1.PubSubService/UpdateConsumerGroup",
+        "/ironflow.v1.PubSubService/DeleteConsumerGroup",
+      ]);
+    });
+
+    it("follows pagination until every consumer group is returned", async () => {
+      const firstGroup = {
+        id: "cg-1",
+        namespace: "default",
+        name: "orders",
+        pattern: "order.*",
+      };
+      const secondGroup = {
+        id: "cg-2",
+        namespace: "default",
+        name: "payments",
+        pattern: "payment.*",
+      };
+      const mockFetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ groups: [firstGroup], next_cursor: "cg-page-2" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ groups: [secondGroup] }),
+        });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      const groups = await client.consumerGroups.list();
+
+      expect(groups.map((group) => group.name)).toEqual(["orders", "payments"]);
+      const bodies = mockFetch.mock.calls.map(([, init]) =>
+        JSON.parse((init as RequestInit).body as string)
+      );
+      expect(bodies).toEqual([
+        { limit: 100 },
+        { limit: 100, cursor: "cg-page-2" },
+      ]);
+    });
+
+    it("rejects an empty update before sending a destructive field mask", async () => {
+      const mockFetch = vi.fn();
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(client.consumerGroups.update("orders", {})).rejects.toThrow(
+        "Consumer group update requires at least one field"
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 
@@ -1736,6 +2049,23 @@ describe("IronflowClient", () => {
   });
 
   describe("projections", () => {
+    it("lists materialized partition keys", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ partitions: ["cust-1", "cust-2"], returned: 2 }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(client.projections.listPartitions("orders", { query: "cust", limit: 25 })).resolves.toEqual({
+        partitions: ["cust-1", "cust-2"],
+        returned: 2,
+      });
+      expect(mockFetch.mock.calls[0]?.[0]).toBe(
+        "http://localhost:9123/api/v1/projections/orders/partitions?q=cust&limit=25"
+      );
+    });
+
     describe("get", () => {
       // Wire shape mirrors `internal/server/server.go:2531` ProjectionResponse:
       // embedded ProjectionRegistry (envelope-level fields) + nested `state`
@@ -2378,9 +2708,9 @@ describe("IronflowClient", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            events: [
-              { eventName: "order.created", data: { total: 100 }, version: 1, timestamp: "2026-01-01T00:00:00Z" },
-              { eventName: "order.shipped", data: { carrier: "ups" }, version: 2, timestamp: "2026-01-02T00:00:00Z" },
+            entries: [
+              { event_name: "order.created", event_data: { total: 100 }, entity_version: 1, timestamp: "2026-01-01T00:00:00Z" },
+              { event_name: "order.shipped", event_data: { carrier: "ups" }, entity_version: 2, timestamp: "2026-01-02T00:00:00Z" },
             ],
           }),
       });
@@ -3403,6 +3733,149 @@ describe("IronflowClient", () => {
       const entries = await client.getAuditTrail("run-123");
 
       expect(entries).toEqual([]);
+    });
+  });
+
+  describe("remaining parity wrappers", () => {
+    it("gets server capabilities", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          transports: ["websocket"],
+          features: ["replay"],
+          version: "0.31.0",
+          auth_required: true,
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await createClient().getCapabilities();
+      expect(result.authRequired).toBe(true);
+      expect(result.transports).toEqual(["websocket"]);
+    });
+
+    it("lists visible agent tools", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          tools: [{
+            qualified_name: "docs.search",
+            description: "Search docs",
+            input_schema_json: "{}",
+            required_scopes: ["docs:read"],
+          }],
+          next_cursor: "next",
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await createClient().agentTools.list("cursor");
+      expect(result.tools[0]?.qualifiedName).toBe("docs.search");
+      expect(result.nextCursor).toBe("next");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("AgentToolsService/ListTools"),
+        expect.objectContaining({ body: JSON.stringify({ cursor: "cursor" }) })
+      );
+    });
+
+    it("patches secret metadata and rejects an empty patch", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ name: "renamed" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+      const client = createClient();
+
+      await expect(client.secrets.patch("old", {})).rejects.toThrow(
+        "Secret patch requires name or description"
+      );
+      const secret = await client.secrets.patch("old", { name: "renamed" });
+      expect(secret.name).toBe("renamed");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/secrets/old"),
+        expect.objectContaining({
+          method: "PATCH",
+          headers: expect.objectContaining({ "X-Ironflow-Environment": "current" }),
+          body: JSON.stringify({ name: "renamed" }),
+        })
+      );
+    });
+
+    it("lists environment audit events with filters", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          events: [{ id: "audit-1", run_id: "run-1", function_id: "fn-1", event_type: "run.completed", payload: {}, created_at: "2026-08-28T00:00:00Z" }],
+          total_count: 1,
+          next_cursor: "next",
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await createClient().listAuditEvents({ runId: "run-1", limit: 5 });
+      expect(result.events[0]?.runId).toBe("run-1");
+      expect(result.nextCursor).toBe("next");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/audit?run_id=run-1&limit=5"),
+        expect.objectContaining({ method: "GET" })
+      );
+    });
+
+    it("lists role policies", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ policies: [{ id: "policy-1" }] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const policies = await createClient().roles.listPolicies("role/1");
+      expect(policies[0]?.id).toBe("policy-1");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/roles/role%2F1/policies"),
+        expect.objectContaining({ method: "GET" })
+      );
+    });
+
+    it("changes the authenticated user's password", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createClient().users.changePassword("user-1", {
+        currentPassword: "old",
+        newPassword: "new",
+      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/users/user-1/password"),
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ current_password: "old", new_password: "new" }),
+        })
+      );
+    });
+
+    it("provisions a tenant", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: () => Promise.resolve({
+          org: { id: "org-acme", name: "Acme" },
+          environment: { id: "env-prod", name: "production" },
+          api_key: { key: "ifkey_secret", roles: ["admin"] },
+        }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await createClient().tenants.provision({ orgName: "Acme" });
+      expect(result.apiKey.key).toBe("ifkey_secret");
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/api/v1/tenants/provision"),
+        expect.objectContaining({ method: "POST" })
+      );
     });
   });
 });

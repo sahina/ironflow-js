@@ -17,7 +17,21 @@ import {
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
+  ValidationError,
   type EmitSyncResult,
+  type TriggerBatchEvent,
+  type StoredEvent,
+  type ListEventsOptions,
+  type ListEventsResult,
+  type ListEventNamesOptions,
+  type ListEventNamesResult,
+  type RunStepsResult,
+  type RunStreamsResult,
+  type ListProjectionPartitionsOptions,
+  type ListProjectionPartitionsResult,
+  type ConsumerGroup,
+  type ConsumerGroupConfig,
+  type UpdateConsumerGroupInput,
   type RunStatus,
   type Trigger,
   type ExecutionMode,
@@ -39,6 +53,7 @@ import {
   type PublishResult,
   type TopicInfo,
   type TopicStats,
+  type ServerCapabilities,
   type APIKey,
   type APIKeyWithSecret,
   type CreateAPIKeyInput,
@@ -61,8 +76,12 @@ import {
   type TimeTravelTimelineEvent,
   type TimeTravelStepOutput,
   type AuditTrailEntry,
+  type AuditEvent,
+  type AuditTrailResult,
+  type ListAuditEventsOptions,
   type Secret,
   type SecretListEntry,
+  type PatchSecretInput,
   type StreamListEntry,
   type EntityHistoryEntry,
   type Project,
@@ -85,12 +104,48 @@ import {
   type User,
   type CreateUserInput,
   type UpdateUserInput,
+  type ChangePasswordInput,
   type Tenant,
+  type ProvisionTenantInput,
+  type ProvisionTenantResult,
+  type ListAgentToolsResult,
+  type FunctionStatus,
+  type RegisteredFunction,
+  type FunctionHistoryEntry,
+  type ListFunctionHistoryOptions,
+  type ListFunctionHistoryResult,
+  registeredFunctionFromWire,
+  functionHistoryEntryFromWire,
+  storedEventFromWire,
+  runStepFromWire,
+  consumerGroupFromWire,
 } from "@ironflow/core";
 import { KVClient } from "./kv.js";
 import { CommandDedup, type CommandDedupOptions } from "./command-dedup.js";
 import { ConfigClient } from "./config-client.js";
 import type { OnErrorHandler, ErrorContext } from "./types.js";
+
+function auditEventFromWire(raw: Record<string, unknown>): AuditEvent {
+  return {
+    id: String(raw.id ?? ""),
+    runId: String(raw.run_id ?? raw.runId ?? ""),
+    functionId: String(raw.function_id ?? raw.functionId ?? ""),
+    stepId: (raw.step_id ?? raw.stepId) as string | undefined,
+    eventType: String(raw.event_type ?? raw.eventType ?? ""),
+    payload: (raw.payload as Record<string, unknown>) ?? {},
+    metadata: raw.metadata as Record<string, string> | undefined,
+    createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
+  };
+}
+
+function visibleAgentToolFromWire(raw: Record<string, unknown>) {
+  return {
+    qualifiedName: String(raw.qualifiedName ?? raw.qualified_name ?? ""),
+    description: String(raw.description ?? ""),
+    inputSchemaJson: String(raw.inputSchemaJson ?? raw.input_schema_json ?? ""),
+    requiredScopes: (raw.requiredScopes ?? raw.required_scopes ?? []) as string[],
+  };
+}
 
 // ============================================================================
 // Client Configuration
@@ -320,6 +375,101 @@ export class IronflowClient {
     return { created: response.created };
   }
 
+  /** Get a registered function by ID. */
+  async getFunction(functionId: string): Promise<RegisteredFunction> {
+    const response = await this.request<Record<string, unknown>>(
+      "/ironflow.v1.IronflowService/GetFunction",
+      { id: functionId },
+      "getFunction"
+    );
+    return registeredFunctionFromWire(response);
+  }
+
+  /** Change a function's lifecycle status. */
+  async updateFunctionStatus(
+    functionId: string,
+    status: Exclude<FunctionStatus, "unspecified">
+  ): Promise<RegisteredFunction> {
+    const response = await this.request<Record<string, unknown>>(
+      "/ironflow.v1.IronflowService/UpdateFunctionStatus",
+      {
+        id: functionId,
+        status: `FUNCTION_STATUS_${status.toUpperCase()}`,
+      },
+      "updateFunctionStatus"
+    );
+    return registeredFunctionFromWire(response);
+  }
+
+  /** Permanently delete a registered function. */
+  async deleteFunction(functionId: string): Promise<void> {
+    await this.request<Record<string, never>>(
+      "/ironflow.v1.IronflowService/DeleteFunction",
+      { id: functionId },
+      "deleteFunction"
+    );
+  }
+
+  /** List immutable configuration snapshots, newest first. */
+  async listFunctionHistory(
+    functionId: string,
+    options: ListFunctionHistoryOptions = {}
+  ): Promise<ListFunctionHistoryResult> {
+    const response = await this.request<{
+      entries?: Record<string, unknown>[];
+      hasMore?: boolean;
+    }>(
+      "/ironflow.v1.IronflowService/ListFunctionHistory",
+      {
+        functionId,
+        ...(options.limit !== undefined ? { limit: options.limit } : {}),
+        ...(options.fromVersion !== undefined
+          ? { fromVersion: String(options.fromVersion) }
+          : {}),
+      },
+      "listFunctionHistory"
+    );
+    return {
+      entries: (response.entries ?? []).map(functionHistoryEntryFromWire),
+      hasMore: response.hasMore ?? false,
+    };
+  }
+
+  /** Get one historical configuration snapshot by entity version. */
+  async getFunctionAtVersion(
+    functionId: string,
+    version: number
+  ): Promise<FunctionHistoryEntry> {
+    const response = await this.request<{
+      entry?: Record<string, unknown>;
+    }>(
+      "/ironflow.v1.IronflowService/GetFunctionAtVersion",
+      { functionId, version: String(version) },
+      "getFunctionAtVersion"
+    );
+    return functionHistoryEntryFromWire(response.entry);
+  }
+
+  /** Restore a function's configuration from a historical version. */
+  async rollbackFunction(
+    functionId: string,
+    version: number,
+    changeReason?: string
+  ): Promise<RegisteredFunction> {
+    const response = await this.request<{
+      function?: Record<string, unknown>;
+    }>(
+      "/ironflow.v1.IronflowService/RollbackFunction",
+      {
+        functionId,
+        version: String(version),
+        ...(changeReason ? { changeReason } : {}),
+      },
+      "rollbackFunction"
+    );
+    return registeredFunctionFromWire(response.function);
+  }
+
   /**
    * Emit an event to trigger workflows
    *
@@ -355,6 +505,102 @@ export class IronflowClient {
     return {
       runIds: response.runIds || [],
       eventId: response.eventId,
+    };
+  }
+
+  /** Trigger multiple events in one request. */
+  async triggerBatch(events: TriggerBatchEvent[]): Promise<EmitResult[]> {
+    const response = await this.request<{
+      results?: Array<{ runIds?: string[]; eventId: string }>;
+    }>(
+      "/ironflow.v1.IronflowService/TriggerBatch",
+      {
+        events: events.map((event) => ({
+          event: event.event,
+          data: event.data,
+          ...(event.version !== undefined ? { version: event.version } : {}),
+          ...(event.idempotencyKey
+            ? { idempotencyKey: event.idempotencyKey }
+            : {}),
+          ...(event.metadata ? { metadata: event.metadata } : {}),
+        })),
+      },
+      "triggerBatch"
+    );
+    return (response.results ?? []).map((result) => ({
+      runIds: result.runIds ?? [],
+      eventId: result.eventId,
+    }));
+  }
+
+  /** Read a keyset-paginated page from the event log. */
+  async listEvents(options: ListEventsOptions = {}): Promise<ListEventsResult> {
+    const query = new URLSearchParams();
+    if (options.name) query.set("name", options.name);
+    if (options.names?.length) query.set("names", options.names.join(","));
+    if (options.sources?.length) query.set("source", options.sources.join(","));
+    if (options.search) query.set("search", options.search);
+    if (options.since) query.set("since", options.since);
+    if (options.until) query.set("until", options.until);
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.cursor) query.set("cursor", options.cursor);
+    if (options.before) query.set("before", options.before);
+    const suffix = query.size ? `?${query}` : "";
+    const response = await this.restRequest<{
+      events?: Record<string, unknown>[];
+      count?: number;
+      limit?: number;
+      next_cursor?: string;
+      prev_cursor?: string;
+      has_next?: boolean;
+      has_prev?: boolean;
+      approx_total?: number;
+      approx_total_capped?: boolean;
+    }>("GET", `/api/v1/events${suffix}`, undefined, "listEvents");
+    return {
+      events: (response.events ?? []).map(storedEventFromWire),
+      count: response.count ?? 0,
+      limit: response.limit ?? options.limit ?? 20,
+      nextCursor: response.next_cursor,
+      prevCursor: response.prev_cursor,
+      hasNext: response.has_next ?? false,
+      hasPrev: response.has_prev ?? false,
+      approxTotal: response.approx_total,
+      approxTotalCapped: response.approx_total_capped ?? false,
+    };
+  }
+
+  /** Get one persisted event by ID. */
+  async getEvent(eventId: string): Promise<StoredEvent> {
+    const response = await this.restRequest<Record<string, unknown>>(
+      "GET",
+      `/api/v1/events/${encodeURIComponent(eventId)}`,
+      undefined,
+      "getEvent"
+    );
+    return storedEventFromWire(response);
+  }
+
+  /** List event names and counts for filter UIs. */
+  async listEventNames(
+    options: ListEventNamesOptions = {}
+  ): Promise<ListEventNamesResult> {
+    const query = new URLSearchParams();
+    if (options.sources?.length) query.set("source", options.sources.join(","));
+    if (options.since) query.set("since", options.since);
+    if (options.until) query.set("until", options.until);
+    const suffix = query.size ? `?${query}` : "";
+    const response = await this.restRequest<{
+      names?: Array<{ name: string; count: number }>;
+      scanned?: number;
+      truncated?: boolean;
+      scan_cap?: number;
+    }>("GET", `/api/v1/events/names${suffix}`, undefined, "listEventNames");
+    return {
+      names: response.names ?? [],
+      scanned: response.scanned ?? 0,
+      truncated: response.truncated ?? false,
+      scanCap: response.scan_cap ?? 0,
     };
   }
 
@@ -545,11 +791,177 @@ export class IronflowClient {
     };
   }
 
+  /** Return the transports and optional features exposed by this server. */
+  async getCapabilities(): Promise<ServerCapabilities> {
+    const response = await this.restRequest<{
+      transports?: string[];
+      features?: string[];
+      version?: string;
+      auth_required?: boolean;
+    }>("GET", "/api/v1/capabilities", undefined, "getCapabilities");
+    return {
+      transports: response.transports ?? [],
+      features: response.features ?? [],
+      version: response.version ?? "",
+      authRequired: response.auth_required,
+    };
+  }
+
+  /** Consumer-group lifecycle management. */
+  readonly consumerGroups = {
+    create: async (config: ConsumerGroupConfig): Promise<ConsumerGroup> => {
+      const response = await this.request<Record<string, unknown>>(
+        "/ironflow.v1.PubSubService/CreateConsumerGroup",
+        {
+          name: config.name,
+          pattern: config.pattern,
+          namespace: config.namespace ?? "default",
+          ...(config.filterExpr !== undefined ? { filterExpr: config.filterExpr } : {}),
+          ...(config.ackMode ? { ackMode: `ACK_MODE_${config.ackMode.toUpperCase()}` } : {}),
+          ...(config.backpressure
+            ? { backpressure: `BACKPRESSURE_MODE_${config.backpressure.toUpperCase()}` }
+            : {}),
+          ...(config.maxInflight !== undefined ? { maxInflight: config.maxInflight } : {}),
+          ...(config.maxRedeliveries !== undefined
+            ? { maxRedeliveries: config.maxRedeliveries }
+            : {}),
+          ...(config.redeliverDelayMs !== undefined
+            ? { redeliverDelayMs: config.redeliverDelayMs }
+            : {}),
+          ...(config.metadata !== undefined ? { metadata: config.metadata } : {}),
+        },
+        "consumerGroups.create"
+      );
+      return consumerGroupFromWire(response);
+    },
+    get: async (name: string, namespace = "default"): Promise<ConsumerGroup> => {
+      const response = await this.request<Record<string, unknown>>(
+        "/ironflow.v1.PubSubService/GetConsumerGroup",
+        { name, namespace },
+        "consumerGroups.get"
+      );
+      return consumerGroupFromWire(response);
+    },
+    list: async (namespace?: string): Promise<ConsumerGroup[]> => {
+      const groups: ConsumerGroup[] = [];
+      let cursor: string | undefined;
+      do {
+        const response = await this.request<{
+          groups?: Record<string, unknown>[];
+          nextCursor?: string;
+          next_cursor?: string;
+        }>(
+          "/ironflow.v1.PubSubService/ListConsumerGroups",
+          {
+            ...(namespace ? { namespace } : {}),
+            limit: 100,
+            ...(cursor ? { cursor } : {}),
+          },
+          "consumerGroups.list"
+        );
+        groups.push(...(response.groups ?? []).map(consumerGroupFromWire));
+        cursor = response.nextCursor || response.next_cursor || undefined;
+      } while (cursor);
+      return groups;
+    },
+    update: async (
+      name: string,
+      input: UpdateConsumerGroupInput,
+      namespace = "default"
+    ): Promise<ConsumerGroup> => {
+      const group: Record<string, unknown> = { name, namespace };
+      const paths: string[] = [];
+      const set = (path: string, value: unknown) => {
+        if (value !== undefined) {
+          group[path.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())] = value;
+          paths.push(path);
+        }
+      };
+      set("pattern", input.pattern);
+      set("filter_expr", input.filterExpr);
+      set("ack_mode", input.ackMode ? `ACK_MODE_${input.ackMode.toUpperCase()}` : undefined);
+      set(
+        "backpressure",
+        input.backpressure
+          ? `BACKPRESSURE_MODE_${input.backpressure.toUpperCase()}`
+          : undefined
+      );
+      set("max_inflight", input.maxInflight);
+      set("max_redeliveries", input.maxRedeliveries);
+      set("redeliver_delay_ms", input.redeliverDelayMs);
+      set("metadata", input.metadata);
+      set(
+        "status",
+        input.status
+          ? `CONSUMER_GROUP_STATUS_${input.status.toUpperCase()}`
+          : undefined
+      );
+      if (paths.length === 0) {
+        throw new ValidationError("Consumer group update requires at least one field");
+      }
+      const response = await this.request<Record<string, unknown>>(
+        "/ironflow.v1.PubSubService/UpdateConsumerGroup",
+        { group, updateMask: { paths } },
+        "consumerGroups.update"
+      );
+      return consumerGroupFromWire(response);
+    },
+    delete: async (name: string, namespace = "default"): Promise<void> => {
+      await this.request<Record<string, never>>(
+        "/ironflow.v1.PubSubService/DeleteConsumerGroup",
+        { name, namespace },
+        "consumerGroups.delete"
+      );
+    },
+  };
+
+  /** Agent tools visible to the current API key. */
+  readonly agentTools = {
+    list: async (cursor?: string): Promise<ListAgentToolsResult> => {
+      const response = await this.request<{
+        tools?: Record<string, unknown>[];
+        nextCursor?: string;
+        next_cursor?: string;
+      }>(
+        "/ironflow.v1.AgentToolsService/ListTools",
+        { cursor: cursor ?? "" },
+        "agentTools.list"
+      );
+      return {
+        tools: (response.tools ?? []).map(visibleAgentToolFromWire),
+        nextCursor: response.nextCursor || response.next_cursor || undefined,
+      };
+    },
+  };
+
   /**
    * Get a run by ID
    */
   async getRun(runId: string): Promise<Run> {
     return this.request<Run>(API_ENDPOINTS.GET_RUN, { id: runId }, "getRun");
+  }
+
+  /** Get the durable steps recorded for a run. */
+  async getRunSteps(runId: string): Promise<RunStepsResult> {
+    const response = await this.restRequest<{
+      steps?: Record<string, unknown>[];
+      count?: number;
+    }>("GET", `/api/v1/runs/${encodeURIComponent(runId)}/steps`, undefined, "getRunSteps");
+    return {
+      steps: (response.steps ?? []).map(runStepFromWire),
+      count: response.count ?? 0,
+    };
+  }
+
+  /** Get the entity stream IDs touched by a run. */
+  async getRunStreams(runId: string): Promise<RunStreamsResult> {
+    const response = await this.restRequest<{ entity_ids?: string[] }>(
+      "GET",
+      `/api/v1/runs/${encodeURIComponent(runId)}/streams`,
+      undefined,
+      "getRunStreams"
+    );
+    return { entityIds: response.entity_ids ?? [] };
   }
 
   /**
@@ -776,16 +1188,33 @@ export class IronflowClient {
      * List all entity streams.
      */
     listStreams: async (): Promise<StreamListEntry[]> => {
-      const resp = await this.restRequest<{ streams: StreamListEntry[] }>("GET", "/api/v1/streams", undefined, "streams.listStreams");
-      return resp.streams ?? [];
+      const response = await this.restRequest<{
+        streams?: Array<Record<string, unknown>>;
+      }>("GET", "/api/v1/streams", undefined, "streams.listStreams");
+      return (response.streams ?? []).map((stream) => ({
+        entityId: String(stream.entity_id ?? stream.entityId ?? ""),
+        entityType: String(stream.entity_type ?? stream.entityType ?? ""),
+        version: Number(stream.version ?? 0),
+        eventCount: Number(stream.event_count ?? stream.eventCount ?? 0),
+        lastEventAt: String(
+          stream.last_event_at ?? stream.lastEventAt ?? stream.updated_at ?? ""
+        ),
+      }));
     },
 
     /**
      * Get the full event history for an entity.
      */
     getEntityHistory: async (entityId: string): Promise<EntityHistoryEntry[]> => {
-      const resp = await this.restRequest<{ events: EntityHistoryEntry[] }>("GET", `/api/v1/streams/${encodeURIComponent(entityId)}/history`, undefined, "streams.getEntityHistory");
-      return resp.events ?? [];
+      const resp = await this.restRequest<{
+        entries?: Array<Record<string, unknown>>;
+      }>("GET", `/api/v1/streams/${encodeURIComponent(entityId)}/history`, undefined, "streams.getEntityHistory");
+      return (resp.entries ?? []).map((entry) => ({
+        eventName: String(entry.event_name ?? ""),
+        data: entry.event_data,
+        version: Number(entry.entity_version ?? 0),
+        timestamp: String(entry.timestamp ?? ""),
+      }));
     },
   };
 
@@ -981,6 +1410,16 @@ export class IronflowClient {
         "roles.removePolicy"
       );
     },
+    /** List policies assigned to a role. */
+    listPolicies: async (roleId: string): Promise<Policy[]> => {
+      const response = await this.restRequest<{ policies?: Policy[] }>(
+        "GET",
+        `/api/v1/roles/${encodeURIComponent(roleId)}/policies`,
+        undefined,
+        "roles.listPolicies"
+      );
+      return response.policies ?? [];
+    },
   };
 
   /**
@@ -1071,6 +1510,22 @@ export class IronflowClient {
         "/api/v1/projections",
         undefined,
         "projections.list"
+      );
+    },
+    /** List materialized partition keys for a projection. */
+    listPartitions: async (
+      name: string,
+      options: ListProjectionPartitionsOptions = {}
+    ): Promise<ListProjectionPartitionsResult> => {
+      const query = new URLSearchParams();
+      if (options.query) query.set("q", options.query);
+      if (options.limit !== undefined) query.set("limit", String(options.limit));
+      const suffix = query.size ? `?${query}` : "";
+      return this.restRequest<ListProjectionPartitionsResult>(
+        "GET",
+        `/api/v1/projections/${encodeURIComponent(name)}/partitions${suffix}`,
+        undefined,
+        "projections.listPartitions"
       );
     },
     /** Get operational status for a projection */
@@ -1266,6 +1721,18 @@ export class IronflowClient {
     update: async (name: string, value: string): Promise<Secret> => {
       return this.restRequest<Secret>("PUT", `/api/v1/secrets/${encodeURIComponent(name)}`, { value }, "secrets.update");
     },
+    /** Rename a secret and/or update its description without changing its value. */
+    patch: async (name: string, input: PatchSecretInput): Promise<Secret> => {
+      if (input.name === undefined && input.description === undefined) {
+        throw new ValidationError("Secret patch requires name or description");
+      }
+      return this.restRequest<Secret>(
+        "PATCH",
+        `/api/v1/secrets/${encodeURIComponent(name)}`,
+        input,
+        "secrets.patch"
+      );
+    },
     /** List all secrets (names only, no values) */
     list: async (): Promise<SecretListEntry[]> => {
       return this.restRequest<SecretListEntry[]>("GET", "/api/v1/secrets", undefined, "secrets.list");
@@ -1457,6 +1924,31 @@ export class IronflowClient {
       "getAuditTrail"
     );
     return response.entries ?? [];
+  }
+
+  /** Query the environment-wide audit stream. */
+  async listAuditEvents(
+    options: ListAuditEventsOptions = {}
+  ): Promise<AuditTrailResult> {
+    const query = new URLSearchParams();
+    if (options.runId) query.set("run_id", options.runId);
+    if (options.functionId) query.set("function_id", options.functionId);
+    if (options.eventType) query.set("event_type", options.eventType);
+    if (options.fromTimestamp) query.set("from", options.fromTimestamp);
+    if (options.toTimestamp) query.set("to", options.toTimestamp);
+    if (options.limit !== undefined) query.set("limit", String(options.limit));
+    if (options.cursor) query.set("cursor", options.cursor);
+    const suffix = query.size > 0 ? `?${query.toString()}` : "";
+    const response = await this.restRequest<{
+      events?: Record<string, unknown>[];
+      total_count?: number;
+      next_cursor?: string;
+    }>("GET", `/api/v1/audit${suffix}`, undefined, "listAuditEvents");
+    return {
+      events: (response.events ?? []).map(auditEventFromWire) as AuditEvent[],
+      totalCount: response.total_count ?? 0,
+      nextCursor: response.next_cursor || undefined,
+    };
   }
 
   /**
@@ -1716,6 +2208,18 @@ export class IronflowClient {
     delete: async (id: string): Promise<void> => {
       await this.restRequest<void>("DELETE", `/api/v1/users/${encodeURIComponent(id)}`, undefined, "users.delete");
     },
+    /** Change the authenticated user's password. */
+    changePassword: async (id: string, input: ChangePasswordInput): Promise<void> => {
+      await this.restRequest<void>(
+        "PATCH",
+        `/api/v1/users/${encodeURIComponent(id)}/password`,
+        {
+          current_password: input.currentPassword,
+          new_password: input.newPassword,
+        },
+        "users.changePassword"
+      );
+    },
   };
 
   /**
@@ -1732,6 +2236,24 @@ export class IronflowClient {
     /** List all tenants (enterprise-only) */
     list: async (): Promise<Tenant[]> => {
       return this.restRequest<Tenant[]>("GET", "/api/v1/tenants", undefined, "tenants.list");
+    },
+    /** Provision an organization, environment, and initial administrator key. */
+    provision: async (input: ProvisionTenantInput): Promise<ProvisionTenantResult> => {
+      const response = await this.restRequest<{
+        org: { id: string; name: string };
+        environment: { id: string; name: string };
+        api_key: { key: string; roles?: string[] };
+      }>(
+        "POST",
+        "/api/v1/tenants/provision",
+        { org_name: input.orgName, env_name: input.envName ?? "production" },
+        "tenants.provision"
+      );
+      return {
+        org: response.org,
+        environment: response.environment,
+        apiKey: { key: response.api_key.key, roles: response.api_key.roles ?? [] },
+      };
     },
   };
 
@@ -2004,7 +2526,6 @@ export class IronflowClient {
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -2169,6 +2690,11 @@ export class IronflowClient {
     const headers: Record<string, string> = {};
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
+    }
+    if (path === "/api/v1/secrets" || path.startsWith("/api/v1/secrets/")) {
+      // Secret routes require an explicit environment header, while the
+      // authenticated API key remains the authority for the actual scope.
+      headers["X-Ironflow-Environment"] = "current";
     }
 
     const options: RequestInit = { method: httpMethod, headers };

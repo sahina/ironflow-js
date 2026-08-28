@@ -32,6 +32,12 @@ export type {
   ConcurrencyConfig,
   DebounceConfig,
   ExecutionMode,
+  FunctionStatus,
+  RegisteredFunction,
+  FunctionChangeType,
+  FunctionHistoryEntry,
+  ListFunctionHistoryOptions,
+  ListFunctionHistoryResult,
 
   // Paused state types (scoped injection)
   PausedStepInfo,
@@ -57,6 +63,11 @@ export type {
   RunStatus,
   ListRunsOptions,
   ListRunsResult,
+  RunStep,
+  RunStepsResult,
+  RunStreamsResult,
+  ListProjectionPartitionsOptions,
+  ListProjectionPartitionsResult,
 
   // Invoke/Trigger types
   InvokeResult,
@@ -68,6 +79,13 @@ export type {
   EmitOptions,
   EmitResult,
   EmitSyncResult,
+  TriggerBatchEvent,
+  StoredEvent,
+  ListEventsOptions,
+  ListEventsResult,
+  EventNameCount,
+  ListEventNamesOptions,
+  ListEventNamesResult,
 
   // Logger
   Logger,
@@ -90,6 +108,7 @@ export type {
   AckType,
   ConsumerGroupStatus,
   ConsumerGroupConfig,
+  UpdateConsumerGroupInput,
   ConsumerGroup,
 
   // Entity stream types
@@ -120,6 +139,7 @@ export type {
   // Audit types
   AuditEvent,
   GetAuditTrailOptions,
+  ListAuditEventsOptions,
   AuditTrailResult,
   AuditTrailEntry,
 
@@ -141,10 +161,15 @@ export type {
   // Secrets management types
   Secret,
   SecretListEntry,
+  PatchSecretInput,
 
   // Entity stream extension types
   StreamListEntry,
   EntityHistoryEntry,
+
+  // Agent tool discovery types
+  VisibleAgentTool,
+  ListAgentToolsResult,
 
   // Project / environment types
   Project,
@@ -170,9 +195,12 @@ export type {
   User,
   CreateUserInput,
   UpdateUserInput,
+  ChangePasswordInput,
 
   // Tenant management types
   Tenant,
+  ProvisionTenantInput,
+  ProvisionTenantResult,
 } from "./types.js";
 
 // Branded ID factory functions and constants
@@ -220,6 +248,14 @@ export type {
 } from "./protocol.js";
 
 export { patterns } from "./protocol.js";
+export {
+  advanceResumeCursor,
+  createWSSubscribeRequest,
+  resumeSequenceFromMetadata,
+  serializeWSSubscribeRequest,
+  startAfterSequenceToBigInt,
+  subscriptionOptionsForReconnect,
+} from "./protocol.js";
 
 // ============================================================================
 // Constants Exports
@@ -423,6 +459,11 @@ export {
   webhookDeliveryFromWire,
   webhookGraceToWire,
   WEBHOOK_SECRET_GRACE_CAP_SECONDS,
+  registeredFunctionFromWire,
+  functionHistoryEntryFromWire,
+  storedEventFromWire,
+  runStepFromWire,
+  consumerGroupFromWire,
 } from "./types.js";
 
 // ============================================================================

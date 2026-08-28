@@ -38,9 +38,9 @@ export interface VisibilityConfig {
  * Authentication configuration (future expansion)
  */
 export interface AuthConfig {
-  /** API key for authentication */
+  /** API key for local development. Do not embed long-lived keys in production browser code. */
   apiKey?: string;
-  /** Bearer token */
+  /** Short-lived bearer token. Preferred for browser applications. */
   token?: string;
 }
 
@@ -140,4 +140,23 @@ export function mergeConfig(options: IronflowConfigOptions): IronflowConfig {
     timeout: options.timeout,
     environment: options.environment ?? DEFAULT_CONFIG.environment,
   };
+}
+
+/** Warn during browser development when a long-lived environment key is embedded. */
+export function warnAboutLongLivedBrowserKey(auth?: AuthConfig): void {
+  if (typeof window === "undefined" || isProductionBuild()) {
+    return;
+  }
+
+  const credential = auth?.apiKey || auth?.token;
+  if (credential?.startsWith("ifkey_")) {
+    console.warn(
+      "[ironflow] Long-lived ifkey_ credentials should not be embedded in browser code. " +
+        "Use a short-lived session token issued by a trusted backend.",
+    );
+  }
+}
+
+function isProductionBuild(): boolean {
+  return typeof process !== "undefined" && process.env.NODE_ENV === "production";
 }

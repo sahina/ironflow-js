@@ -46,11 +46,36 @@ function createMockTransport(): MockTransport {
 // Inline SubscriptionManager implementation to avoid complex imports
 class SubscriptionManager {
   private transport: MockTransport;
-  private subscriptions: Map<string, { pattern: string; options?: { ackMode?: string }; callbacks: { onEvent?: (e: SubscriptionEvent) => void; onError?: (e: SubscriptionErrorInfo) => void } }> = new Map();
+  private subscriptions: Map<
+    string,
+    {
+      pattern: string;
+      options?: { ackMode?: string };
+      callbacks: {
+        onEvent?: (e: SubscriptionEvent) => void;
+        onError?: (e: SubscriptionErrorInfo) => void;
+      };
+    }
+  > = new Map();
   private patternToId: Map<string, string> = new Map();
-  private pendingPatterns: Map<string, { id: string; pattern: string; options?: { ackMode?: string }; callbacks: { onEvent?: (e: SubscriptionEvent) => void; onError?: (e: SubscriptionErrorInfo) => void }; resolve?: (sub: unknown) => void; reject?: (error: Error) => void }> = new Map();
-  private connectionChangeCallbacks: Set<(state: ConnectionState) => void> = new Set();
-  private errorCallbacks: Set<(error: SubscriptionErrorInfo) => void> = new Set();
+  private pendingPatterns: Map<
+    string,
+    {
+      id: string;
+      pattern: string;
+      options?: { ackMode?: string };
+      callbacks: {
+        onEvent?: (e: SubscriptionEvent) => void;
+        onError?: (e: SubscriptionErrorInfo) => void;
+      };
+      resolve?: (sub: unknown) => void;
+      reject?: (error: Error) => void;
+    }
+  > = new Map();
+  private connectionChangeCallbacks: Set<(state: ConnectionState) => void> =
+    new Set();
+  private errorCallbacks: Set<(error: SubscriptionErrorInfo) => void> =
+    new Set();
 
   constructor(transport: MockTransport) {
     this.transport = transport;
@@ -69,8 +94,19 @@ class SubscriptionManager {
 
   async subscribe<T = unknown>(
     pattern: string,
-    callbacksAndOptions: { onEvent?: (e: SubscriptionEvent<T>) => void; onError?: (e: SubscriptionErrorInfo) => void; ackMode?: string }
-  ): Promise<{ id: string; pattern: string; unsubscribe: () => void; ack?: (eventId: string) => Promise<void>; nak?: (eventId: string, delay?: number) => Promise<void>; term?: (eventId: string) => Promise<void> }> {
+    callbacksAndOptions: {
+      onEvent?: (e: SubscriptionEvent<T>) => void;
+      onError?: (e: SubscriptionErrorInfo) => void;
+      ackMode?: string;
+    },
+  ): Promise<{
+    id: string;
+    pattern: string;
+    unsubscribe: () => void;
+    ack?: (eventId: string) => Promise<void>;
+    nak?: (eventId: string, delay?: number) => Promise<void>;
+    term?: (eventId: string) => Promise<void>;
+  }> {
     if (this.patternToId.has(pattern)) {
       throw new Error(`Already subscribed to pattern: ${pattern}`);
     }
@@ -83,7 +119,10 @@ class SubscriptionManager {
         id: tempId,
         pattern,
         options: { ackMode },
-        callbacks: callbacks as { onEvent?: (e: SubscriptionEvent) => void; onError?: (e: SubscriptionErrorInfo) => void },
+        callbacks: callbacks as {
+          onEvent?: (e: SubscriptionEvent) => void;
+          onError?: (e: SubscriptionErrorInfo) => void;
+        },
         resolve: resolve as (sub: unknown) => void,
         reject,
       });
@@ -111,7 +150,10 @@ class SubscriptionManager {
   createGroup() {
     const subscriptions: { unsubscribe: () => void }[] = [];
     return {
-      add: async <T>(pattern: string, callbacks: { onEvent?: (e: SubscriptionEvent<T>) => void }) => {
+      add: async <T>(
+        pattern: string,
+        callbacks: { onEvent?: (e: SubscriptionEvent<T>) => void },
+      ) => {
         const sub = await this.subscribe(pattern, callbacks);
         subscriptions.push(sub);
         return sub;
@@ -157,7 +199,10 @@ class SubscriptionManager {
     if (state) state.callbacks.onEvent?.(event);
   }
 
-  private handleError(subscriptionId: string, error: SubscriptionErrorInfo): void {
+  private handleError(
+    subscriptionId: string,
+    error: SubscriptionErrorInfo,
+  ): void {
     for (const callback of this.errorCallbacks) callback(error);
     if (subscriptionId) {
       const state = this.subscriptions.get(subscriptionId);
@@ -175,7 +220,11 @@ class SubscriptionManager {
 
     this.pendingPatterns.delete(pattern);
     pending.id = subscriptionId;
-    this.subscriptions.set(subscriptionId, { pattern, options: pending.options, callbacks: pending.callbacks });
+    this.subscriptions.set(subscriptionId, {
+      pattern,
+      options: pending.options,
+      callbacks: pending.callbacks,
+    });
     this.patternToId.set(pattern, subscriptionId);
 
     const isManualAck = pending.options?.ackMode === "manual";
@@ -186,8 +235,10 @@ class SubscriptionManager {
         pattern,
         unsubscribe: () => this.unsubscribeById(subscriptionId),
         ack: (eventId: string) => this.transport.ack(eventId, "ack" as AckType),
-        nak: (eventId: string, delay?: number) => this.transport.ack(eventId, "nak" as AckType, delay),
-        term: (eventId: string) => this.transport.ack(eventId, "term" as AckType),
+        nak: (eventId: string, delay?: number) =>
+          this.transport.ack(eventId, "nak" as AckType, delay),
+        term: (eventId: string) =>
+          this.transport.ack(eventId, "term" as AckType),
       });
     } else {
       pending.resolve?.({
@@ -224,11 +275,16 @@ describe("SubscriptionManager", () => {
       transport._callbacks!.onSubscribed("test.pattern", "sub-123");
       await subscribePromise;
 
-      expect(transport.subscribe).toHaveBeenCalledWith("test.pattern", expect.any(Object));
+      expect(transport.subscribe).toHaveBeenCalledWith(
+        "test.pattern",
+        expect.any(Object),
+      );
     });
 
     it("should return subscription object with unsubscribe", async () => {
-      const subscribePromise = manager.subscribe("test.*", { onEvent: vi.fn() });
+      const subscribePromise = manager.subscribe("test.*", {
+        onEvent: vi.fn(),
+      });
       transport._callbacks!.onSubscribed("test.*", "sub-1");
       const sub = await subscribePromise;
 
@@ -242,14 +298,19 @@ describe("SubscriptionManager", () => {
       transport._callbacks!.onSubscribed("dup.pattern", "sub-1");
       await promise1;
 
-      await expect(manager.subscribe("dup.pattern", { onEvent: vi.fn() })).rejects.toThrow(
-        "Already subscribed to pattern: dup.pattern"
-      );
+      await expect(
+        manager.subscribe("dup.pattern", { onEvent: vi.fn() }),
+      ).rejects.toThrow("Already subscribed to pattern: dup.pattern");
     });
 
     it("should reject when subscription fails", async () => {
-      const subscribePromise = manager.subscribe("fail.pattern", { onEvent: vi.fn() });
-      transport._callbacks!.onSubscribeFailed("fail.pattern", new Error("Subscription denied"));
+      const subscribePromise = manager.subscribe("fail.pattern", {
+        onEvent: vi.fn(),
+      });
+      transport._callbacks!.onSubscribeFailed(
+        "fail.pattern",
+        new Error("Subscription denied"),
+      );
 
       await expect(subscribePromise).rejects.toThrow("Subscription denied");
     });
@@ -330,7 +391,9 @@ describe("SubscriptionManager", () => {
 
     describe("auto ack mode (default)", () => {
       it("should not include ack methods for auto mode", async () => {
-        const subscribePromise = manager.subscribe("events.*", { onEvent: vi.fn() });
+        const subscribePromise = manager.subscribe("events.*", {
+          onEvent: vi.fn(),
+        });
         transport._callbacks!.onSubscribed("events.*", "sub-auto-1");
         const sub = await subscribePromise;
 
@@ -343,7 +406,9 @@ describe("SubscriptionManager", () => {
 
   describe("unsubscribe", () => {
     it("should unsubscribe by pattern", async () => {
-      const subscribePromise = manager.subscribe("unsub.pattern", { onEvent: vi.fn() });
+      const subscribePromise = manager.subscribe("unsub.pattern", {
+        onEvent: vi.fn(),
+      });
       transport._callbacks!.onSubscribed("unsub.pattern", "sub-unsub-1");
       await subscribePromise;
 
@@ -353,7 +418,9 @@ describe("SubscriptionManager", () => {
     });
 
     it("should unsubscribe via subscription object", async () => {
-      const subscribePromise = manager.subscribe("unsub.test", { onEvent: vi.fn() });
+      const subscribePromise = manager.subscribe("unsub.test", {
+        onEvent: vi.fn(),
+      });
       transport._callbacks!.onSubscribed("unsub.test", "sub-unsub-2");
       const sub = await subscribePromise;
 
@@ -386,7 +453,10 @@ describe("SubscriptionManager", () => {
 
     it("should invoke subscription-specific onError callback", async () => {
       const onError = vi.fn();
-      const subscribePromise = manager.subscribe("error.events", { onEvent: vi.fn(), onError });
+      const subscribePromise = manager.subscribe("error.events", {
+        onEvent: vi.fn(),
+        onError,
+      });
       transport._callbacks!.onSubscribed("error.events", "sub-err-1");
       await subscribePromise;
 
@@ -406,7 +476,9 @@ describe("SubscriptionManager", () => {
       const globalErrorHandler = vi.fn();
       manager.onError(globalErrorHandler);
 
-      const subscribePromise = manager.subscribe("test.*", { onEvent: vi.fn() });
+      const subscribePromise = manager.subscribe("test.*", {
+        onEvent: vi.fn(),
+      });
       transport._callbacks!.onSubscribed("test.*", "sub-global-1");
       await subscribePromise;
 
@@ -493,7 +565,9 @@ describe("SubscriptionManager", () => {
     });
 
     it("should call transport.disconnect and clear state", async () => {
-      const subscribePromise = manager.subscribe("test.*", { onEvent: vi.fn() });
+      const subscribePromise = manager.subscribe("test.*", {
+        onEvent: vi.fn(),
+      });
       transport._callbacks!.onSubscribed("test.*", "sub-disc-1");
       await subscribePromise;
 
@@ -521,10 +595,7 @@ describe("SubscriptionManager", () => {
 // ---------------------------------------------------------------------------
 import { SubscriptionManager as RealSubscriptionManager } from "./subscription.js";
 import type { Transport, TransportCallbacks } from "./transport/types.js";
-import type {
-  Subscription,
-  AckableSubscription,
-} from "@ironflow/core";
+import type { Subscription, AckableSubscription } from "@ironflow/core";
 
 /** Helper: create a mock Transport that satisfies the real interface and captures callbacks */
 function createRealMockTransport() {
@@ -585,7 +656,10 @@ describe("SubscriptionManager (real module)", () => {
       const onEvent = vi.fn();
       const promise = manager.subscribe("run.>", { onEvent });
 
-      expect(transport.subscribe).toHaveBeenCalledWith("run.>", expect.any(Object));
+      expect(transport.subscribe).toHaveBeenCalledWith(
+        "run.>",
+        expect.any(Object),
+      );
 
       // Simulate server confirmation
       transport._callbacks()!.onSubscribed("run.>", "real-sub-1");
@@ -602,7 +676,7 @@ describe("SubscriptionManager (real module)", () => {
       await p1;
 
       await expect(
-        manager.subscribe("dup.pattern", { onEvent: vi.fn() })
+        manager.subscribe("dup.pattern", { onEvent: vi.fn() }),
       ).rejects.toThrow("Already subscribed to pattern: dup.pattern");
     });
 
@@ -627,7 +701,9 @@ describe("SubscriptionManager (real module)", () => {
         queueMicrotask(() => transport._callbacks()!.onSubscribed(pattern, id));
       });
 
-      const combined = await manager.subscribe(["a.>", "b.>"], { onEvent: vi.fn() });
+      const combined = await manager.subscribe(["a.>", "b.>"], {
+        onEvent: vi.fn(),
+      });
 
       expect(combined.pattern).toBe("a.>,b.>");
       expect(typeof combined.unsubscribe).toBe("function");
@@ -642,7 +718,9 @@ describe("SubscriptionManager (real module)", () => {
         queueMicrotask(() => transport._callbacks()!.onSubscribed(pattern, id));
       });
 
-      const combined = await manager.subscribe(["x.>", "y.>"], { onEvent: vi.fn() });
+      const combined = await manager.subscribe(["x.>", "y.>"], {
+        onEvent: vi.fn(),
+      });
       combined.unsubscribe();
 
       expect(transport.unsubscribe).toHaveBeenCalledWith("sub-1");
@@ -654,16 +732,20 @@ describe("SubscriptionManager (real module)", () => {
       transport.subscribe = vi.fn().mockImplementation((pattern: string) => {
         subCallCount++;
         if (subCallCount === 1) {
-          queueMicrotask(() => transport._callbacks()!.onSubscribed(pattern, "sub-ok"));
+          queueMicrotask(() =>
+            transport._callbacks()!.onSubscribed(pattern, "sub-ok"),
+          );
         } else {
           queueMicrotask(() =>
-            transport._callbacks()!.onSubscribeFailed(pattern, new Error("nope"))
+            transport
+              ._callbacks()!
+              .onSubscribeFailed(pattern, new Error("nope")),
           );
         }
       });
 
       await expect(
-        manager.subscribe(["ok.>", "fail.>"], { onEvent: vi.fn() })
+        manager.subscribe(["ok.>", "fail.>"], { onEvent: vi.fn() }),
       ).rejects.toThrow("nope");
 
       // The successful subscription should have been rolled back
@@ -755,7 +837,10 @@ describe("SubscriptionManager (real module)", () => {
       const subHandler = vi.fn();
       manager.onError(globalHandler);
 
-      const p = manager.subscribe("err.>", { onEvent: vi.fn(), onError: subHandler });
+      const p = manager.subscribe("err.>", {
+        onEvent: vi.fn(),
+        onError: subHandler,
+      });
       transport._callbacks()!.onSubscribed("err.>", "sub-err");
       await p;
 
@@ -768,6 +853,70 @@ describe("SubscriptionManager (real module)", () => {
 
       expect(globalHandler).toHaveBeenCalledWith(error);
       expect(subHandler).toHaveBeenCalledWith(error);
+    });
+
+    it("should remove a terminally failed subscription from public state", async () => {
+      const first = manager.subscribe("terminal.>", { onEvent: vi.fn() });
+      transport._callbacks()!.onSubscribed("terminal.>", "sub-terminal");
+      await first;
+      expect(manager.activeSubscriptionCount).toBe(1);
+
+      transport._callbacks()!.onError("sub-terminal", {
+        subscriptionId: "sub-terminal",
+        code: "INVALID_ARGUMENT",
+        message: "cursor rejected",
+        retrying: false,
+      });
+      expect(manager.activeSubscriptionCount).toBe(0);
+      expect(transport.unsubscribe).toHaveBeenCalledWith("sub-terminal");
+
+      const replacement = manager.subscribe("terminal.>", { onEvent: vi.fn() });
+      transport._callbacks()!.onSubscribed("terminal.>", "sub-replacement");
+      await expect(replacement).resolves.toMatchObject({
+        id: "sub-replacement",
+      });
+    });
+
+    it("should clean up terminal state before a throwing error handler", async () => {
+      manager.onError(() => {
+        throw new Error("handler failed");
+      });
+      const first = manager.subscribe("throwing.>", { onEvent: vi.fn() });
+      transport._callbacks()!.onSubscribed("throwing.>", "sub-throwing");
+      await first;
+
+      expect(() =>
+        transport._callbacks()!.onError("sub-throwing", {
+          subscriptionId: "sub-throwing",
+          code: "INVALID_ARGUMENT",
+          message: "cursor rejected",
+          retrying: false,
+        }),
+      ).toThrow("handler failed");
+      expect(manager.activeSubscriptionCount).toBe(0);
+      expect(transport.unsubscribe).toHaveBeenCalledWith("sub-throwing");
+    });
+
+    it("should allow synchronous resubscribe from a terminal error handler", async () => {
+      let recovery: Promise<Subscription | AckableSubscription> | undefined;
+      const first = manager.subscribe("recover.>", {
+        onEvent: vi.fn(),
+        onError: () => {
+          recovery = manager.subscribe("recover.>", { onEvent: vi.fn() });
+        },
+      });
+      transport._callbacks()!.onSubscribed("recover.>", "sub-failed");
+      await first;
+
+      transport._callbacks()!.onError("sub-failed", {
+        subscriptionId: "sub-failed",
+        code: "INVALID_ARGUMENT",
+        message: "cursor rejected",
+        retrying: false,
+      });
+      expect(recovery).toBeDefined();
+      transport._callbacks()!.onSubscribed("recover.>", "sub-recovered");
+      await expect(recovery!).resolves.toMatchObject({ id: "sub-recovered" });
     });
 
     it("should invoke global error handler even for unknown subscription IDs", () => {
@@ -796,7 +945,10 @@ describe("SubscriptionManager (real module)", () => {
   describe("connection change propagation", () => {
     it("should call onStateChange on each active subscription", async () => {
       const onStateChange = vi.fn();
-      const p = manager.subscribe("conn.>", { onEvent: vi.fn(), onStateChange });
+      const p = manager.subscribe("conn.>", {
+        onEvent: vi.fn(),
+        onStateChange,
+      });
       transport._callbacks()!.onSubscribed("conn.>", "sub-conn");
       await p;
 
@@ -862,7 +1014,9 @@ describe("SubscriptionManager (real module)", () => {
       sub.unsubscribe();
 
       // Events for this subscription ID should be ignored
-      transport._callbacks()!.onEvent("sub-stop", { topic: "stop.a", data: {} });
+      transport
+        ._callbacks()!
+        .onEvent("sub-stop", { topic: "stop.a", data: {} });
       expect(onEvent).not.toHaveBeenCalled();
     });
   });
@@ -1023,7 +1177,9 @@ describe("SubscriptionManager (real module)", () => {
 
     it("should ignore handleSubscribeFailed for patterns with no pending subscriptions", () => {
       // Should not throw
-      transport._callbacks()!.onSubscribeFailed("ghost.>", new Error("no one cares"));
+      transport
+        ._callbacks()!
+        .onSubscribeFailed("ghost.>", new Error("no one cares"));
     });
 
     it("should handle multiple pending subscriptions for the same pattern (consumer groups) in FIFO order", async () => {
@@ -1060,16 +1216,21 @@ describe("SubscriptionManager (real module)", () => {
     });
 
     it("kicks off transport.connect() when subscribing while disconnected", async () => {
-      (transport.connect as ReturnType<typeof vi.fn>).mockImplementation(async () => {
-        transport._setConnectionState("connected");
-        transport._callbacks()!.onConnectionChange("connected");
-      });
+      (transport.connect as ReturnType<typeof vi.fn>).mockImplementation(
+        async () => {
+          transport._setConnectionState("connected");
+          transport._callbacks()!.onConnectionChange("connected");
+        },
+      );
 
       const promise = manager.subscribe("auto.>", { onEvent: vi.fn() });
       await new Promise((r) => setTimeout(r, 0));
 
       expect(transport.connect).toHaveBeenCalledTimes(1);
-      expect(transport.subscribe).toHaveBeenCalledWith("auto.>", expect.any(Object));
+      expect(transport.subscribe).toHaveBeenCalledWith(
+        "auto.>",
+        expect.any(Object),
+      );
 
       transport._callbacks()!.onSubscribed("auto.>", "sub-auto");
       const sub = await promise;
@@ -1116,7 +1277,10 @@ describe("SubscriptionManager (real module)", () => {
       transport._callbacks()!.onConnectionChange("connected");
       await new Promise((r) => setTimeout(r, 0));
 
-      expect(transport.subscribe).toHaveBeenCalledWith("rec.>", expect.any(Object));
+      expect(transport.subscribe).toHaveBeenCalledWith(
+        "rec.>",
+        expect.any(Object),
+      );
       transport._callbacks()!.onSubscribed("rec.>", "sub-rec");
       await promise;
     });
@@ -1141,7 +1305,10 @@ describe("SubscriptionManager (real module)", () => {
       // Reset document.hidden to false so one test's state doesn't
       // leak into the next (the visibility block mutates it with
       // Object.defineProperty).
-      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
     });
 
     it("triggers connect() when the tab becomes visible while disconnected", () => {
@@ -1149,7 +1316,10 @@ describe("SubscriptionManager (real module)", () => {
       transport._setConnectionState("disconnected");
       (transport.connect as ReturnType<typeof vi.fn>).mockClear();
 
-      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
       document.dispatchEvent(new Event("visibilitychange"));
 
       expect(transport.connect).toHaveBeenCalled();
@@ -1160,7 +1330,10 @@ describe("SubscriptionManager (real module)", () => {
       transport._setConnectionState("disconnected");
       (transport.connect as ReturnType<typeof vi.fn>).mockClear();
 
-      Object.defineProperty(document, "hidden", { configurable: true, value: true });
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: true,
+      });
       document.dispatchEvent(new Event("visibilitychange"));
 
       expect(transport.connect).not.toHaveBeenCalled();
@@ -1171,7 +1344,10 @@ describe("SubscriptionManager (real module)", () => {
       transport._setConnectionState("connected");
       (transport.connect as ReturnType<typeof vi.fn>).mockClear();
 
-      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
       document.dispatchEvent(new Event("visibilitychange"));
 
       expect(transport.connect).not.toHaveBeenCalled();
@@ -1183,7 +1359,10 @@ describe("SubscriptionManager (real module)", () => {
       manager.disconnect();
       (transport.connect as ReturnType<typeof vi.fn>).mockClear();
 
-      Object.defineProperty(document, "hidden", { configurable: true, value: false });
+      Object.defineProperty(document, "hidden", {
+        configurable: true,
+        value: false,
+      });
       document.dispatchEvent(new Event("visibilitychange"));
 
       expect(transport.connect).not.toHaveBeenCalled();

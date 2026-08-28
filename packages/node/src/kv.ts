@@ -11,6 +11,10 @@ import type {
   KVPutResult,
   KVListKeysResult,
   KVListBucketsResult,
+  KVWatchEvent,
+  KVWatchCallbacks,
+  KVWatchOptions,
+  KVWatcher,
 } from "@ironflow/core";
 import {
   IronflowError,
@@ -20,6 +24,7 @@ import {
   UnauthorizedError,
 } from "@ironflow/core";
 import type { OnErrorHandler, ErrorContext } from "./types.js";
+import { webSocketProtocols } from "./websocket-auth.js";
 
 /**
  * Configuration for the KV client (inherited from parent client).
@@ -134,6 +139,35 @@ export class KVBucketHandle {
     }
     const result = await this.restRequest<KVListKeysResult>("GET", path, undefined, undefined, "kv.bucket.listKeys");
     return result.keys;
+  }
+
+  /** Watch keys in this bucket over WebSocket. */
+  watch(callbacks: KVWatchCallbacks, options?: KVWatchOptions): KVWatcher {
+    const wsUrl = this.config.serverUrl
+      .replace("https://", "wss://")
+      .replace("http://", "ws://");
+    const query = options?.key
+      ? `?key=${encodeURIComponent(options.key)}`
+      : "";
+    const ws = new WebSocket(
+      `${wsUrl}/api/v1/kv/buckets/${enc(this.bucketName)}/watch${query}`,
+      webSocketProtocols(this.config.apiKey)
+    );
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(String(event.data)) as KVWatchEvent;
+        if (data.type === "kv_update") callbacks.onUpdate(data);
+      } catch (error) {
+        callbacks.onError?.(
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+    };
+    ws.onerror = () => callbacks.onError?.(new Error("KV watch WebSocket error"));
+    ws.onclose = () => callbacks.onClose?.();
+
+    return { stop: () => ws.close() };
   }
 
   private async callOnError(error: Error, context: ErrorContext): Promise<void> {

@@ -19,6 +19,8 @@ This README is the sole reference for coding agents integrating with the browser
 - [KV Store](#kv-store)
 - [Config Management](#config-management)
 - [Auth Management](#auth-management)
+- [Event Schema Registry](#event-schema-registry)
+- [Webhook Source Management](#webhook-source-management)
 - [Server Inspection](#server-inspection)
 - [React Integration Patterns](#react-integration-patterns)
 - [Transport Configuration](#transport-configuration)
@@ -46,8 +48,8 @@ ironflow.configure({
   environment: 'default',               // Default: 'default'. Target environment for isolation.
   timeout: 30000,                       // Request timeout in ms (default: 30000)
   auth: {
-    apiKey: 'your-api-key',             // API key for authentication
-    token: 'bearer-token',              // Alternative: bearer token
+    token: 'short-lived-session-token', // Preferred for browser applications
+    // apiKey: 'ifkey_...',              // Development only; never ship in a browser bundle
   },
   reconnect: {
     enabled: true,                      // Default: true
@@ -185,6 +187,24 @@ const sub = await ironflow.subscribe('events:order.*', {
 console.log(sub.lastEvent);
 ```
 
+To resume after an exact sequence, use `startAfterSequence` instead of
+`replay`. Do not combine it with a consumer group. The SDK advances the cursor
+after each delivered event and uses it on reconnect. Delivery remains
+at-least-once, so handlers must tolerate a repeated in-flight event.
+
+`replay` applies only to the initial subscribe request. Reconnects preserve the
+filter, consumer group, metadata, acknowledgment, backpressure, and namespace
+options but omit the original replay count. A fan-out subscription without a
+cursor reconnects at the current tail and can miss events published while it
+was offline. Use `startAfterSequence` or a consumer group when that gap matters.
+
+```typescript
+await ironflow.subscribe('events:order.*', {
+  startAfterSequence: 400,
+  onEvent: handleOrder,
+});
+```
+
 ### Multiple Patterns
 
 Subscribe to an array of patterns. Returns a combined subscription that unsubscribes from all at once:
@@ -281,6 +301,19 @@ await sub.term(eventId);         // Terminate - do not redeliver
 sub.unsubscribe();
 ```
 
+Create and manage the durable group definition separately from joining it:
+
+```typescript
+const group = await ironflow.consumerGroups.create({
+  name: 'order-processors',
+  pattern: 'events:order.*',
+});
+const groups = await ironflow.consumerGroups.list();
+const one = await ironflow.consumerGroups.get(group.name);
+await ironflow.consumerGroups.update(group.name, { maxInflight: 50 });
+await ironflow.consumerGroups.delete(group.name);
+```
+
 Alternatively, use `subscribe` directly with `consumerGroup` and `ackMode` options:
 
 ```typescript
@@ -320,6 +353,46 @@ const result = await ironflow.emit(
     namespace: 'production',                  // Namespace (default: "default")
   }
 );
+```
+
+Publish to a developer topic without triggering workflow functions:
+
+```typescript
+const published = await ironflow.publish(
+  'notifications',
+  { userId: '123', message: 'Hello!' },
+  { idempotencyKey: 'notification-123' },
+);
+console.log(published.eventId, published.sequence);
+```
+
+### Emit and Wait, Batch Emit
+
+```typescript
+// Wait for the triggered run to reach a terminal state.
+// Throws RunFailedError / RunCancelledError if it does not complete.
+const result = await ironflow.emitSync('order.placed', { orderId: '123' }, { timeout: 30000 });
+console.log(result.runId, result.status, result.output, result.durationMs);
+
+// One round trip, one EmitResult per event, in order
+const results = await ironflow.triggerBatch([
+  { event: 'order.placed', data: { orderId: '1' } },
+  { event: 'order.placed', data: { orderId: '2' }, idempotencyKey: 'order-2' },
+]);
+```
+
+### Reading Stored Events
+
+```typescript
+// Keyset-paginated page of the event log
+const page = await ironflow.listEvents({ name: 'order.placed', limit: 50 });
+console.log(page.events, page.nextCursor);
+
+// One stored event
+const event = await ironflow.getEvent('evt_abc123');
+
+// Distinct event names with counts, for pickers and filters
+const { names } = await ironflow.listEventNames();
 ```
 
 ## Offline Writes
@@ -504,12 +577,12 @@ const run = await ironflow.getRun('run_abc123');
 
 console.log(run.id);           // 'run_abc123'
 console.log(run.functionId);   // 'process-order'
-console.log(run.status);       // 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+console.log(run.status);       // 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'waiting_for_capacity' | 'waiting'
 console.log(run.attempt);      // Current attempt number
 console.log(run.maxAttempts);  // Maximum retry attempts
 console.log(run.input);        // Input data
 console.log(run.output);       // Output data (if completed)
-console.log(run.error);        // Error message (if failed)
+console.log(run.error);        // { message, code } (if failed)
 console.log(run.startedAt);    // Date | undefined
 console.log(run.endedAt);      // Date | undefined
 console.log(run.createdAt);    // Date
@@ -542,6 +615,32 @@ const run = await ironflow.resumeRun('run_abc123', 'step-to-resume-from');
 
 // Hot-patch a step's output (replaces the stored output and replays downstream)
 await ironflow.patchStep('step_xyz789', { correctedValue: 42 }, 'Manual fix');
+```
+
+### Run Introspection
+
+```typescript
+const { steps, count } = await ironflow.getRunSteps('run_abc123');
+const { entityIds } = await ironflow.getRunStreams('run_abc123');
+```
+
+### Audit Trail
+
+```typescript
+const trail = await ironflow.getAuditTrail('run_abc123', { eventType: 'step.completed', limit: 50 });
+```
+
+### Function Lifecycle and Versioning
+
+```typescript
+const fn = await ironflow.getFunction('process-order');
+
+await ironflow.updateFunctionStatus('process-order', 'paused');   // pause dispatch
+await ironflow.deleteFunction('process-order');
+
+const history = await ironflow.listFunctionHistory('process-order', { limit: 20 });
+const older   = await ironflow.getFunctionAtVersion('process-order', 3);
+await ironflow.rollbackFunction('process-order', 3, 'bad concurrency key');
 ```
 
 ### Scoped Injection
@@ -757,6 +856,30 @@ if (info) {
 
 **Returns:** `Promise<StreamInfo | null>`
 
+### List Streams and Read Entity History
+
+```typescript
+const streams = await ironflow.streams.listStreams();
+const history = await ironflow.streams.getEntityHistory('order-123');
+```
+
+### Snapshots
+
+Skip replaying a long stream from version 0 by snapshotting the materialized
+state at a version.
+
+```typescript
+const { snapshotId } = await ironflow.streams.createSnapshot('order-123', {
+  entityType: 'order',
+  entityVersion: 1000,
+  state: materialized,
+});
+
+const snap = await ironflow.streams.getSnapshot('order-123');
+// Optional: only consider snapshots at or before a version
+const older = await ironflow.streams.getSnapshot('order-123', { beforeVersion: 500 });
+```
+
 ### Subscribe to Stream Updates
 
 ```typescript
@@ -850,14 +973,39 @@ console.log(status.lastEventSeq);  // Last processed sequence number
 console.log(status.lag);           // Number of unprocessed events
 console.log(status.errorMessage);  // Error message if status is 'error'
 console.log(status.updatedAt);     // Date
+```
 
-// Trigger a rebuild
-const result = await ironflow.rebuildProjection('order-stats', {
-  partition: 'customer-123',  // Optional: rebuild specific partition
-  fromEventId: 'evt_abc',    // Optional: rebuild from specific event
-  dryRun: true,               // Optional: validate without rebuilding
+Projection lifecycle operations such as rebuild, pause, resume, and delete are
+operator concerns and are intentionally not exposed by the Browser SDK.
+
+### Read-Your-Writes
+
+`streams.append()` returns no NATS sequence under the transactional outbox, so
+resolve the event ID to a sequence with `waitForEvent`, then wait on it.
+
+```typescript
+const { eventId } = await ironflow.streams.append('order-123', event);
+
+const wait = await ironflow.waitForEvent(eventId, 'order-detail-view', { timeoutMs: 5000 });
+
+await ironflow.waitForProjectionCatchup('order-detail-view', {
+  minSeq: wait.targetSeq,
+  partition: 'order-123',
+  timeoutMs: 5000,
 });
-console.log(result.status);  // 'rebuilding' | 'dry_run_ok'
+```
+
+### Query a SQL Projection
+
+For projections materialized into relational tables (PostgreSQL backend).
+
+```typescript
+const result = await ironflow.querySQLProjection('board', {
+  where: "status = 'OPEN'",
+  orderBy: 'title ASC',
+  limit: 50,
+});
+console.log(result.columns, result.rows, result.totalCount);
 ```
 
 ## KV Store
@@ -955,40 +1103,28 @@ watcher.stop();
 
 ## Config Management
 
-Centralized configuration management with set, get, patch, list, delete, and real-time watch.
+Read environment-scoped configuration and watch changes in real time. Config
+mutations are intentionally limited to trusted server-side and operator clients.
 
 ```typescript
 import { ironflow } from '@ironflow/browser';
 
 const config = ironflow.configManager();
 
-// Set a config (full document replacement)
-const result = await config.set('app-settings', {
-  theme: 'dark',
-  locale: 'en',
-  maxRetries: 3,
-});
-
 // Get a config by name
 const settings = await config.get('app-settings');
-console.log(settings.data);      // { theme: 'dark', locale: 'en', maxRetries: 3 }
+console.log(settings.data);
 console.log(settings.revision);  // Revision number
-
-// Patch a config (shallow merge)
-await config.patch('app-settings', { locale: 'fr' });
 
 // List all configs
 const all = await config.list();
 // Returns ConfigEntry[]
 
-// Delete a config (idempotent)
-await config.delete('app-settings');
-
 // Watch for real-time config changes.
 // Subscribes to system.config.{name}.updated. Auto-connects on first call —
-// no explicit ironflow.connect() needed. The server emits on set() and
-// patch() after the KV write, so cross-tab / CLI / REST-triggered updates
-// all reach the subscriber. Payload includes `revision`; drop events whose
+// no explicit ironflow.connect() needed. Changes made through a trusted SDK,
+// the CLI, dashboard, or REST API reach the subscriber. Payload includes
+// `revision`; drop events whose
 // revision is lower than the last one you applied to guard against rare
 // out-of-order deliveries under retry.
 const watcher = await config.watch('app-settings', {
@@ -1037,9 +1173,12 @@ console.log(rotated.key);  // New secret
 await ironflow.apiKeys.delete('apikey_abc123');
 ```
 
-### Organizations (Enterprise)
+### Organizations
 
-Requires an Enterprise license. Returns `EnterpriseRequiredError` (HTTP 402) without one.
+Gated by RBAC, not by a licence tier. Creating an org needs a **platform**
+credential (`ifplatform_`) — a tenant key gets `403 platform credential
+required`, because a tenant is pinned to one org (#660). Get/update/delete need
+`orgs:manage` and are scoped to the caller's own org.
 
 ```typescript
 // Create an organization
@@ -1058,7 +1197,7 @@ const updated = await ironflow.orgs.update('org_abc123', { name: 'Acme Inc' });
 await ironflow.orgs.delete('org_abc123');
 ```
 
-### Roles (Enterprise)
+### Roles
 
 ```typescript
 // Create a role
@@ -1082,11 +1221,14 @@ await ironflow.roles.assignPolicy('role_xyz789', 'policy_abc');
 // Remove a policy from a role
 await ironflow.roles.removePolicy('role_xyz789', 'policy_abc');
 
+// List policies assigned to a role
+const assignedPolicies = await ironflow.roles.listPolicies('role_xyz789');
+
 // Delete a role
 await ironflow.roles.delete('role_xyz789');
 ```
 
-### Policies (Enterprise)
+### Policies
 
 ```typescript
 // Create a policy
@@ -1114,6 +1256,73 @@ const updated = await ironflow.policies.update('policy_abc', {
 await ironflow.policies.delete('policy_abc');
 ```
 
+### Rotating Credentials at Runtime
+
+`setAuth` swaps the credential in place. Every request path reads `config.auth`
+at send time, so the next request picks it up; an already-open subscription
+keeps the credentials it connected with until it reconnects.
+
+```typescript
+ironflow.setAuth({ token: refreshedSession.accessToken });
+```
+
+## Event Schema Registry
+
+Server-side JSON Schema registry for event contracts.
+
+```typescript
+await ironflow.schemas.register({
+  name: 'order.placed',
+  version: 2,
+  schema: { type: 'object', properties: { orderId: { type: 'string' } } },
+});
+
+const all     = await ironflow.schemas.list();
+const latest  = await ironflow.schemas.get('order.placed');
+const v1      = await ironflow.schemas.getVersion('order.placed', 1);
+await ironflow.schemas.delete('order.placed', 1);
+
+// Dry-run a server-side upcast
+const out = await ironflow.schemas.testUpcast({
+  eventName: 'order.placed',
+  fromVersion: 1,
+  toVersion: 2,
+  data: { orderId: '123' },
+});
+```
+
+## Webhook Source Management
+
+Manage the server-side webhook registry the dashboard and delivery tracking
+read. Operator surface — an app that only receives webhooks does not need it.
+
+```typescript
+// ingestToken is returned only here and on rotate (ADR 0048) — capture it now.
+const source = await ironflow.webhooks.create({
+  name: 'Stripe production',
+  eventPrefix: 'stripe',
+});
+
+const sources = await ironflow.webhooks.listSources();
+const current = await ironflow.webhooks.getSource(source.id);
+
+// Full-replace, not patch: omitted fields are cleared server-side.
+await ironflow.webhooks.updateSource({
+  id: current.id,
+  name: 'Stripe production (EU)',
+  expectedUpdatedAt: current.updatedAt,
+});
+
+// graceSeconds is tri-state: omit = server default, 0 = instant cutover, N = seconds.
+await ironflow.webhooks.rotateSecret({ id: source.id, verifySecret: 'whsec_new' });
+await ironflow.webhooks.expireSecretPrev(source.id);
+await ironflow.webhooks.disableSignatureVerification({ id: source.id, graceSeconds: 0 });
+await ironflow.webhooks.rotateIngestToken(source.id);
+
+const { deliveries } = await ironflow.webhooks.listDeliveries({ sourceId: source.id, limit: 25 });
+await ironflow.webhooks.deleteSource(source.id);
+```
+
 ## Server Inspection
 
 ```typescript
@@ -1136,6 +1345,17 @@ const caps = await ironflow.getCapabilities();
 console.log(caps.transports);  // ['connectrpc', 'websocket']
 console.log(caps.features);    // ['kv', 'projections', 'entity-streams', ...]
 console.log(caps.version);     // Server version
+
+// Query the environment-wide audit stream
+const auditPage = await ironflow.listAuditEvents({ eventType: 'run.failed', limit: 50 });
+
+// Provision a tenant and initial administrator key. Both tenant calls
+// require the `users:manage` permission; 403 otherwise.
+const tenant = await ironflow.tenants.provision({ orgName: 'Acme' });
+const tenants = await ironflow.tenants.list();
+
+// Active subscription count — for leak audits; 0 when not configured
+console.log(ironflow.getActiveSubscriptionCount());
 ```
 
 ## React Integration Patterns
@@ -1310,10 +1530,14 @@ import { ironflow } from '@ironflow/browser';
 ironflow.configure({
   serverUrl: process.env.NEXT_PUBLIC_IRONFLOW_URL ?? 'http://localhost:9123',
   auth: {
-    apiKey: process.env.NEXT_PUBLIC_IRONFLOW_API_KEY,
+    token: session.accessToken,
   },
 });
 ```
+
+Obtain `session.accessToken` from a trusted authentication backend. Do not put
+an `ifkey_` environment key in a `NEXT_PUBLIC_*` variable or browser bundle.
+Development builds warn when an `ifkey_` credential is configured.
 
 ## Transport Configuration
 
@@ -1341,7 +1565,10 @@ ironflow.configure({
 });
 ```
 
-The WebSocket URL is derived from `serverUrl` by replacing `http://` with `ws://` and `https://` with `wss://`.
+The WebSocket URL is derived from `serverUrl` by replacing `http://` with
+`ws://` and `https://` with `wss://`. Authentication is sent as WebSocket
+subprotocol metadata, not as a `token=` query parameter, so credentials do not
+appear in ordinary proxy access logs.
 
 ### Advanced: Custom Transport
 
@@ -1359,7 +1586,7 @@ import {
 
 // Create a transport manually
 const options: TransportOptions = {
-  auth: { apiKey: 'my-key' },
+  auth: { token: session.accessToken },
   autoReconnect: true,
   reconnectDelay: 1000,
   maxReconnectDelay: 30000,
@@ -1389,13 +1616,14 @@ import {
   RunCancelledError,       // agents.invoke: terminal run cancellation
   AgentInvokeTimeoutError, // agents.invoke: local timeoutMs elapsed
   NoRunCreatedError,       // agents.invoke: server returned no runIds
+  QueueFullError,          // offline queue at 500 writes or 5 MB
 } from '@ironflow/browser';
 ```
 
 Additionally, the REST request helper maps HTTP status codes to specific error types. Import these (and `MemoryCatchupTimeoutError` for `agents.readMemory`) from `@ironflow/core`:
 
 - **401** -> `UnauthenticatedError` -- missing or invalid credentials
-- **402** -> `EnterpriseRequiredError` -- enterprise license required
+- **402** -> `EnterpriseRequiredError` -- legacy. Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; the mapping is retained for compatibility
 - **403** -> `UnauthorizedError` -- insufficient permissions
 
 ### Error Utilities
@@ -1452,29 +1680,45 @@ Requires native `fetch`, `WebSocket`, and `AbortController` support.
 
 The package re-exports the following types from `@ironflow/core` for convenience:
 
-**Run types:** `Run`, `RunStatus`, `RunInfo`, `ListRunsOptions`, `ListRunsResult`
+**Run types:** `Run`, `RunStatus`, `RunInfo`, `ListRunsOptions`, `ListRunsResult`, `RunStep`, `RunStepsResult`, `RunStreamsResult`
 
-**Event types:** `IronflowEvent`, `EmitOptions`, `EmitResult`
+**Function types:** `FunctionStatus`, `RegisteredFunction`, `FunctionChangeType`, `FunctionHistoryEntry`, `ListFunctionHistoryOptions`, `ListFunctionHistoryResult`
 
-**Invoke/Trigger types:** `InvokeResult`, `TriggerSyncOptions`, `TriggerSyncResult`
+**Event types:** `IronflowEvent`, `EmitOptions`, `EmitResult`, `TriggerBatchEvent`, `StoredEvent`, `ListEventsOptions`, `ListEventsResult`, `EventNameCount`, `ListEventNamesOptions`, `ListEventNamesResult`
+
+**Pub/Sub types:** `PublishOptions`, `PublishResult`
+
+**Invoke/Trigger types:** `InvokeResult`, `TriggerResult` (deprecated alias), `TriggerSyncOptions`, `TriggerSyncResult`
 
 **Subscription types:** `SubscribeOptions`, `Subscription`, `AckableSubscription`, `SubscriptionEvent`, `SubscriptionErrorInfo`, `SubscriptionCallbacks`, `ConnectionState`, `AckHandle`
 
-**Consumer group types:** `ConsumerGroup`, `ConsumerGroupConfig`, `ConsumerGroupStatus`, `AckMode`, `BackpressureMode`
+**Consumer group types:** `ConsumerGroup`, `ConsumerGroupConfig`, `ConsumerGroupStatus`, `AckMode`, `BackpressureMode`, `UpdateConsumerGroupInput`
 
-**Entity stream types:** `AppendEventInput`, `AppendOptions`, `AppendResult`, `ReadStreamOptions`, `StreamEvent`, `StreamInfo`, `EntitySubscribeOptions`
+**Entity stream types:** `AppendEventInput`, `AppendOptions`, `AppendResult`, `ReadStreamOptions`, `StreamEvent`, `StreamInfo`, `EntitySubscribeOptions`, `StreamListEntry`, `EntityHistoryEntry`
 
 **Projection types:** `ProjectionStatusInfo`, `ProjectionStateResult`
 
+**Audit types:** `AuditEvent`, `AuditTrailResult`, `GetAuditTrailOptions`, `ListAuditEventsOptions`
+
+**Webhook management types:** `WebhookSource`, `CreateWebhookSourceInput`, `UpdateWebhookSourceInput`, `RotateWebhookSecretInput`, `DisableWebhookSignatureVerificationInput`, `WebhookDelivery`, `ListWebhookDeliveriesOptions`
+
+**Tenant types:** `Tenant`, `ProvisionTenantInput`, `ProvisionTenantResult`
+
 **KV types:** `KVBucketConfig`, `KVBucketInfo`, `KVEntry`, `KVPutResult`, `KVListKeysResult`, `KVListBucketsResult`, `KVWatchEvent`, `KVWatchCallbacks`, `KVWatchOptions`, `KVWatcher`
 
-**Config types:** `ConfigResponse`, `ConfigEntry`, `ConfigSetResult`, `ConfigWatchCallbacks`, `ConfigWatchEvent`
+**Config types:** `ConfigResponse`, `ConfigEntry`, `ConfigWatchCallbacks`, `ConfigWatchEvent`
 
-**Browser-specific types:** `IronflowConfig`, `IronflowConfigOptions`, `ReconnectConfig`, `VisibilityConfig`, `AuthConfig`, `BrowserSubscribeOptions`, `SubscriptionGroup`, `Transport`, `TransportCallbacks`, `TransportFactory`, `TransportOptions`
+**Browser-specific types:** `IronflowClient` (type only — construct through `ironflow` or `createClient()`), `IronflowConfig`, `IronflowConfigOptions`, `ReconnectConfig`, `VisibilityConfig`, `AuthConfig`, `BrowserSubscribeOptions`, `SubscriptionGroup`, `Transport`, `TransportCallbacks`, `TransportFactory`, `TransportOptions`
 
-**Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`, `DEFAULT_CONFIG`, `mergeConfig`
+**Agent types:** `AgentsNamespace`, `AgentInvokeOptions`, `AgentInvokeResult`, `AgentProgressEvent`, `AgentStepEvent`, `AgentSubscribeCallbacks`
 
-**Classes:** `BrowserKVClient`, `BrowserKVBucketHandle`, `BrowserConfigClient`, `SubscriptionManager`
+**Offline queue types:** `CreateClientOptions`, `OfflineQueueConfig`, `QueueApi`, `QueuedWriteResult`, `QueuedWrite`, `QueuedWriteKind`, `DeadLetteredWrite`, `QueueState`, `QueueStats`, `WriteStatus`, `WriteLostReason`
+
+**Logger:** `Logger`
+
+**Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`, `DEFAULT_CONFIG`, `mergeConfig`, `createWebSocketTransport`, `createConnectRPCTransport`, `queueDbName`
+
+**Classes:** `BrowserKVClient`, `BrowserKVBucketHandle`, `BrowserConfigClient`, `SubscriptionManager`, `OfflineClient`, `createClient`
 
 ## Links
 

@@ -13,6 +13,7 @@ import type {
   StepRunOptions,
   StepResult,
   Logger,
+  PublishOptions,
   PublishResult,
 } from "@ironflow/core";
 import { StepError, StepTimeoutError, isRetryable, parseDuration, InvokeError } from "@ironflow/core";
@@ -112,8 +113,11 @@ function createStepClientInternal(ctx: StepContext): StepClient {
       input?: unknown
     ): Promise<{ runId: string }> => executeInvokeAsync(ctx, functionId, input),
 
-    publish: (topic: string, data: unknown): Promise<PublishResult> =>
-      executePublish(ctx, topic, data),
+    publish: (
+      topic: string,
+      data: unknown,
+      options?: PublishOptions
+    ): Promise<PublishResult> => executePublish(ctx, topic, data, options),
   };
 }
 
@@ -789,7 +793,8 @@ function parseInvokeError(functionId: string, errorData: unknown): InvokeError {
 async function executePublish(
   ctx: StepContext,
   topic: string,
-  data: unknown
+  data: unknown,
+  options?: PublishOptions
 ): Promise<PublishResult> {
   return executeStep(ctx, `publish:${topic}`, async () => {
     const serverUrl = ctx.serverUrl;
@@ -815,7 +820,11 @@ async function executePublish(
     const response = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify({ topic, data: data ?? {} }),
+      body: JSON.stringify({
+        topic,
+        data: data ?? {},
+        ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+      }),
     });
 
     if (!response.ok) {

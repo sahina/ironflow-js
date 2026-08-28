@@ -21,9 +21,17 @@ export interface TransportCallbacks {
   /** Called when connection state changes */
   onConnectionChange: (state: ConnectionState) => void;
   /** Called when a subscription is confirmed */
-  onSubscribed: (pattern: string, subscriptionId: string) => void;
+  onSubscribed: (
+    pattern: string,
+    subscriptionId: string,
+    previousSubscriptionId?: string,
+  ) => void;
   /** Called when a subscription fails */
-  onSubscribeFailed: (pattern: string, error: Error) => void;
+  onSubscribeFailed: (
+    pattern: string,
+    error: Error,
+    previousSubscriptionId?: string,
+  ) => void;
 }
 
 /**
@@ -63,19 +71,19 @@ export interface Transport {
  */
 export type TransportFactory = (
   serverUrl: string,
-  options: TransportOptions
+  options: TransportOptions,
 ) => Transport;
 
 /**
  * Transport options
  */
 export interface TransportOptions {
-  /** Authentication headers */
+  /** Authentication credentials. WebSockets carry these as subprotocol metadata. */
   auth?: {
     apiKey?: string;
     token?: string;
   };
-  /** Auto-reconnect enabled */
+  /** Auto-reconnect enabled; cursor subscriptions reconnect regardless. */
   autoReconnect: boolean;
   /** Initial reconnect delay */
   reconnectDelay: number;
