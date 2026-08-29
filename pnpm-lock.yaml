@@ -40,7 +40,7 @@ importers:
         version: link:../core
       zod:
         specifier: ^4.4.3
-        version: 4.5.1
+        version: 4.5.2
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -68,7 +68,7 @@ importers:
     dependencies:
       zod:
         specifier: ^4.4.3
-        version: 4.5.1
+        version: 4.5.2
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -101,7 +101,7 @@ importers:
         version: 1.2.9(ws@8.21.3)
       '@langchain/langgraph':
         specifier: ^1.4.12
-        version: 1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.5.1)
+        version: 1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.5.2)
       '@langchain/langgraph-checkpoint':
         specifier: ^1.1.5
         version: 1.1.5(@langchain/core@1.2.9(ws@8.21.3))
@@ -122,7 +122,7 @@ importers:
         version: link:../core
       zod:
         specifier: ^4.4.3
-        version: 4.5.1
+        version: 4.5.2
     devDependencies:
       '@types/node':
         specifier: ^22.20.1
@@ -1057,8 +1057,8 @@ packages:
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
-  nwsapi@2.2.25:
-    resolution: {integrity: sha512-kktSgNDIbyEIs/LrE6dtEMnfzxSDpXViFl6c4gFjz/CgtnL4GDCR3wyZXzjvAXsNB8dXU4dAfvIOgLMH2/vwLg==}
+  nwsapi@2.2.26:
+    resolution: {integrity: sha512-LPmrA6J31t9ac9294T/WZV6AK5CUcFZ+VXQ7pNNc1+JAjeKthW7vqekOBu6pXzsxD7slwJ7M4XMhamojG3T4oA==}
 
   p-finally@1.0.0:
     resolution: {integrity: sha512-LICb2p9CB7FS+0eR1oqWnHhp0FljGLZCWBE9aix0Uye9W8LTQPwMTYVGWQWIw9RdQiDg4+epXQODwIYJtSJaow==}
@@ -1353,8 +1353,8 @@ packages:
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
-  zod@4.5.1:
-    resolution: {integrity: sha512-P3GqeAEOEDqKvafVGLezbg+39YW/ze4xrD4qdS0adOY8eoI3zfjv1PQM4UwQzgT8mZKXEbqtVt8K+ZKGqkMFKg==}
+  zod@4.5.2:
+    resolution: {integrity: sha512-XkYXCol10+ba/6F/cueWV+TezUeOqXW0hdeJt5CdXjTYeAgAQg5N03RQdJ80mhfFE72+pblvYMW4wy2Qp4Qbrg==}
 
 snapshots:
 
@@ -1623,7 +1623,7 @@ snapshots:
       langsmith: 0.9.0(ws@8.21.3)
       mustache: 4.2.0
       p-queue: 6.6.2
-      zod: 4.5.1
+      zod: 4.5.2
     transitivePeerDependencies:
       - '@opentelemetry/api'
       - '@opentelemetry/exporter-trace-otlp-proto'
@@ -1643,14 +1643,14 @@ snapshots:
       p-queue: 9.3.3
       p-retry: 7.1.1
 
-  '@langchain/langgraph@1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.5.1)':
+  '@langchain/langgraph@1.4.13(@langchain/core@1.2.9(ws@8.21.3))(zod@4.5.2)':
     dependencies:
       '@langchain/core': 1.2.9(ws@8.21.3)
       '@langchain/langgraph-checkpoint': 1.1.5(@langchain/core@1.2.9(ws@8.21.3))
       '@langchain/langgraph-sdk': 1.10.0(@langchain/core@1.2.9(ws@8.21.3))
       '@langchain/protocol': 0.0.18
       '@standard-schema/spec': 1.1.0
-      zod: 4.5.1
+      zod: 4.5.2
     transitivePeerDependencies:
       - react
       - react-dom
@@ -2053,7 +2053,7 @@ snapshots:
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6
       is-potential-custom-element-name: 1.0.1
-      nwsapi: 2.2.25
+      nwsapi: 2.2.26
       parse5: 7.3.0
       rrweb-cssom: 0.8.0
       saxes: 6.0.0
@@ -2111,7 +2111,7 @@ snapshots:
 
   nanoid@3.3.18: {}
 
-  nwsapi@2.2.25: {}
+  nwsapi@2.2.26: {}
 
   p-finally@1.0.0: {}
 
@@ -2389,4 +2389,4 @@ snapshots:
 
   xmlchars@2.2.0: {}
 
-  zod@4.5.1: {}
+  zod@4.5.2: {}
