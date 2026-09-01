@@ -1,13 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { assertDefined } from "../../internal/assert-defined.js";
 import {
   AgentInvokeTimeoutError,
-  NoRunCreatedError,
-  RunFailedError,
   RunCancelledError,
+  RunFailedError,
+  RunWaitTimeoutError,
   ValidationError,
-  type SubscriptionCallbacks,
-  type SubscriptionEvent,
+  type InvokeSyncResult,
 } from "@ironflow/core";
 
 import { invoke } from "../invoke.js";
@@ -17,78 +15,39 @@ import type { AgentClientLike } from "../types.js";
 // Mock client harness
 // ---------------------------------------------------------------------------
 
-interface MockSubscription {
-  pattern: string;
-  unsubscribe: () => void;
-  emit: (event: Partial<SubscriptionEvent<unknown>>) => void;
-  emitError: (msg: string) => void;
-}
+const completedResult: InvokeSyncResult = {
+  runId: "run-mock",
+  functionId: "agent",
+  status: "completed",
+  output: { ok: true },
+  durationMs: 12,
+};
 
 function buildMockClient(): {
   client: AgentClientLike;
-  trigger: ReturnType<typeof vi.fn>;
-  subscribe: ReturnType<typeof vi.fn>;
+  invokeSync: ReturnType<typeof vi.fn>;
   cancelRun: ReturnType<typeof vi.fn>;
-  /** Manually drive subscription event delivery from tests. */
-  subs: MockSubscription[];
+  subscribe: ReturnType<typeof vi.fn>;
 } {
-  const subs: MockSubscription[] = [];
-
-  const subscribe = vi.fn(
-    async (
-      pattern: string | string[],
-      cbs: SubscriptionCallbacks<unknown>
-    ) => {
-      const unsub = vi.fn();
-      const sub: MockSubscription = {
-        pattern: Array.isArray(pattern) ? (pattern[0] ?? "") : pattern,
-        unsubscribe: unsub,
-        emit: (partial) => {
-          const evt: SubscriptionEvent<unknown> = {
-            topic: partial.topic ?? "",
-            data: partial.data ?? null,
-            meta: partial.meta,
-            eventId: partial.eventId,
-          };
-          cbs.onEvent?.(evt);
-        },
-        emitError: (msg) =>
-          cbs.onError?.({ code: "TEST_ERR", message: msg }),
-      };
-      subs.push(sub);
-      return { unsubscribe: unsub };
-    }
-  );
-
-  const trigger = vi.fn(async (_name: string, _opts) => ({
-    runIds: ["run-mock"],
-    eventId: "evt-mock",
-  }));
-
+  const invokeSync = vi.fn(async () => completedResult);
   const cancelRun = vi.fn(async (runId: string) => ({
     id: runId,
-    functionId: "fn",
+    functionId: "agent",
     status: "cancelled",
   }));
+  // Present only to prove `invoke` never reaches for it any more.
+  const subscribe = vi.fn();
 
   return {
     client: {
-      invoke: trigger,
+      invoke: invokeSync,
       subscribe,
       cancelRun,
     } as unknown as AgentClientLike,
-    trigger,
-    subscribe,
+    invokeSync,
     cancelRun,
-    subs,
+    subscribe,
   };
-}
-
-// Drain the microtask queue so subscribe()'s await chain settles.
-async function flush(): Promise<void> {
-  await Promise.resolve();
-  await Promise.resolve();
-  await Promise.resolve();
 }
 
 // ---------------------------------------------------------------------------
@@ -111,170 +70,188 @@ describe("agents.invoke — input validation", () => {
     );
   });
 
-  it("rejects when signal already aborted", async () => {
-    const { client } = buildMockClient();
+  it("rejects when signal already aborted, before any network I/O", async () => {
+    const { client, invokeSync } = buildMockClient();
     const ac = new AbortController();
     ac.abort();
     await expect(
       invoke(client, "agent", {}, { signal: ac.signal })
     ).rejects.toThrow("Aborted");
+    expect(invokeSync).not.toHaveBeenCalled();
   });
 });
 
-describe("agents.invoke — POST errors", () => {
-  it("propagates network error from trigger", async () => {
-    const { client, trigger } = buildMockClient();
-    trigger.mockRejectedValueOnce(new Error("network down"));
-    await expect(invoke(client, "agent", {})).rejects.toThrow("network down");
-  });
+describe("agents.invoke — the single sync call", () => {
+  it("resolves with the run's output and never subscribes", async () => {
+    const { client, invokeSync, subscribe } = buildMockClient();
 
-  it("throws NoRunCreatedError when runIds is empty", async () => {
-    const { client, trigger } = buildMockClient();
-    trigger.mockResolvedValueOnce({ runIds: [], eventId: "evt-1" });
-    await expect(invoke(client, "agent", {})).rejects.toBeInstanceOf(
-      NoRunCreatedError
-    );
-  });
+    const result = await invoke<{ ok: true }>(client, "agent", { task: "x" });
 
-  it.each([
-    ["wildcard *", "*"],
-    ["wildcard >", ">"],
-    ["dotted", "run.evil"],
-    ["space", "bad id"],
-  ])(
-    "rejects malformed server-returned runId: %s",
-    async (_label, badId) => {
-      const { client, trigger } = buildMockClient();
-      trigger.mockResolvedValueOnce({ runIds: [badId], eventId: "e" });
-      await expect(invoke(client, "agent", {})).rejects.toThrow(
-        /invalid runId/
-      );
-    }
-  );
-});
-
-describe("agents.invoke — terminal events", () => {
-  it("resolves on .completed with output", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke<{ ok: true }>(client, "agent", { task: "x" });
-    await flush();
-    expect(subs.length).toBe(1);
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { status: "completed", output: { ok: true } },
-    });
-    const result = await promise;
     expect(result.runId).toBe("run-mock");
     expect(result.output).toEqual({ ok: true });
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+    expect(invokeSync).toHaveBeenCalledOnce();
+    expect(subscribe).not.toHaveBeenCalled();
   });
 
-  it("throws RunFailedError on .failed", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(client, "agent", {});
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.failed",
-      data: { status: "failed", error: { message: "boom", code: "X" } },
-    });
-    await expect(promise).rejects.toBeInstanceOf(RunFailedError);
+  it("sends the wait budget as `timeout`, not as a transport abort", async () => {
+    const { client, invokeSync } = buildMockClient();
+
+    await invoke(client, "agent", { x: 1 }, { timeoutMs: 45_000 });
+
+    const [, opts] = invokeSync.mock.calls[0] as [
+      string,
+      { timeout?: number; signal?: AbortSignal },
+    ];
+    expect(opts.timeout).toBe(45_000);
+    // The signal slot carries caller cancellation only — wiring the budget
+    // there would cancel the run on every timeout.
+    expect(opts.signal).toBeUndefined();
   });
 
-  it("throws RunCancelledError on .cancelled", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(client, "agent", {});
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.cancelled",
-      data: { status: "cancelled" },
+  it("forwards idempotencyKey to client.invoke", async () => {
+    const { client, invokeSync } = buildMockClient();
+
+    await invoke(client, "agent", { x: 1 }, { idempotencyKey: "key-abc" });
+
+    expect(invokeSync).toHaveBeenCalledWith("agent", {
+      data: { x: 1 },
+      timeout: 30_000,
+      idempotencyKey: "key-abc",
+      signal: undefined,
     });
-    await expect(promise).rejects.toBeInstanceOf(RunCancelledError);
   });
 
-  it("ignores step events and non-terminal run events", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(client, "agent", {});
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.created",
-      data: { status: "running" },
-    });
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.step.s1.completed",
-      data: { type: "completed" },
-    });
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { output: { done: true } },
-    });
-    const result = await promise;
-    expect(result.output).toEqual({ done: true });
+  it("propagates a network error", async () => {
+    const { client, invokeSync } = buildMockClient();
+    invokeSync.mockRejectedValueOnce(new Error("network down"));
+    await expect(invoke(client, "agent", {})).rejects.toThrow("network down");
   });
 
-  it("resolves once even if duplicate completion events arrive", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(client, "agent", {});
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { output: 1 },
-    });
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { output: 2 },
-    });
-    const result = await promise;
-    expect(result.output).toBe(1);
+  it("propagates RunFailedError from the client", async () => {
+    const { client, invokeSync } = buildMockClient();
+    invokeSync.mockRejectedValueOnce(
+      new RunFailedError("run-mock", { partial: true }, "boom")
+    );
+    await expect(invoke(client, "agent", {})).rejects.toBeInstanceOf(
+      RunFailedError
+    );
+  });
+
+  it("propagates RunCancelledError from the client", async () => {
+    const { client, invokeSync } = buildMockClient();
+    invokeSync.mockRejectedValueOnce(new RunCancelledError("run-mock"));
+    await expect(invoke(client, "agent", {})).rejects.toBeInstanceOf(
+      RunCancelledError
+    );
+  });
+
+  it("does not cancel the run on an ordinary failure", async () => {
+    const { client, invokeSync, cancelRun } = buildMockClient();
+    invokeSync.mockRejectedValueOnce(
+      new RunFailedError("run-mock", null, "boom")
+    );
+    await expect(invoke(client, "agent", {})).rejects.toBeInstanceOf(
+      RunFailedError
+    );
+    expect(cancelRun).not.toHaveBeenCalled();
   });
 });
 
 describe("agents.invoke — timeout + abort", () => {
-  it("throws AgentInvokeTimeoutError and calls cancelRun", async () => {
-    const { client, cancelRun } = buildMockClient();
-    // Real timer with a small budget. Test never emits a terminal event,
-    // so the only way out is the timeout firing.
+  it("maps an expired wait budget to AgentInvokeTimeoutError and cancels the run", async () => {
+    const { client, invokeSync, cancelRun } = buildMockClient();
+    // An expired `timeout_ms` deliberately leaves the run ALIVE server-side,
+    // so the client-side cancel is the only thing stopping a zombie agent.
+    invokeSync.mockRejectedValueOnce(
+      new RunWaitTimeoutError("run-mock", "agent", "running", 20)
+    );
+
+    const err = await invoke(client, "agent", {}, { timeoutMs: 20 }).catch(
+      (e: unknown) => e
+    );
+
+    expect(err).toBeInstanceOf(AgentInvokeTimeoutError);
+    expect((err as AgentInvokeTimeoutError).runId).toBe("run-mock");
+    expect(cancelRun).toHaveBeenCalledWith(
+      "run-mock",
+      expect.stringContaining("timed out")
+    );
+  });
+
+  it("survives a cancelRun that rejects on the timeout path", async () => {
+    const { client, invokeSync, cancelRun } = buildMockClient();
+    invokeSync.mockRejectedValueOnce(
+      new RunWaitTimeoutError("run-mock", "agent", "running", 20)
+    );
+    cancelRun.mockRejectedValueOnce(new Error("cancel failed"));
+
     await expect(
       invoke(client, "agent", {}, { timeoutMs: 20 })
     ).rejects.toBeInstanceOf(AgentInvokeTimeoutError);
-    expect(cancelRun).toHaveBeenCalledWith(
-      "run-mock",
-      expect.stringContaining("aborted")
-    );
   });
 
-  it("aborts mid-wait and calls cancelRun", async () => {
-    const { client, cancelRun } = buildMockClient();
+  it("passes the caller's signal down to the transport", async () => {
+    const { client, invokeSync } = buildMockClient();
     const ac = new AbortController();
+
+    await invoke(client, "agent", {}, { signal: ac.signal });
+
+    const [, opts] = invokeSync.mock.calls[0] as [
+      string,
+      { signal?: AbortSignal },
+    ];
+    expect(opts.signal).toBe(ac.signal);
+  });
+
+  it("aborts mid-wait WITHOUT a client-side cancelRun — the server cancels", async () => {
+    const { client, invokeSync, cancelRun } = buildMockClient();
+    const ac = new AbortController();
+    // Stand in for the real client: the request stays open until the signal
+    // fires, then rejects with AbortError exactly as `send()` does.
+    invokeSync.mockImplementationOnce(
+      async (_name: string, opts: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          opts.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Aborted", "AbortError"))
+          );
+        })
+    );
+
     const promise = invoke(client, "agent", {}, { signal: ac.signal });
-    await flush();
+    await Promise.resolve();
     ac.abort();
+
     await expect(promise).rejects.toThrow("Aborted");
-    expect(cancelRun).toHaveBeenCalled();
+    // Q19: killing the request cancels the run server-side, so a client-side
+    // cancel would be a redundant second write.
+    expect(cancelRun).not.toHaveBeenCalled();
   });
 });
 
-describe("agents.invoke — idempotencyKey + cleanup", () => {
-  it("invokes onRunStarted with runId before terminal event", async () => {
-    const { client, subs } = buildMockClient();
+describe("agents.invoke — onRunStarted", () => {
+  it("invokes onRunStarted with the runId", async () => {
+    const { client } = buildMockClient();
     const seen: string[] = [];
-    const promise = invoke(
+
+    await invoke(
       client,
       "agent",
       {},
-      { onRunStarted: (rid) => { seen.push(rid); } }
+      {
+        onRunStarted: (rid) => {
+          seen.push(rid);
+        },
+      }
     );
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { output: null },
-    });
-    await promise;
+
     expect(seen).toEqual(["run-mock"]);
   });
 
   it("swallows errors thrown by onRunStarted", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(
+    const { client } = buildMockClient();
+
+    const result = await invoke(
       client,
       "agent",
       {},
@@ -284,64 +261,20 @@ describe("agents.invoke — idempotencyKey + cleanup", () => {
         },
       }
     );
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { output: 1 },
-    });
-    const result = await promise;
-    expect(result.output).toBe(1);
+
+    expect(result.output).toEqual({ ok: true });
   });
 
-  it("forwards idempotencyKey to client.invoke", async () => {
-    const { client, trigger, subs } = buildMockClient();
-    const promise = invoke(
-      client,
-      "agent",
-      { x: 1 },
-      { idempotencyKey: "key-abc" }
+  it("does not fire onRunStarted when the run failed", async () => {
+    const { client, invokeSync } = buildMockClient();
+    invokeSync.mockRejectedValueOnce(
+      new RunFailedError("run-mock", null, "boom")
     );
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { output: null },
-    });
-    await promise;
-    expect(trigger).toHaveBeenCalledWith("agent", {
-      data: { x: 1 },
-      idempotencyKey: "key-abc",
-    });
-  });
+    const seen: string[] = [];
 
-  it("unsubscribes on success", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(client, "agent", {});
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.completed",
-      data: { output: null },
-    });
-    await promise;
-    expect(assertDefined(subs[0]).unsubscribe).toHaveBeenCalled();
-  });
-
-  it("unsubscribes on failure path too", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(client, "agent", {});
-    await flush();
-    assertDefined(subs[0]).emit({
-      topic: "system.run.run-mock.failed",
-      data: { error: "x" },
-    });
-    await expect(promise).rejects.toBeTruthy();
-    expect(assertDefined(subs[0]).unsubscribe).toHaveBeenCalled();
-  });
-
-  it("propagates subscription transport errors", async () => {
-    const { client, subs } = buildMockClient();
-    const promise = invoke(client, "agent", {});
-    await flush();
-    assertDefined(subs[0]).emitError("transport blew up");
-    await expect(promise).rejects.toThrow("transport blew up");
+    await expect(
+      invoke(client, "agent", {}, { onRunStarted: (rid) => void seen.push(rid) })
+    ).rejects.toBeInstanceOf(RunFailedError);
+    expect(seen).toEqual([]);
   });
 });

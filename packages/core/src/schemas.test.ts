@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { EventSource } from "./types.js";
 import {
   RunStatusSchema,
+  RunStatusWireSchema,
+  runStatusFromWire,
+  runStatusToWire,
   CompletedStepSchema,
   ResumeContextSchema,
   PushRequestEventSchema,
@@ -9,6 +12,7 @@ import {
   TriggerResponseSchema,
   TriggerSyncResultItemSchema,
   TriggerSyncResponseSchema,
+  InvokeFunctionSyncResponseSchema,
   RunResponseSchema,
   ListRunsResponseSchema,
   HealthResponseSchema,
@@ -32,7 +36,16 @@ import {
 import { SchemaValidationError } from "./errors.js";
 
 describe("RunStatusSchema", () => {
-  it.each(["pending", "running", "completed", "failed", "cancelled", "paused"])(
+  it.each([
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "paused",
+    "waiting_for_capacity",
+    "waiting",
+  ])(
     "should accept valid status: %s",
     (status) => {
       expect(RunStatusSchema.parse(status)).toBe(status);
@@ -43,6 +56,51 @@ describe("RunStatusSchema", () => {
     expect(() => RunStatusSchema.parse("invalid")).toThrow();
     expect(() => RunStatusSchema.parse("")).toThrow();
     expect(() => RunStatusSchema.parse(123)).toThrow();
+  });
+});
+
+describe("RunStatusWireSchema", () => {
+  it.each([
+    ["RUN_STATUS_RUNNING", "running"],
+    ["RUN_STATUS_COMPLETED", "completed"],
+    ["RUN_STATUS_FAILED", "failed"],
+    ["RUN_STATUS_CANCELLED", "cancelled"],
+    ["RUN_STATUS_PAUSED", "paused"],
+    ["RUN_STATUS_WAITING_FOR_CAPACITY", "waiting_for_capacity"],
+    ["RUN_STATUS_WAITING", "waiting"],
+  ])("converts %s to %s", (wireStatus, status) => {
+    expect(runStatusFromWire(wireStatus)).toBe(status);
+  });
+
+  it.each([
+    "RUN_STATUS_UNSPECIFIED",
+    "RUN_STATUS_PENDING",
+    "RUN_STATUS_FUTURE",
+    "failed",
+    "",
+  ])("rejects non-canonical status %s", (status) => {
+    expect(() => RunStatusWireSchema.parse(status)).toThrow();
+  });
+
+  it("reports invalid server statuses as a public schema validation error", () => {
+    expect(() => runStatusFromWire("RUN_STATUS_FUTURE")).toThrow(
+      SchemaValidationError
+    );
+
+    try {
+      runStatusFromWire("RUN_STATUS_FUTURE");
+      expect.unreachable("expected invalid wire status to throw");
+    } catch (error) {
+      expect(error).toMatchObject({
+        name: "SchemaValidationError",
+        code: "VALIDATION_ERROR",
+        retryable: false,
+        message: "Invalid run status from server: RUN_STATUS_FUTURE",
+      });
+      expect(
+        (error as SchemaValidationError).validationErrors
+      ).not.toHaveLength(0);
+    }
   });
 });
 
@@ -335,18 +393,47 @@ describe("RunResponseSchema", () => {
     expect(RunResponseSchema.parse(response)).toEqual(response);
   });
 
-  it("should validate minimal run response", () => {
+  // Connect marshals with protojson EmitUnpopulated:false, so a zero-valued
+  // scalar is OMITTED from the response entirely — never sent as 0 or "". A run
+  // on its first attempt, or one created by a direct invoke, really does arrive
+  // missing these keys. Requiring them made zod throw on valid runs (#1919).
+  //
+  // The previous version of this test supplied `attempt: 0` and
+  // `status: "pending"` explicitly — a body protojson cannot emit, and a status
+  // the proto reserves — so it asserted a shape that never reaches the client.
+  it("decodes a run whose zero-valued fields the server omitted", () => {
     const response = {
       id: "run-1",
-      functionId: "fn-1",
-      eventId: "evt-1",
-      status: "pending",
-      attempt: 0,
-      maxAttempts: 3,
+      status: "RUN_STATUS_RUNNING",
       createdAt: "2024-01-01T00:00:00Z",
       updatedAt: "2024-01-01T00:00:00Z",
     };
-    expect(RunResponseSchema.parse(response)).toEqual(response);
+
+    const parsed = RunResponseSchema.parse(response);
+
+    expect(parsed.id).toBe("run-1");
+    expect(parsed.status).toBe("RUN_STATUS_RUNNING");
+    // Absent on the wire, defaulted here — callers still get the field.
+    expect(parsed.functionId).toBe("");
+    expect(parsed.eventId).toBe("");
+    expect(parsed.attempt).toBe(0);
+    expect(parsed.maxAttempts).toBe(0);
+  });
+
+  // The narrowest body the server can send: protojson omits every zero-valued
+  // field, so a run whose id is the only populated one arrives as a single key.
+  it("decodes a response carrying only the run id", () => {
+    const parsed = RunResponseSchema.parse({ id: "run-1" });
+
+    expect(parsed.id).toBe("run-1");
+    expect(parsed.status).toBe("");
+    expect(parsed.createdAt).toBe("");
+    expect(parsed.updatedAt).toBe("");
+  });
+
+  // id is the one field the server always populates, so it stays required.
+  it("still rejects a response with no id", () => {
+    expect(() => RunResponseSchema.parse({ status: "RUN_STATUS_RUNNING" })).toThrow();
   });
 });
 
@@ -460,6 +547,15 @@ describe("JobAssignmentSchema", () => {
       event: { ...assignment.event, version: 1 },
     };
     expect(JobAssignmentSchema.parse(assignment)).toEqual(expected);
+  });
+
+  it("keeps event.source on the wire (cron exemption, #1948)", () => {
+    const parsed = JobAssignmentSchema.parse({
+      job_id: "job-1", run_id: "run-1", function_id: "fn-1", attempt: 1,
+      event: { id: "evt-1", name: "ironflow/cron.fn-1", data: { type: "cron" }, timestamp: "2024-01-01T00:00:00Z", source: "cron" },
+      completed_steps: [],
+    });
+    expect(parsed.event.source).toBe("cron");
   });
 
   it("should require job_id", () => {
@@ -678,31 +774,34 @@ describe("TriggerSyncResultItemSchema", () => {
     const result = TriggerSyncResultItemSchema.parse({
       runId: "run_123",
       functionId: "my-fn",
-      status: "completed",
+      status: "RUN_STATUS_COMPLETED",
       output: { result: true },
       durationMs: 150,
+      waitTimedOut: true,
     });
     expect(result.runId).toBe("run_123");
     expect(result.status).toBe("completed");
     expect(result.durationMs).toBe(150);
+    expect(result.waitTimedOut).toBe(true);
   });
 
   it("validates without optional fields", () => {
     const result = TriggerSyncResultItemSchema.parse({
       runId: "run_123",
       functionId: "my-fn",
-      status: "failed",
+      status: "RUN_STATUS_FAILED",
       durationMs: 50,
     });
     expect(result.output).toBeUndefined();
     expect(result.error).toBeUndefined();
+    expect(result.waitTimedOut).toBe(false);
   });
 
   it("validates with error field", () => {
     const result = TriggerSyncResultItemSchema.parse({
       runId: "run_123",
       functionId: "my-fn",
-      status: "failed",
+      status: "RUN_STATUS_FAILED",
       error: { message: "timeout", code: "TIMEOUT" },
       durationMs: 30000,
     });
@@ -715,12 +814,42 @@ describe("TriggerSyncResultItemSchema", () => {
   });
 });
 
+// Verbatim from the real server — tests/integration/invoke_function_sync_test.go,
+// TestInvokeFunctionSync_WaitTimeoutKeepsRunAlive. protojson omits zero-valued
+// scalars, so a wait-timeout result carries neither durationMs (never set on
+// that branch) nor output. Both schemas must parse it: without the durationMs
+// default, validate() throws and RunWaitTimeoutError becomes unreachable.
+const waitTimedOutWire = {
+  runId: "f2665086-8758-407b-9eae-6d86ee78e2cc",
+  functionId: "sync-invoke-slow",
+  status: "RUN_STATUS_RUNNING",
+  waitTimedOut: true,
+};
+
+describe("wait-timeout wire body (no durationMs)", () => {
+  it("InvokeFunctionSyncResponseSchema parses it and defaults durationMs to 0", () => {
+    const parsed = InvokeFunctionSyncResponseSchema.parse({ result: waitTimedOutWire });
+    expect(parsed.result.durationMs).toBe(0);
+    expect(parsed.result.waitTimedOut).toBe(true);
+    expect(parsed.result.status).toBe("running");
+  });
+
+  it("TriggerSyncResponseSchema parses it and defaults durationMs to 0", () => {
+    const parsed = TriggerSyncResponseSchema.parse({
+      eventId: "evt_1",
+      results: [waitTimedOutWire],
+    });
+    expect(parsed.results?.[0]?.durationMs).toBe(0);
+    expect(parsed.results?.[0]?.waitTimedOut).toBe(true);
+  });
+});
+
 describe("TriggerSyncResponseSchema", () => {
   it("validates response with results", () => {
     const result = TriggerSyncResponseSchema.parse({
       eventId: "evt_123",
       results: [{
-        runId: "run_1", functionId: "fn-1", status: "completed", durationMs: 100,
+        runId: "run_1", functionId: "fn-1", status: "RUN_STATUS_COMPLETED", durationMs: 100,
       }],
     });
     expect(result.eventId).toBe("evt_123");
@@ -734,6 +863,104 @@ describe("TriggerSyncResponseSchema", () => {
 
   it("rejects missing eventId", () => {
     expect(() => TriggerSyncResponseSchema.parse({ results: [] })).toThrow();
+  });
+});
+
+describe("InvokeFunctionSyncResponseSchema", () => {
+  const wireResult = {
+    runId: "run_123",
+    functionId: "my-fn",
+    status: "RUN_STATUS_COMPLETED",
+    output: { ok: true },
+    durationMs: 150,
+  };
+
+  it("round-trips a single completed result", () => {
+    const parsed = InvokeFunctionSyncResponseSchema.parse({ result: wireResult });
+
+    expect(parsed.result.runId).toBe("run_123");
+    expect(parsed.result.functionId).toBe("my-fn");
+    expect(parsed.result.status).toBe("completed");
+    expect(parsed.result.output).toEqual({ ok: true });
+    expect(parsed.result.durationMs).toBe(150);
+    expect(parsed.result.waitTimedOut).toBe(false);
+  });
+
+  it("round-trips a failed result with its error", () => {
+    const parsed = InvokeFunctionSyncResponseSchema.parse({
+      result: {
+        runId: "run_123",
+        functionId: "my-fn",
+        status: "RUN_STATUS_FAILED",
+        error: { message: "boom", code: "STEP_FAILED" },
+        durationMs: 30,
+      },
+    });
+
+    expect(parsed.result.status).toBe("failed");
+    expect(parsed.result.error?.message).toBe("boom");
+    expect(parsed.result.error?.code).toBe("STEP_FAILED");
+    expect(parsed.result.output).toBeUndefined();
+  });
+
+  it("carries waitTimedOut for a run that outlived its wait budget", () => {
+    const parsed = InvokeFunctionSyncResponseSchema.parse({
+      result: {
+        runId: "run_123",
+        functionId: "my-fn",
+        status: "RUN_STATUS_RUNNING",
+        durationMs: 30_000,
+        waitTimedOut: true,
+      },
+    });
+
+    expect(parsed.result.waitTimedOut).toBe(true);
+    expect(parsed.result.status).toBe("running");
+  });
+
+  it("carries no eventId — run_id is the correlator for a direct invoke", () => {
+    const parsed = InvokeFunctionSyncResponseSchema.parse({
+      result: wireResult,
+      eventId: "evt_123",
+    });
+
+    expect(parsed).not.toHaveProperty("eventId");
+  });
+
+  it("rejects a missing result — the server always sets it", () => {
+    expect(() => InvokeFunctionSyncResponseSchema.parse({})).toThrow();
+  });
+
+  it("rejects a repeated-results payload shaped like TriggerSync", () => {
+    expect(() =>
+      InvokeFunctionSyncResponseSchema.parse({ results: [wireResult], eventId: "evt_1" })
+    ).toThrow();
+  });
+
+  it("throws SchemaValidationError for an unknown wire status", () => {
+    expect(() =>
+      validate(
+        InvokeFunctionSyncResponseSchema,
+        { result: { ...wireResult, status: "RUN_STATUS_FUTURE" } },
+        "invoke sync response"
+      )
+    ).toThrow(SchemaValidationError);
+  });
+
+  it("names the offending path in the validation error", () => {
+    try {
+      validate(
+        InvokeFunctionSyncResponseSchema,
+        { result: { ...wireResult, status: "RUN_STATUS_FUTURE" } },
+        "invoke sync response"
+      );
+      expect.unreachable("should have thrown");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SchemaValidationError);
+      expect(
+        (error as SchemaValidationError).validationErrors?.join(" ")
+      ).toContain("result.status");
+    }
   });
 });
 
@@ -837,5 +1064,56 @@ describe("RegisterFunctionResponseSchema", () => {
   it("validates empty response", () => {
     const result = RegisterFunctionResponseSchema.parse({});
     expect(result.created).toBeUndefined();
+  });
+});
+
+describe("runStatusToWire (#1919)", () => {
+  it("encodes every public status to its canonical proto enum name", () => {
+    expect(runStatusToWire("running")).toBe("RUN_STATUS_RUNNING");
+    expect(runStatusToWire("completed")).toBe("RUN_STATUS_COMPLETED");
+    expect(runStatusToWire("failed")).toBe("RUN_STATUS_FAILED");
+    expect(runStatusToWire("cancelled")).toBe("RUN_STATUS_CANCELLED");
+    expect(runStatusToWire("paused")).toBe("RUN_STATUS_PAUSED");
+    expect(runStatusToWire("waiting_for_capacity")).toBe(
+      "RUN_STATUS_WAITING_FOR_CAPACITY"
+    );
+    expect(runStatusToWire("waiting")).toBe("RUN_STATUS_WAITING");
+  });
+
+  it("round-trips with runStatusFromWire", () => {
+    for (const status of [
+      "running",
+      "completed",
+      "failed",
+      "cancelled",
+      "paused",
+      "waiting_for_capacity",
+      "waiting",
+    ] as const) {
+      expect(runStatusFromWire(runStatusToWire(status))).toBe(status);
+    }
+  });
+
+  // The proto RESERVES RUN_STATUS_PENDING, so a bare uppercase transform would
+  // mint a value the server silently discards. It must fail client-side.
+  it("rejects the retired pending status", () => {
+    expect(() => runStatusToWire("pending")).toThrow();
+  });
+
+  // A plain object literal would resolve these off Object.prototype, return a
+  // truthy function, and silently send an unfiltered request.
+  it("rejects inherited object properties", () => {
+    expect(() => runStatusToWire("toString")).toThrow();
+    expect(() => runStatusToWire("constructor")).toThrow();
+    expect(() => runStatusToWire("hasOwnProperty")).toThrow();
+    expect(() => runStatusToWire("__proto__")).toThrow();
+  });
+
+  it("rejects unknown and non-string values", () => {
+    expect(() => runStatusToWire("nonsense")).toThrow();
+    expect(() => runStatusToWire("COMPLETED")).toThrow();
+    expect(() => runStatusToWire("RUN_STATUS_COMPLETED")).toThrow();
+    expect(() => runStatusToWire(undefined)).toThrow();
+    expect(() => runStatusToWire(3)).toThrow();
   });
 });

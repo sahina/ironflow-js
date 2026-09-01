@@ -63,7 +63,17 @@ export interface SubscriptionClientConfig {
  * Subscription callbacks for event-driven usage
  */
 export interface SubscriptionCallbacks<T = unknown> {
-  /** Called when an event is received */
+  /**
+   * Called when an event is received.
+   *
+   * The handler is not awaited. An `async` handler is fine — manual
+   * acknowledgment needs one — but it runs unsupervised: the next event can be
+   * delivered before it settles, so there is no ordering or backpressure
+   * guarantee, and a rejection becomes an unhandled rejection instead of
+   * reaching `onError`. Catch inside the handler, including around `ack` and
+   * `nak`, and serialize the work yourself if you need ordering or a persisted
+   * cursor.
+   */
   onEvent?: (event: SubscriptionEvent<T>) => void;
   /** Called when a subscription error occurs */
   onError?: (error: SubscriptionErrorInfo) => void;

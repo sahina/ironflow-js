@@ -31,6 +31,7 @@ import { createStepClient, executeCompensations } from "./step.js";
 import { isYieldSignal, type YieldInfo } from "./internal/errors.js";
 import { createProjectionRunner, StreamingUnsupportedError, type ProjectionRunner } from "./projection-runner.js";
 import { createSecretsClient } from "./secrets.js";
+import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
 import { errorDetail } from "./internal/error-detail.js";
 import { SDK_VERSION } from "./version.js";
@@ -645,18 +646,12 @@ class IronflowWorker implements Worker {
     ctx.onStepRecorded = checkpointer.schedule;
 
     const step = createStepClient(ctx);
-    const functionContext: FunctionContext = {
-      event: ctx.event,
-      step,
-      run: ctx.runInfo,
-      logger: ctx.logger,
-      secrets: createSecretsClient(job.context?.secrets),
-    };
 
-    // Only the user handler is wrapped in try/catch. Completion reporting lives
-    // AFTER the try so a network error on sendJobCompleted (the fetch in the
-    // completion call) cannot be misattributed as a handler failure and report a
-    // successful run as failed — parity with the Go SDK (httpJobReporter).
+    // Only the user handler (and its schema check) is wrapped in try/catch.
+    // Completion reporting lives AFTER the try so a network error on
+    // sendJobCompleted (the fetch in the completion call) cannot be
+    // misattributed as a handler failure and report a successful run as
+    // failed — parity with the Go SDK (httpJobReporter).
     let result: unknown;
     try {
       // Check for abort
@@ -664,6 +659,14 @@ class IronflowWorker implements Worker {
         await checkpointer.finish();
         return;
       }
+
+      const functionContext: FunctionContext = {
+        event: await validateEventData(fn, ctx.event),
+        step,
+        run: ctx.runInfo,
+        logger: ctx.logger,
+        secrets: createSecretsClient(job.context?.secrets),
+      };
 
       result = await withRunContext(ctx.runId, () =>
         fn.handler(functionContext)

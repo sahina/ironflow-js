@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   AgentInvokeTimeoutError,
-  NoRunCreatedError,
   IronflowError,
 } from "@ironflow/core";
 
@@ -16,16 +15,6 @@ describe("agents error classes", () => {
     expect(err.retryable).toBe(true);
     expect(err.message).toContain("5000ms");
     expect(err.message).toContain("run-123");
-  });
-
-  it("NoRunCreatedError carries function name and is non-retryable", () => {
-    const err = new NoRunCreatedError("my-agent");
-    expect(err).toBeInstanceOf(IronflowError);
-    expect(err.name).toBe("NoRunCreatedError");
-    expect(err.functionName).toBe("my-agent");
-    expect(err.code).toBe("NO_RUN_CREATED");
-    expect(err.retryable).toBe(false);
-    expect(err.message).toContain("my-agent");
   });
 
   it("error classes survive instanceof across throw", () => {

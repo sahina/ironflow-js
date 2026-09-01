@@ -156,6 +156,16 @@ export interface QueueApi {
  * Note that neither returns `runIds`. A run id cannot exist before the server
  * creates the run, and the whole point here is to answer before contacting the
  * server. Subscribe for the outcome instead.
+ *
+ * `emit` and `streams.append` are still the only queued writes (ADR 0053:
+ * "`emit` and `streams.append` only. `invoke`, `kv().set`, and the admin CRUD
+ * return IDs the caller uses on the next line. `emitSync` throws offline —
+ * request/response by definition"). `invoke()` was on that exclusion list when
+ * it was the async Trigger path, and it stays on it now that it is
+ * `InvokeFunctionSync`: it is request/response like `emitSync`, and more than
+ * that, the server ties the run's lifetime to the request context, so a
+ * deferred invoke has no request to tie to. Reaching it through `.client`
+ * offline fails at the network, unqueued — the same thing `emitSync` does.
  */
 export class OfflineClient {
   /** The full client. Everything not wrapped here lives on it. */
@@ -210,7 +220,7 @@ export class OfflineClient {
       body: {
         event: eventName,
         data,
-        ...(options?.version ? { version: options.version } : {}),
+        ...(options?.version !== undefined ? { version: options.version } : {}),
         idempotency_key: key,
         metadata: options?.metadata,
         namespace: options?.namespace,

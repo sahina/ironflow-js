@@ -22,17 +22,22 @@ ironflow.agents.subscribe(
 ): Subscription;
 ```
 
+**Since ADR 0067, `agents.invoke` is one `InvokeFunctionSync` call** — the server keys on the
+function id, creates exactly one run, waits for it, and returns its outcome. The
+Trigger + subscribe + race compose this document originally specified is gone. Sections below
+that describe that compose are marked with what still applies.
+
 `AgentInvokeOptions`:
-- `timeoutMs?: number` — default `30000`. Local timeout. Triggers `AgentInvokeTimeoutError` and calls `cancelRun(runId)` server-side.
-- `signal?: AbortSignal` — caller cancellation. On abort, throws `AbortError` and calls `cancelRun(runId)`.
+- `timeoutMs?: number` — default `30000`. A **server-side wait budget**, sent as `timeout_ms`; the transport deadline is deliberately longer (`+ SYNC_TRANSPORT_HEADROOM`). On expiry the server returns with the run still alive, and the SDK throws `AgentInvokeTimeoutError` and best-effort calls `cancelRun(runId)`.
+- `signal?: AbortSignal` — caller cancellation. Aborts the HTTP request; the server reads a dead request context as an abandoned caller and cancels the run itself (Q19), then the SDK throws `AbortError`. No client-side `cancelRun` on this path.
 - `idempotencyKey?: string` — opt-in dedup. Server returns the same `runId` for repeat calls with same key (existing event-idempotency path).
-- `replay?: number` — events to replay on subscribe. Default `1000` (matches the server's `ReplayMaxEvents` cap). Lowering this risks missing terminal events for step-heavy agents. See "Race window" below.
-- `onRunStarted?: (runId) => void | Promise<void>` — surfaces the runId as soon as Trigger returns. Awaited by the SDK so async setup (e.g., attaching a watcher subscription) finishes before terminal events dispatch.
+- `replay?: number` — **deprecated, unread.** `invoke` no longer subscribes, so there is no replay budget to size. Pass it to `agents.subscribe` instead.
+- `onRunStarted?: (runId) => void | Promise<void>` — **deprecated.** Fires AFTER the run settles. The sync RPC returns the runId and the terminal outcome in the same response, so no earlier moment exists on the client; attaching a live progress subscription from this hook no longer works.
 
 `AgentInvokeResult<TOutput>`:
 - `runId: string`
-- `output: TOutput | undefined` — populated from terminal `run.completed` event payload.
-- `durationMs: number`
+- `output: TOutput | undefined` — the run's output, straight from the sync response.
+- `durationMs: number` — client wall-clock around the call, not the server's run duration.
 
 ## Run event taxonomy
 
@@ -60,6 +65,11 @@ Source: `internal/pubsub/types.go:187-197`, `internal/engine/event_publisher.go:
 `agents.invoke` ignores non-terminal events for resolution. Step events still surface to `agents.subscribe` callbacks (`onStep`).
 
 ## Race window
+
+**No longer applies to `agents.invoke`** — issue #626 was the escalation path named in the D10
+gate below, and it shipped: the single `InvokeFunctionSync` call has no window between run
+creation and subscribe attach, because it never attaches. This section is retained because it
+still describes `agents.subscribe`, which callers attach by hand.
 
 ```
 t0  Browser  POST /Trigger
@@ -91,19 +101,28 @@ IronflowError
 ├── ValidationError       (existing)
 ├── RunFailedError        (existing) — agents.invoke throws on .failed
 ├── RunCancelledError     (existing) — agents.invoke throws on .cancelled
+├── RunWaitTimeoutError   (existing) — thrown by client.invoke; agents.invoke maps it
 ├── AgentInvokeTimeoutError  (NEW, B-3 S1)
-└── NoRunCreatedError        (NEW, B-3 S1)
+└── (NoRunCreatedError — DELETED, see below)
 ```
 
-`AgentInvokeTimeoutError(runId, timeoutMs)`: thrown when local timeout elapses before terminal event. SDK best-effort calls `client.cancelRun(runId)` to stop server-side execution.
+`RunFailedError` / `RunCancelledError` now come out of `client.invoke()` rather than out of a
+terminal event; `agents.invoke` lets them through unchanged.
 
-`NoRunCreatedError(name)`: thrown when the Trigger response contains an empty `runIds` array. Indicates server misconfiguration or function not registered.
+`AgentInvokeTimeoutError(runId, timeoutMs)`: thrown when the wait budget expires. The server
+deliberately leaves the run ALIVE in that case, so the SDK best-effort calls
+`client.cancelRun(runId)` to stop it.
+
+`NoRunCreatedError`: **deleted in ADR 0067.** It reported an empty `runIds` array in a Trigger
+response; `InvokeFunctionSyncResponse.result` is required, so a missing run is a
+schema-validation failure instead. Nothing could throw it any more, so it is gone from
+`@ironflow/core` rather than left as a handler someone would write against.
 
 ## AbortSignal
 
 `opts.signal` follows browser fetch idiom:
-- If signal is already aborted at call entry: throw `AbortError` immediately, no Trigger call.
-- If signal aborts during the wait: throw `AbortError`, call `client.cancelRun(runId)`, unsubscribe.
+- If signal is already aborted at call entry: throw `AbortError` immediately, no network I/O.
+- If signal aborts during the wait: abort the HTTP request and throw `AbortError`. The server cancels the run because its request context died (Q19) — the SDK does NOT call `cancelRun`.
 - AbortError is a standard `DOMException` with name `'AbortError'`, not a custom class.
 
 ## Idempotency and retry
@@ -117,12 +136,13 @@ Without `idempotencyKey`: each call creates a new run. Caller is responsible for
 
 ## Cleanup contract
 
-Every exit path of `agents.invoke` MUST:
-1. Unsubscribe the subscription.
-2. Clear the timeout.
-3. On error / timeout / abort: best-effort `cancelRun(runId)` (only if a runId was obtained).
+`agents.invoke` holds no subscription and arms no timer, so there is nothing to leak: the
+single request is the whole lifecycle. What remains:
+1. On an expired wait budget: best-effort `cancelRun(runId)`, because the server left the run running.
+2. On abort: nothing — the server already cancelled the run.
 
-Implementation uses `try/finally`. Verified by `tests/integration/agents-leak.test.ts`: 100 invokes with 50% failure → SubscriptionManager active-sub-count == 0.
+`tests/integration/agents-leak.test.ts` asserted a SubscriptionManager active-sub-count of 0
+after 100 invokes; that count is now trivially 0 for `agents.invoke`.
 
 ## Authorization scope
 

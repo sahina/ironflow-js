@@ -41,6 +41,7 @@ import { createStepClient, executeCompensations } from "./step.js";
 import { isYieldSignal } from "./internal/errors.js";
 import { isRetryable } from "@ironflow/core";
 import { createSecretsClient } from "./secrets.js";
+import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
 import { SDK_VERSION } from "./version.js";
 
@@ -473,6 +474,7 @@ class StreamingWorker implements Worker {
           name: job.event.name,
           data: job.event.data ?? {},
           timestamp: timestampToISO(job.event.timestamp),
+          source: job.event.source || undefined,
         }
       : {
           id: "",
@@ -497,20 +499,20 @@ class StreamingWorker implements Worker {
     }, undefined, undefined, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
 
     const step = createStepClient(ctx);
-    const functionContext: FunctionContext = {
-      event: ctx.event,
-      step,
-      run: ctx.runInfo,
-      logger: ctx.logger,
-      secrets: createSecretsClient(job.context?.secrets),
-    };
-
     const startTime = Date.now();
 
     try {
       if (signal.aborted) {
         return;
       }
+
+      const functionContext: FunctionContext = {
+        event: await validateEventData(fn, ctx.event),
+        step,
+        run: ctx.runInfo,
+        logger: ctx.logger,
+        secrets: createSecretsClient(job.context?.secrets),
+      };
 
       const result = await withRunContext(ctx.runId, () =>
         fn.handler(functionContext)

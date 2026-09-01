@@ -265,119 +265,6 @@ describe("patchStep behavior", () => {
   });
 });
 
-describe("resumeRun behavior", () => {
-  it("should POST to /api/v1/runs/resume with correct body", async () => {
-    const originalFetch = global.fetch;
-    const mockResponse = { id: "run-1", status: "running" };
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(mockResponse),
-    });
-    global.fetch = mockFetch;
-
-    const serverUrl = "http://localhost:9123";
-    const runId = "run-1";
-    const fromStep = "step-3";
-
-    async function resumeRun(
-      serverUrl: string,
-      runId: string,
-      fromStep?: string
-    ): Promise<unknown> {
-      const url = `${serverUrl}/api/v1/runs/resume`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: runId, from_step: fromStep || "" }),
-      });
-      if (!response.ok) {
-        throw new Error(`Resume run failed: ${response.status}`);
-      }
-      return response.json();
-    }
-
-    const result = await resumeRun(serverUrl, runId, fromStep);
-
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, options] = assertDefined(mockFetch.mock.calls[0]);
-    const opts = assertDefined(options);
-    expect(url).toBe("http://localhost:9123/api/v1/runs/resume");
-    expect(opts.method).toBe("POST");
-    expect((opts.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
-    const body = JSON.parse(opts.body as string);
-    expect(body.run_id).toBe("run-1");
-    expect(body.from_step).toBe("step-3");
-    expect(result).toEqual(mockResponse);
-
-    global.fetch = originalFetch;
-  });
-
-  it("should default from_step to empty string when not provided", async () => {
-    const originalFetch = global.fetch;
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ id: "run-1" }),
-    });
-    global.fetch = mockFetch;
-
-    async function resumeRun(
-      serverUrl: string,
-      runId: string,
-      fromStep?: string
-    ): Promise<unknown> {
-      const url = `${serverUrl}/api/v1/runs/resume`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: runId, from_step: fromStep || "" }),
-      });
-      if (!response.ok) {
-        throw new Error(`Resume run failed: ${response.status}`);
-      }
-      return response.json();
-    }
-
-    await resumeRun("http://localhost:9123", "run-2");
-
-    const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
-    expect(body.from_step).toBe("");
-
-    global.fetch = originalFetch;
-  });
-
-  it("should throw when response is not ok", async () => {
-    const originalFetch = global.fetch;
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: () => Promise.resolve('{"message":"internal error"}'),
-    });
-
-    async function resumeRun(
-      serverUrl: string,
-      runId: string,
-      fromStep?: string
-    ): Promise<unknown> {
-      const url = `${serverUrl}/api/v1/runs/resume`;
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_id: runId, from_step: fromStep || "" }),
-      });
-      if (!response.ok) {
-        throw new Error(`Resume run failed: ${response.status}`);
-      }
-      return response.json();
-    }
-
-    await expect(
-      resumeRun("http://localhost:9123", "run-fail")
-    ).rejects.toThrow("Resume run failed: 500");
-
-    global.fetch = originalFetch;
-  });
-});
-
 describe("listFunctions behavior", () => {
   it("should GET /api/v1/functions and return functions array", async () => {
     const originalFetch = global.fetch;
@@ -1789,68 +1676,246 @@ describe("IronflowClient (real module)", () => {
   // --------------------------------------------------------------------------
 
   describe("invoke", () => {
-    it("sends correct ConnectRPC request and returns result", async () => {
+    const okResult = (over: Record<string, unknown> = {}) => ({
+      ok: true,
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            result: {
+              runId: "run_1",
+              functionId: "my-fn",
+              status: "RUN_STATUS_COMPLETED",
+              output: { ok: true },
+              durationMs: 7,
+              ...over,
+            },
+          })
+        ),
+    });
+
+    it("calls InvokeFunctionSync with the function id and returns one result", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        text: () =>
-          Promise.resolve(
-            JSON.stringify({ runIds: ["run_1"], eventId: "evt_1" })
-          ),
-      });
+      const mockFetch = vi.fn().mockResolvedValue(okResult());
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await ironflow.invoke("my-fn", {
-        data: { key: "value" },
+      const result = await ironflow.invoke("my-fn", { data: { key: "value" } });
+
+      expect(result).toEqual({
+        runId: "run_1",
+        functionId: "my-fn",
+        status: "completed",
+        output: { ok: true },
+        error: undefined,
+        durationMs: 7,
       });
+      // No waitTimedOut on the single-run shape — invoke throws instead.
+      expect("waitTimedOut" in result).toBe(false);
 
-      expect(result.runIds).toEqual(["run_1"]);
-      expect(result.eventId).toBe("evt_1");
-
-      // Verify fetch was called with correct URL and body
       expect(mockFetch).toHaveBeenCalledOnce();
       const [url, opts] = assertDefined(mockFetch.mock.calls[0]);
       expect(url).toBe(
-        "http://localhost:9123/ironflow.v1.IronflowService/Trigger"
+        "http://localhost:9123/ironflow.v1.IronflowService/InvokeFunctionSync"
       );
       expect(opts.method).toBe("POST");
       const body = JSON.parse(opts.body);
-      expect(body.event).toBe("my-fn");
+      expect(body.function_id).toBe("my-fn");
+      expect(body.event).toBeUndefined();
       expect(body.data).toEqual({ key: "value" });
+      expect(body.timeout_ms).toBe(30000);
     });
 
-    it("defaults runIds to empty array when missing", async () => {
+    it("threads idempotencyKey, metadata and a custom timeout into the body", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue(okResult());
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.invoke("my-fn", {
+        data: {},
+        timeout: 90000,
+        idempotencyKey: "idem-invoke-1",
+        metadata: { source: "test" },
+      });
+
+      const body = JSON.parse(
+        assertDefined(mockFetch.mock.calls[0]?.[1]).body as string
+      );
+      expect(body.timeout_ms).toBe(90000);
+      expect(body.idempotency_key).toBe("idem-invoke-1");
+      expect(body.metadata).toEqual({ source: "test" });
+    });
+
+    it("does not turn `timeout` into a transport abort", async () => {
+      // The server cancels the run when the request context dies, so the wait
+      // budget must never become a fetch deadline. The response lands at 25ms,
+      // BETWEEN the 20ms budget and the 20ms + SYNC_TRANSPORT_HEADROOM
+      // transport deadline: a deadline set to the bare budget aborts first,
+      // which the server reads as an abandoned caller and cancels the run.
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        timeout: 10,
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockImplementation(
+        (_url: string, options: RequestInit) =>
+          new Promise((resolve, reject) => {
+            const timer = setTimeout(() => resolve(okResult()), 25);
+            options.signal?.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(new DOMException("aborted", "AbortError"));
+            });
+          })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      await expect(
+        ironflow.invoke("slow-fn", { data: {}, timeout: 20 })
+      ).resolves.toMatchObject({ runId: "run_1", status: "completed" });
+    });
+
+    it("throws RunWaitTimeoutError when the wait budget expired", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          okResult({
+            runId: "run_waiting",
+            status: "RUN_STATUS_RUNNING",
+            output: null,
+            waitTimedOut: true,
+          })
+        )
+      );
+
+      await expect(
+        ironflow.invoke("my-fn", { data: {}, timeout: 1234 })
+      ).rejects.toMatchObject({
+        name: "RunWaitTimeoutError",
+        code: "RUN_WAIT_TIMEOUT",
+        runId: "run_waiting",
+        runStatus: "running",
+        timeoutMs: 1234,
+      });
+    });
+
+    it("throws RunFailedError when the run failed", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          okResult({
+            runId: "run_fail",
+            status: "RUN_STATUS_FAILED",
+            output: { partial: true },
+            error: { message: "something broke", code: "STEP_FAILED" },
+          })
+        )
+      );
+
+      const err = (await ironflow
+        .invoke("my-fn", { data: {} })
+        .catch((e: unknown) => e)) as Record<string, unknown> & {
+        constructor: { name: string };
+      };
+      expect(err.constructor.name).toBe("RunFailedError");
+      expect(err.runId).toBe("run_fail");
+      expect(err.code).toBe("RUN_FAILED");
+      expect(err.message).toBe("something broke");
+      expect(err.output).toEqual({ partial: true });
+    });
+
+    it("throws RunCancelledError when the run was cancelled", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(
+          okResult({ runId: "run_cancel", status: "RUN_STATUS_CANCELLED", output: null })
+        )
+      );
+
+      await expect(ironflow.invoke("my-fn", { data: {} })).rejects.toMatchObject({
+        name: "RunCancelledError",
+        code: "RUN_CANCELLED",
+        runId: "run_cancel",
+      });
+    });
+
+    it("rejects a response with no result — the field is required", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       vi.stubGlobal(
         "fetch",
         vi.fn().mockResolvedValue({
           ok: true,
-          text: () => Promise.resolve(JSON.stringify({ eventId: "evt_2" })),
+          text: () => Promise.resolve(JSON.stringify({})),
         })
       );
 
-      const result = await ironflow.invoke("fn-2", { data: {} });
-      expect(result.runIds).toEqual([]);
-      expect(result.eventId).toBe("evt_2");
+      await expect(ironflow.invoke("my-fn", { data: {} })).rejects.toMatchObject({
+        name: "ValidationError",
+        code: "VALIDATION_ERROR",
+      });
     });
 
-    it("includes auth header when apiKey is configured", async () => {
+    it("aborts the transport when the caller's signal fires", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      let aborted = false;
+      const mockFetch = vi.fn().mockImplementation(
+        (_url: string, options: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            options.signal?.addEventListener("abort", () => {
+              aborted = true;
+              reject(new DOMException("aborted", "AbortError"));
+            });
+          })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const ac = new AbortController();
+      const pending = ironflow.invoke("my-fn", {
+        data: {},
+        signal: ac.signal,
+      });
+      ac.abort();
+
+      // AbortError, NOT a retryable TIMEOUT — the caller cancelled on purpose.
+      await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+      expect(aborted).toBe(true);
+    });
+
+    it("never reaches the network when the signal is already aborted", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockImplementation(
+        (_url: string, options: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            options.signal?.addEventListener("abort", () =>
+              reject(new DOMException("aborted", "AbortError"))
+            );
+          })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const ac = new AbortController();
+      ac.abort();
+
+      await expect(
+        ironflow.invoke("my-fn", { data: {}, signal: ac.signal })
+      ).rejects.toMatchObject({ name: "AbortError" });
+    });
+
+    it("includes auth and environment headers", async () => {
       ironflow.configure({
         serverUrl: "http://localhost:9123",
+        environment: "staging",
         auth: { apiKey: "test-key-123" },
         logger: false,
       });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        text: () =>
-          Promise.resolve(JSON.stringify({ eventId: "evt_3", runIds: [] })),
-      });
+      const mockFetch = vi.fn().mockResolvedValue(okResult());
       vi.stubGlobal("fetch", mockFetch);
 
       await ironflow.invoke("fn-3", { data: {} });
 
       const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
       expect(headers["Authorization"]).toBe("Bearer test-key-123");
+      expect(headers["X-Ironflow-Environment"]).toBe("staging");
     });
 
     it("includes auth header when token is configured", async () => {
@@ -1859,36 +1924,13 @@ describe("IronflowClient (real module)", () => {
         auth: { token: "jwt-token-456" },
         logger: false,
       });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        text: () =>
-          Promise.resolve(JSON.stringify({ eventId: "evt_4", runIds: [] })),
-      });
+      const mockFetch = vi.fn().mockResolvedValue(okResult());
       vi.stubGlobal("fetch", mockFetch);
 
       await ironflow.invoke("fn-4", { data: {} });
 
       const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
       expect(headers["Authorization"]).toBe("Bearer jwt-token-456");
-    });
-
-    it("includes environment header", async () => {
-      ironflow.configure({
-        serverUrl: "http://localhost:9123",
-        environment: "staging",
-        logger: false,
-      });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        text: () =>
-          Promise.resolve(JSON.stringify({ eventId: "evt_5", runIds: [] })),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      await ironflow.invoke("fn-5", { data: {} });
-
-      const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
-      expect(headers["X-Ironflow-Environment"]).toBe("staging");
     });
   });
 
@@ -1984,7 +2026,7 @@ describe("IronflowClient (real module)", () => {
       });
     });
 
-    it("normalizes lowercase status without prefix", async () => {
+    it("rejects a lowercase wire status", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       vi.stubGlobal(
         "fetch",
@@ -2006,11 +2048,14 @@ describe("IronflowClient (real module)", () => {
         })
       );
 
-      const run = await ironflow.getRun("run_4");
-      expect(run.status).toBe("cancelled");
+      await expect(ironflow.getRun("run_4")).rejects.toMatchObject({
+        name: "SchemaValidationError",
+        code: "VALIDATION_ERROR",
+        retryable: false,
+      });
     });
 
-    it("falls back to failed for unknown status", async () => {
+    it("rejects an unknown wire status", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       vi.stubGlobal(
         "fetch",
@@ -2032,8 +2077,11 @@ describe("IronflowClient (real module)", () => {
         })
       );
 
-      const run = await ironflow.getRun("run_5");
-      expect(run.status).toBe("failed");
+      await expect(ironflow.getRun("run_5")).rejects.toMatchObject({
+        name: "SchemaValidationError",
+        code: "VALIDATION_ERROR",
+        retryable: false,
+      });
     });
 
     it("converts date strings to Date objects", async () => {
@@ -2048,7 +2096,7 @@ describe("IronflowClient (real module)", () => {
                 id: "run_6",
                 functionId: "fn-6",
                 eventId: "evt-6",
-                status: "completed",
+                status: "RUN_STATUS_COMPLETED",
                 attempt: 1,
                 maxAttempts: 3,
                 startedAt: "2026-01-01T00:00:00Z",
@@ -2079,7 +2127,7 @@ describe("IronflowClient (real module)", () => {
                 id: "run_7",
                 functionId: "fn-7",
                 eventId: "evt-7",
-                status: "pending",
+                status: "RUN_STATUS_RUNNING",
                 attempt: 1,
                 maxAttempts: 3,
                 createdAt: "2026-01-01T00:00:00Z",
@@ -2167,7 +2215,8 @@ describe("IronflowClient (real module)", () => {
 
       const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
       expect(body.function_id).toBe("fn-x");
-      expect(body.status).toBe("COMPLETED");
+      // Protobuf enum field: only the canonical name survives the trip (#1919).
+      expect(body.status).toBe("RUN_STATUS_COMPLETED");
       expect(body.limit).toBe(10);
       expect(body.cursor).toBe("page2");
     });
@@ -2364,7 +2413,7 @@ describe("IronflowClient (real module)", () => {
   // --------------------------------------------------------------------------
 
   describe("emitSync", () => {
-    it("returns EmitSyncResult when run completes successfully", async () => {
+    it("returns one result per matched run", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -2375,7 +2424,7 @@ describe("IronflowClient (real module)", () => {
                 {
                   runId: "run_abc123",
                   functionId: "my-function",
-                  status: "completed",
+                  status: "RUN_STATUS_COMPLETED",
                   output: { total: 99.99 },
                   durationMs: 42,
                 },
@@ -2386,13 +2435,18 @@ describe("IronflowClient (real module)", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const result = await ironflow.emitSync("order.placed", { orderId: "123" });
+      const results = await ironflow.emitSync("order.placed", {
+        orderId: "123",
+      });
 
+      expect(results).toHaveLength(1);
+      const result = assertDefined(results[0]);
       expect(result.runId).toBe("run_abc123");
       expect(result.functionId).toBe("my-function");
       expect(result.status).toBe("completed");
       expect(result.output).toEqual({ total: 99.99 });
       expect(result.durationMs).toBe(42);
+      expect(result.waitTimedOut).toBe(false);
 
       const [url, opts] = assertDefined(mockFetch.mock.calls[0]);
       expect(url).toBe(
@@ -2403,6 +2457,146 @@ describe("IronflowClient (real module)", () => {
       expect(body.event).toBe("order.placed");
       expect(body.data).toEqual({ orderId: "123" });
       expect(body.timeout_ms).toBe(30000);
+    });
+
+    it("returns EVERY run of a fan-out, dropping none", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                results: [
+                  {
+                    runId: "run_1",
+                    functionId: "fn-a",
+                    status: "RUN_STATUS_COMPLETED",
+                    output: { a: 1 },
+                    durationMs: 3,
+                  },
+                  {
+                    runId: "run_2",
+                    functionId: "fn-b",
+                    status: "RUN_STATUS_COMPLETED",
+                    output: { b: 2 },
+                    durationMs: 4,
+                  },
+                  {
+                    runId: "run_3",
+                    functionId: "fn-c",
+                    status: "RUN_STATUS_COMPLETED",
+                    output: { c: 3 },
+                    durationMs: 5,
+                  },
+                ],
+                eventId: "evt_fan",
+              })
+            ),
+        })
+      );
+
+      const results = await ironflow.emitSync("order.placed", {});
+
+      expect(results.map((r) => r.runId)).toEqual(["run_1", "run_2", "run_3"]);
+      expect(results.map((r) => r.functionId)).toEqual(["fn-a", "fn-b", "fn-c"]);
+      expect(results.map((r) => r.output)).toEqual([{ a: 1 }, { b: 2 }, { c: 3 }]);
+    });
+
+    it("reports a mixed fan-out per run instead of throwing", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                results: [
+                  {
+                    runId: "run_ok",
+                    functionId: "fn-ok",
+                    status: "RUN_STATUS_COMPLETED",
+                    output: { ok: true },
+                    durationMs: 2,
+                  },
+                  {
+                    runId: "run_fail",
+                    functionId: "fn-fail",
+                    status: "RUN_STATUS_FAILED",
+                    output: { partial: true },
+                    error: { message: "something broke", code: "STEP_FAILED" },
+                    durationMs: 5,
+                  },
+                  {
+                    runId: "run_cancel",
+                    functionId: "fn-cancel",
+                    status: "RUN_STATUS_CANCELLED",
+                    output: null,
+                    durationMs: 1,
+                  },
+                  {
+                    runId: "run_waiting",
+                    functionId: "fn-slow",
+                    status: "RUN_STATUS_RUNNING",
+                    output: null,
+                    waitTimedOut: true,
+                  },
+                ],
+                eventId: "evt_mixed",
+              })
+            ),
+        })
+      );
+
+      // The whole point of Q12: one failed run must not hide the other three.
+      const results = await ironflow.emitSync("order.placed", {});
+
+      expect(results).toHaveLength(4);
+      expect(results.map((r) => r.status)).toEqual([
+        "completed",
+        "failed",
+        "cancelled",
+        "running",
+      ]);
+      expect(assertDefined(results[1]).error).toEqual({
+        message: "something broke",
+        code: "STEP_FAILED",
+      });
+      expect(assertDefined(results[1]).output).toEqual({ partial: true });
+      expect(assertDefined(results[2]).error).toBeUndefined();
+      expect(assertDefined(results[3]).waitTimedOut).toBe(true);
+      expect(results.filter((r) => r.waitTimedOut)).toHaveLength(1);
+    });
+
+    it("returns an empty array when the event matched nothing", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(JSON.stringify({ results: [], eventId: "evt_empty" })),
+        })
+      );
+
+      // Not an error: an event with no matching trigger legitimately produces
+      // no runs — the server returns `results: []` on success.
+      await expect(ironflow.emitSync("test.event", {})).resolves.toEqual([]);
+    });
+
+    it("returns an empty array when results is omitted entirely", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () => Promise.resolve(JSON.stringify({ eventId: "evt_none" })),
+        })
+      );
+
+      await expect(ironflow.emitSync("test.event", {})).resolves.toEqual([]);
     });
 
     it("passes custom timeout in request body", async () => {
@@ -2416,7 +2610,7 @@ describe("IronflowClient (real module)", () => {
                 {
                   runId: "run_t",
                   functionId: "fn",
-                  status: "completed",
+                  status: "RUN_STATUS_COMPLETED",
                   output: null,
                   durationMs: 1,
                 },
@@ -2433,7 +2627,7 @@ describe("IronflowClient (real module)", () => {
       expect(body.timeout_ms).toBe(60000);
     });
 
-    it("throws RunFailedError when run status is failed", async () => {
+    it("threads idempotencyKey into the request body", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -2442,27 +2636,240 @@ describe("IronflowClient (real module)", () => {
             JSON.stringify({
               results: [
                 {
-                  runId: "run_fail",
-                  functionId: "my-function",
-                  status: "failed",
+                  runId: "run_i",
+                  functionId: "fn",
+                  status: "RUN_STATUS_COMPLETED",
                   output: null,
-                  error: { message: "something broke", code: "STEP_FAILED" },
-                  durationMs: 5,
+                  durationMs: 1,
                 },
               ],
-              eventId: "evt_f",
+              eventId: "evt_i",
             })
           ),
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const err = await ironflow.emitSync("order.placed", {}).catch((e) => e);
-      expect(err.constructor.name).toBe("RunFailedError");
-      expect(err.runId).toBe("run_fail");
-      expect(err.code).toBe("RUN_FAILED");
+      await ironflow.emitSync("ping", {}, { idempotencyKey: "idem-emit-1" });
+
+      const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
+      expect(body.idempotency_key).toBe("idem-emit-1");
     });
 
-    it("throws RunCancelledError when run status is cancelled", async () => {
+    // #1955. TriggerSync only gained a version field in that change, so the
+    // option it reaches is new on both sides of the wire.
+    it("sends the schema version on emitSync", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () =>
+          Promise.resolve(JSON.stringify({ results: [], eventId: "evt_v" })),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.emitSync("ping", {}, { version: 2 });
+
+      const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
+      expect(body.version).toBe(2);
+    });
+
+    // The emit guard moved off truthiness so a negative reaches the server and
+    // returns a 400 with the reason, rather than being dropped and emitted at
+    // version 1. Under the old `options?.version ? ... : {}` this fails.
+    it("forwards a negative version on emit instead of dropping it", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () =>
+          Promise.resolve(JSON.stringify({ runIds: [], eventId: "evt_neg" })),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.emit("ping", {}, { version: -1 });
+
+      const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
+      expect(body.version).toBe(-1);
+    });
+
+    it("omits idempotency_key when none is given", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () =>
+          Promise.resolve(JSON.stringify({ results: [], eventId: "evt_n" })),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await ironflow.emitSync("ping", {});
+
+      const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
+      expect("idempotency_key" in body).toBe(false);
+    });
+
+    it("lets the per-call wait exceed the global request timeout", async () => {
+      ironflow.configure({
+        serverUrl: "http://localhost:9123",
+        timeout: 10,
+        logger: false,
+      });
+      const mockFetch = vi.fn().mockImplementation(
+        (_url: string, options: RequestInit) =>
+          new Promise((resolve, reject) => {
+            const responseTimer = setTimeout(
+              () =>
+                resolve({
+                  ok: true,
+                  text: () =>
+                    Promise.resolve(
+                      JSON.stringify({
+                        results: [
+                          {
+                            runId: "run_slow",
+                            functionId: "slow-function",
+                            status: "RUN_STATUS_COMPLETED",
+                            output: { done: true },
+                            durationMs: 25,
+                          },
+                        ],
+                        eventId: "evt_slow",
+                      })
+                    ),
+                }),
+              25
+            );
+            options.signal?.addEventListener("abort", () => {
+              clearTimeout(responseTimer);
+              reject(new DOMException("aborted", "AbortError"));
+            });
+          })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      // `timeout` is a server-side budget, never a fetch deadline: an abort
+      // here would cancel the run and make `waitTimedOut` unobservable. The
+      // response lands at 25ms, BETWEEN the 20ms budget and the
+      // 20ms + SYNC_TRANSPORT_HEADROOM deadline, so a deadline set to the bare
+      // budget fails this test.
+      const results = await ironflow.emitSync("work.started", {}, { timeout: 20 });
+      expect(assertDefined(results[0])).toMatchObject({
+        runId: "run_slow",
+        status: "completed",
+      });
+    });
+
+    it("reports an expired wait budget as waitTimedOut, not a throw", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                results: [
+                  {
+                    runId: "run_waiting",
+                    functionId: "slow-function",
+                    status: "RUN_STATUS_WAITING",
+                    waitTimedOut: true,
+                  },
+                ],
+                eventId: "evt_waiting",
+              })
+            ),
+        })
+      );
+
+      const results = await ironflow.emitSync("work.started", {}, { timeout: 1234 });
+      expect(assertDefined(results[0])).toMatchObject({
+        runId: "run_waiting",
+        functionId: "slow-function",
+        status: "waiting",
+        waitTimedOut: true,
+      });
+    });
+
+    it("reports a failed run in the result, not as RunFailedError", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                results: [
+                  {
+                    runId: "run_fail",
+                    functionId: "my-function",
+                    status: "RUN_STATUS_FAILED",
+                    output: { partial: true },
+                    error: { message: "something broke", code: "STEP_FAILED" },
+                    durationMs: 5,
+                  },
+                ],
+                eventId: "evt_f",
+              })
+            ),
+        })
+      );
+
+      const results = await ironflow.emitSync("order.placed", {});
+      const result = assertDefined(results[0]);
+      expect(result.status).toBe("failed");
+      expect(result.error).toEqual({
+        message: "something broke",
+        code: "STEP_FAILED",
+      });
+      expect(result.output).toEqual({ partial: true });
+    });
+
+    it("reports a cancelled run in the result, not as RunCancelledError", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                results: [
+                  {
+                    runId: "run_cancel",
+                    functionId: "my-function",
+                    status: "RUN_STATUS_CANCELLED",
+                    output: null,
+                    durationMs: 0,
+                  },
+                ],
+                eventId: "evt_c",
+              })
+            ),
+        })
+      );
+
+      const results = await ironflow.emitSync("order.placed", {});
+      expect(assertDefined(results[0]).status).toBe("cancelled");
+    });
+
+    it("still throws on a transport failure", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 503,
+          text: () =>
+            Promise.resolve(JSON.stringify({ message: "engine unavailable" })),
+        })
+      );
+
+      await expect(ironflow.emitSync("order.placed", {})).rejects.toMatchObject({
+        status: 503,
+        retryable: true,
+      });
+    });
+
+    it("rejects an unspecified wire status", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -2471,39 +2878,23 @@ describe("IronflowClient (real module)", () => {
             JSON.stringify({
               results: [
                 {
-                  runId: "run_cancel",
+                  runId: "run_unspecified",
                   functionId: "my-function",
-                  status: "cancelled",
-                  output: null,
+                  status: "RUN_STATUS_UNSPECIFIED",
                   durationMs: 0,
                 },
               ],
-              eventId: "evt_c",
+              eventId: "evt_unspecified",
             })
           ),
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const err = await ironflow.emitSync("order.placed", {}).catch((e) => e);
-      expect(err.constructor.name).toBe("RunCancelledError");
-      expect(err.runId).toBe("run_cancel");
-      expect(err.code).toBe("RUN_CANCELLED");
-    });
-
-    it("throws IronflowError when server returns empty results", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        text: () =>
-          Promise.resolve(
-            JSON.stringify({ results: [], eventId: "evt_empty" })
-          ),
+      await expect(ironflow.emitSync("order.placed", {})).rejects.toMatchObject({
+        name: "ValidationError",
+        code: "VALIDATION_ERROR",
+        retryable: false,
       });
-      vi.stubGlobal("fetch", mockFetch);
-
-      await expect(ironflow.emitSync("test.event", {})).rejects.toThrow(
-        "No results returned from TriggerSync"
-      );
     });
 
     it("throws when not configured", async () => {
@@ -2564,40 +2955,68 @@ describe("IronflowClient (real module)", () => {
   });
 
   // --------------------------------------------------------------------------
-  // resumeRun (uses direct fetch, not request() helper)
+  // resumeRun (#1963: on the Connect RPC, via request(), like getRun/cancelRun)
   // --------------------------------------------------------------------------
 
   describe("resumeRun", () => {
-    it("POSTs to /api/v1/runs/resume with correct body", async () => {
+    it("POSTs the ResumeRun RPC with lowerCamel proto fields", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "run_re", status: "running" }),
+        status: 200,
+        // protojson, same shape getRun and cancelRun already decode. It used to
+        // be the REST route's snake_case store.Run, which needed a decoder of
+        // its own (mapRestRunResponse, deleted with this change).
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              id: "run_re",
+              status: "RUN_STATUS_RUNNING",
+              functionId: "fn-re",
+              eventId: "evt-re",
+              attempt: 2,
+              maxAttempts: 3,
+              createdAt: "2025-01-01T00:00:00Z",
+              updatedAt: "2025-01-01T00:01:00Z",
+            })
+          ),
       });
       vi.stubGlobal("fetch", mockFetch);
 
       const result = await ironflow.resumeRun("run_re", "step-3");
 
       const [url, opts] = assertDefined(mockFetch.mock.calls[0]);
-      expect(url).toBe("http://localhost:9123/api/v1/runs/resume");
+      expect(url).toBe(
+        "http://localhost:9123/ironflow.v1.IronflowService/ResumeRun"
+      );
       const body = JSON.parse(opts.body);
-      expect(body.run_id).toBe("run_re");
-      expect(body.from_step).toBe("step-3");
-      expect(result).toEqual({ id: "run_re", status: "running" });
+      expect(body.runId).toBe("run_re");
+      expect(body.fromStep).toBe("step-3");
+
+      expect(result.id).toBe("run_re");
+      expect(result.status).toBe("running");
+      expect(result.functionId).toBe("fn-re");
+      expect(result.eventId).toBe("evt-re");
+      expect(result.maxAttempts).toBe(3);
+      expect(result.createdAt).toEqual(new Date("2025-01-01T00:00:00Z"));
     });
 
-    it("defaults from_step to empty string", async () => {
+    it("defaults fromStep to empty string", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "run_re2" }),
+        status: 200,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({ id: "run_re2", status: "RUN_STATUS_RUNNING" })
+          ),
       });
       vi.stubGlobal("fetch", mockFetch);
 
       await ironflow.resumeRun("run_re2");
 
       const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
-      expect(body.from_step).toBe("");
+      expect(body.fromStep).toBe("");
     });
 
     it("throws IronflowError when response is not ok", async () => {
@@ -2615,6 +3034,36 @@ describe("IronflowClient (real module)", () => {
       await expect(ironflow.resumeRun("run_fail")).rejects.toThrow(
         "internal error"
       );
+    });
+
+    // #1963: the whole point of the migration. A resume already inside the
+    // server's dedupe window is 409 -> already_exists, and going through
+    // request() means it now carries the status and a non-retryable flag
+    // instead of the bare code:"RESUME_FAILED" the hand-rolled fetch invented.
+    it("surfaces a deduplicated resume as a non-retryable 409", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 409,
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({
+                code: "already_exists",
+                message:
+                  "a resume for this run is already in flight; wait for it to land before retrying",
+              })
+            ),
+        })
+      );
+
+      await expect(ironflow.resumeRun("run_dup")).rejects.toMatchObject({
+        status: 409,
+        retryable: false,
+        message:
+          "a resume for this run is already in flight; wait for it to land before retrying",
+      });
     });
   });
 

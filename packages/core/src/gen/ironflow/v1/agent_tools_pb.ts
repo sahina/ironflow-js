@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import type { Timestamp, Value } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/agent_tools.proto.
  */
 export const file_ironflow_v1_agent_tools: GenFile = /*@__PURE__*/
-  fileDesc("Ch1pcm9uZmxvdy92MS9hZ2VudF90b29scy5wcm90bxILaXJvbmZsb3cudjEidAoHVG9vbERlZhIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhkKEWlucHV0X3NjaGVtYV9qc29uGAMgASgJEhcKD3JlcXVpcmVkX3Njb3BlcxgEIAMoCRISCgp0aW1lb3V0X21zGAUgASgNImQKE1JlZ2lzdGVyVG9vbFJlcXVlc3QSEgoKYWdlbnRfbmFtZRgBIAEoCRIUCgxjYWxsYmFja191cmwYAiABKAkSIwoFdG9vbHMYAyADKAsyFC5pcm9uZmxvdy52MS5Ub29sRGVmIn0KFFJlZ2lzdGVyVG9vbFJlc3BvbnNlEhMKC2htYWNfc2VjcmV0GAEgASgJEh0KFXJlZ2lzdGVyZWRfdG9vbF9uYW1lcxgCIAMoCRIxCg1yZWdpc3RlcmVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJOChFJbnZva2VUb29sUmVxdWVzdBIRCgl0b29sX25hbWUYASABKAkSJgoFaW5wdXQYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0ImQKEkludm9rZVRvb2xSZXNwb25zZRInCgZvdXRwdXQYASABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiUKBWVycm9yGAIgASgLMhYuaXJvbmZsb3cudjEuVG9vbEVycm9yIioKCVRvb2xFcnJvchIMCgRjb2RlGAEgASgJEg8KB21lc3NhZ2UYAiABKAkiKwoVVW5yZWdpc3RlclRvb2xSZXF1ZXN0EhIKCmFnZW50X25hbWUYASABKAkiLwoWVW5yZWdpc3RlclRvb2xSZXNwb25zZRIVCg1yZW1vdmVkX2NvdW50GAEgASgNIiIKEExpc3RUb29sc1JlcXVlc3QSDgoGY3Vyc29yGAEgASgJIlEKEUxpc3RUb29sc1Jlc3BvbnNlEicKBXRvb2xzGAEgAygLMhguaXJvbmZsb3cudjEuVmlzaWJsZVRvb2wSEwoLbmV4dF9jdXJzb3IYAiABKAkibgoLVmlzaWJsZVRvb2wSFgoOcXVhbGlmaWVkX25hbWUYASABKAkSEwoLZGVzY3JpcHRpb24YAiABKAkSGQoRaW5wdXRfc2NoZW1hX2pzb24YAyABKAkSFwoPcmVxdWlyZWRfc2NvcGVzGAQgAygJMuMCChFBZ2VudFRvb2xzU2VydmljZRJTCgxSZWdpc3RlclRvb2wSIC5pcm9uZmxvdy52MS5SZWdpc3RlclRvb2xSZXF1ZXN0GiEuaXJvbmZsb3cudjEuUmVnaXN0ZXJUb29sUmVzcG9uc2USTQoKSW52b2tlVG9vbBIeLmlyb25mbG93LnYxLkludm9rZVRvb2xSZXF1ZXN0Gh8uaXJvbmZsb3cudjEuSW52b2tlVG9vbFJlc3BvbnNlElkKDlVucmVnaXN0ZXJUb29sEiIuaXJvbmZsb3cudjEuVW5yZWdpc3RlclRvb2xSZXF1ZXN0GiMuaXJvbmZsb3cudjEuVW5yZWdpc3RlclRvb2xSZXNwb25zZRJPCglMaXN0VG9vbHMSHS5pcm9uZmxvdy52MS5MaXN0VG9vbHNSZXF1ZXN0Gh4uaXJvbmZsb3cudjEuTGlzdFRvb2xzUmVzcG9uc2UiA5ACAUI6WjhnaXRodWIuY29tL3NhaGluYS9pcm9uZmxvdy9hcGkvZ28vaXJvbmZsb3cvdjE7aXJvbmZsb3d2MWIGcHJvdG8z", [file_google_protobuf_timestamp, file_google_protobuf_struct]);
+  fileDesc("Ch1pcm9uZmxvdy92MS9hZ2VudF90b29scy5wcm90bxILaXJvbmZsb3cudjEidAoHVG9vbERlZhIMCgRuYW1lGAEgASgJEhMKC2Rlc2NyaXB0aW9uGAIgASgJEhkKEWlucHV0X3NjaGVtYV9qc29uGAMgASgJEhcKD3JlcXVpcmVkX3Njb3BlcxgEIAMoCRISCgp0aW1lb3V0X21zGAUgASgNImQKE1JlZ2lzdGVyVG9vbFJlcXVlc3QSEgoKYWdlbnRfbmFtZRgBIAEoCRIUCgxjYWxsYmFja191cmwYAiABKAkSIwoFdG9vbHMYAyADKAsyFC5pcm9uZmxvdy52MS5Ub29sRGVmIn0KFFJlZ2lzdGVyVG9vbFJlc3BvbnNlEhMKC2htYWNfc2VjcmV0GAEgASgJEh0KFXJlZ2lzdGVyZWRfdG9vbF9uYW1lcxgCIAMoCRIxCg1yZWdpc3RlcmVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJ7ChFJbnZva2VUb29sUmVxdWVzdBIRCgl0b29sX25hbWUYASABKAkSJgoFaW5wdXQYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EisKC2lucHV0X3ZhbHVlGAMgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlIpIBChJJbnZva2VUb29sUmVzcG9uc2USJwoGb3V0cHV0GAEgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYAyABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSJQoFZXJyb3IYAiABKAsyFi5pcm9uZmxvdy52MS5Ub29sRXJyb3IiKgoJVG9vbEVycm9yEgwKBGNvZGUYASABKAkSDwoHbWVzc2FnZRgCIAEoCSIrChVVbnJlZ2lzdGVyVG9vbFJlcXVlc3QSEgoKYWdlbnRfbmFtZRgBIAEoCSIvChZVbnJlZ2lzdGVyVG9vbFJlc3BvbnNlEhUKDXJlbW92ZWRfY291bnQYASABKA0iIgoQTGlzdFRvb2xzUmVxdWVzdBIOCgZjdXJzb3IYASABKAkiUQoRTGlzdFRvb2xzUmVzcG9uc2USJwoFdG9vbHMYASADKAsyGC5pcm9uZmxvdy52MS5WaXNpYmxlVG9vbBITCgtuZXh0X2N1cnNvchgCIAEoCSJuCgtWaXNpYmxlVG9vbBIWCg5xdWFsaWZpZWRfbmFtZRgBIAEoCRITCgtkZXNjcmlwdGlvbhgCIAEoCRIZChFpbnB1dF9zY2hlbWFfanNvbhgDIAEoCRIXCg9yZXF1aXJlZF9zY29wZXMYBCADKAky4wIKEUFnZW50VG9vbHNTZXJ2aWNlElMKDFJlZ2lzdGVyVG9vbBIgLmlyb25mbG93LnYxLlJlZ2lzdGVyVG9vbFJlcXVlc3QaIS5pcm9uZmxvdy52MS5SZWdpc3RlclRvb2xSZXNwb25zZRJNCgpJbnZva2VUb29sEh4uaXJvbmZsb3cudjEuSW52b2tlVG9vbFJlcXVlc3QaHy5pcm9uZmxvdy52MS5JbnZva2VUb29sUmVzcG9uc2USWQoOVW5yZWdpc3RlclRvb2wSIi5pcm9uZmxvdy52MS5VbnJlZ2lzdGVyVG9vbFJlcXVlc3QaIy5pcm9uZmxvdy52MS5VbnJlZ2lzdGVyVG9vbFJlc3BvbnNlEk8KCUxpc3RUb29scxIdLmlyb25mbG93LnYxLkxpc3RUb29sc1JlcXVlc3QaHi5pcm9uZmxvdy52MS5MaXN0VG9vbHNSZXNwb25zZSIDkAIBQjpaOGdpdGh1Yi5jb20vc2FoaW5hL2lyb25mbG93L2FwaS9nby9pcm9uZmxvdy92MTtpcm9uZmxvd3YxYgZwcm90bzM", [file_google_protobuf_timestamp, file_google_protobuf_struct]);
 
 /**
  * ToolDef describes a single agent-registered tool. Input schema is
@@ -161,6 +161,16 @@ export type InvokeToolRequest = Message<"ironflow.v1.InvokeToolRequest"> & {
    * @generated from field: google.protobuf.Struct input = 2;
    */
   input?: JsonObject | undefined;
+
+  /**
+   * Set ONLY when the payload is not a JSON object, which input cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * input, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value input_value = 3;
+   */
+  inputValue?: Value | undefined;
 };
 
 /**
@@ -181,6 +191,16 @@ export type InvokeToolResponse = Message<"ironflow.v1.InvokeToolResponse"> & {
    * @generated from field: google.protobuf.Struct output = 1;
    */
   output?: JsonObject | undefined;
+
+  /**
+   * Set ONLY when the payload is not a JSON object, which output cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * output, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value output_value = 3;
+   */
+  outputValue?: Value | undefined;
 
   /**
    * Error envelope. Set when dispatch failed or the SDK handler

@@ -138,7 +138,7 @@ export interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   mode?: ExecutionMode;
   /** JSON path for actor-based sticky routing */
   actorKey?: string;
-  /** Zod schema for type-safe event validation */
+  /** Zod schema; validated at runtime before the handler runs (mismatch fails the run) */
   schema?: TEventSchema;
   /** Secret names this function requires (resolved by engine at execution time) */
   secrets?: string[];
@@ -805,49 +805,70 @@ export interface InvokeResult {
 export type TriggerResult = InvokeResult;
 
 /**
- * Sync trigger options
- */
-export interface TriggerSyncOptions {
-  /** Maximum wait time in ms (default: 30000) */
-  timeout?: number;
-}
-
-/**
- * Sync trigger result
- */
-export interface TriggerSyncResult {
-  /** Run ID */
-  runId: string;
-  /** Function ID */
-  functionId: string;
-  /** Run status */
-  status: RunStatus;
-  /** Function output */
-  output?: unknown;
-  /** Error if failed */
-  error?: {
-    message: string;
-    code?: string;
-  };
-  /** Duration in ms */
-  durationMs: number;
-}
-
-/**
- * Result of an emitSync() call
+ * One run's outcome from `emitSync()`.
+ *
+ * `emitSync()` returns `EmitSyncResult[]` — an event can match several triggers,
+ * and every matched run is reported. Per-run outcomes are never thrown: inspect
+ * `status`, `error` and `waitTimedOut`. Transport, protocol and validation
+ * failures still throw.
  */
 export interface EmitSyncResult {
   /** Run ID */
   runId: string;
   /** Function ID */
   functionId: string;
-  /** Run status */
-  status: string;
+  /**
+   * Run status. Narrow since #1920: an unrecognized wire status throws
+   * `SchemaValidationError` during parsing and never reaches a caller.
+   */
+  status: RunStatus;
   /** Function output */
   output: unknown;
+  /** Error if the run failed */
+  error?: {
+    message: string;
+    code?: string;
+  };
   /** Duration in ms */
   durationMs: number;
+  /**
+   * True when the wait budget expired while the durable run was still active.
+   * The run keeps going server-side; poll `getRun(runId)` for its outcome.
+   */
+  waitTimedOut: boolean;
 }
+
+/**
+ * Options for the ID-keyed synchronous `invoke()`.
+ */
+export interface InvokeSyncOptions<TInput = unknown> {
+  /** Function input payload */
+  data: TInput;
+  /**
+   * Wait budget in ms (default 30000). Sent to the server as `timeout_ms`.
+   *
+   * This is a server-side wait budget, NOT a transport deadline. `InvokeFunctionSync`
+   * ties the run's lifetime to the request context, so aborting the HTTP request
+   * cancels the run. An SDK that implements this option as a fetch abort cancels
+   * the run on every timeout and can never observe `waitTimedOut`. Keep the
+   * transport deadline longer than the budget — see
+   * `DEFAULT_TIMEOUTS.SYNC_TRANSPORT_HEADROOM` — or leave it absent.
+   */
+  timeout?: number;
+  /** Optional deduplication key. A repeat call returns the original run. */
+  idempotencyKey?: string;
+  /** Optional metadata stored on the generated event */
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Result of the ID-keyed synchronous `invoke()` — exactly one run.
+ *
+ * No `waitTimedOut`: unlike `emitSync()`, `invoke()` guarantees a single run and
+ * so throws `RunFailedError`, `RunCancelledError` and `RunWaitTimeoutError` for
+ * those outcomes. They never appear in this value.
+ */
+export type InvokeSyncResult = Omit<EmitSyncResult, "waitTimedOut">;
 
 // ============================================================================
 // Emit/Event Types
@@ -1059,7 +1080,17 @@ export type ConnectionState = "connecting" | "connected" | "disconnected" | "rec
  * Callbacks for subscription events
  */
 export interface SubscriptionCallbacks<T = unknown> {
-  /** Called when an event is received */
+  /**
+   * Called when an event is received.
+   *
+   * The handler is not awaited. An `async` handler is fine — manual
+   * acknowledgment needs one — but it runs unsupervised: the next event can be
+   * delivered before it settles, so there is no ordering or backpressure
+   * guarantee, and a rejection becomes an unhandled rejection instead of
+   * reaching `onError`. Catch inside the handler, including around `ack` and
+   * `nak`, and serialize the work yourself if you need ordering or a persisted
+   * cursor.
+   */
   onEvent?: (event: SubscriptionEvent<T>) => void;
   /** Called when a subscription error occurs */
   onError?: (error: SubscriptionErrorInfo) => void;

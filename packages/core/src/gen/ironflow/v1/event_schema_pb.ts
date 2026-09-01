@@ -4,7 +4,7 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
-import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import type { Timestamp, Value } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/event_schema.proto.
  */
 export const file_ironflow_v1_event_schema: GenFile = /*@__PURE__*/
-  fileDesc("Ch5pcm9uZmxvdy92MS9ldmVudF9zY2hlbWEucHJvdG8SC2lyb25mbG93LnYxImYKFVJlZ2lzdGVyU2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEwoLc2NoZW1hX2pzb24YAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkiKAoWUmVnaXN0ZXJTY2hlbWFSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiNwoQR2V0U2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUikgEKEUdldFNjaGVtYVJlc3BvbnNlEhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRITCgtzY2hlbWFfanNvbhgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJHChJMaXN0U2NoZW1hc1JlcXVlc3QSEgoKZXZlbnRfbmFtZRgBIAEoCRINCgVsaW1pdBgCIAEoBRIOCgZvZmZzZXQYAyABKAUiVAoTTGlzdFNjaGVtYXNSZXNwb25zZRIoCgdzY2hlbWFzGAEgAygLMhcuaXJvbmZsb3cudjEuU2NoZW1hSW5mbxITCgt0b3RhbF9jb3VudBgCIAEoBSJ2CgpTY2hlbWFJbmZvEhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRITCgtkZXNjcmlwdGlvbhgDIAEoCRIuCgpjcmVhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI6ChNEZWxldGVTY2hlbWFSZXF1ZXN0EhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBSIWChREZWxldGVTY2hlbWFSZXNwb25zZSJ4ChFUZXN0VXBjYXN0UmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEhQKDGZyb21fdmVyc2lvbhgCIAEoBRISCgp0b192ZXJzaW9uGAMgASgFEiUKBGRhdGEYBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0ImsKElRlc3RVcGNhc3RSZXNwb25zZRIlCgRkYXRhGAEgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIuCg1zdGVwc19hcHBsaWVkGAIgAygLMhcuaXJvbmZsb3cudjEuVXBjYXN0U3RlcCJLCgpVcGNhc3RTdGVwEhQKDGZyb21fdmVyc2lvbhgBIAEoBRISCgp0b192ZXJzaW9uGAIgASgFEhMKC2Rlc2NyaXB0aW9uGAMgASgJMsADChJFdmVudFNjaGVtYVNlcnZpY2USWQoOUmVnaXN0ZXJTY2hlbWESIi5pcm9uZmxvdy52MS5SZWdpc3RlclNjaGVtYVJlcXVlc3QaIy5pcm9uZmxvdy52MS5SZWdpc3RlclNjaGVtYVJlc3BvbnNlEk8KCUdldFNjaGVtYRIdLmlyb25mbG93LnYxLkdldFNjaGVtYVJlcXVlc3QaHi5pcm9uZmxvdy52MS5HZXRTY2hlbWFSZXNwb25zZSIDkAIBElUKC0xpc3RTY2hlbWFzEh8uaXJvbmZsb3cudjEuTGlzdFNjaGVtYXNSZXF1ZXN0GiAuaXJvbmZsb3cudjEuTGlzdFNjaGVtYXNSZXNwb25zZSIDkAIBElMKDERlbGV0ZVNjaGVtYRIgLmlyb25mbG93LnYxLkRlbGV0ZVNjaGVtYVJlcXVlc3QaIS5pcm9uZmxvdy52MS5EZWxldGVTY2hlbWFSZXNwb25zZRJSCgpUZXN0VXBjYXN0Eh4uaXJvbmZsb3cudjEuVGVzdFVwY2FzdFJlcXVlc3QaHy5pcm9uZmxvdy52MS5UZXN0VXBjYXN0UmVzcG9uc2UiA5ACAUI6WjhnaXRodWIuY29tL3NhaGluYS9pcm9uZmxvdy9hcGkvZ28vaXJvbmZsb3cvdjE7aXJvbmZsb3d2MWIGcHJvdG8z", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("Ch5pcm9uZmxvdy92MS9ldmVudF9zY2hlbWEucHJvdG8SC2lyb25mbG93LnYxImYKFVJlZ2lzdGVyU2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEwoLc2NoZW1hX2pzb24YAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkiKAoWUmVnaXN0ZXJTY2hlbWFSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiNwoQR2V0U2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUikgEKEUdldFNjaGVtYVJlc3BvbnNlEhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRITCgtzY2hlbWFfanNvbhgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJHChJMaXN0U2NoZW1hc1JlcXVlc3QSEgoKZXZlbnRfbmFtZRgBIAEoCRINCgVsaW1pdBgCIAEoBRIOCgZvZmZzZXQYAyABKAUiVAoTTGlzdFNjaGVtYXNSZXNwb25zZRIoCgdzY2hlbWFzGAEgAygLMhcuaXJvbmZsb3cudjEuU2NoZW1hSW5mbxITCgt0b3RhbF9jb3VudBgCIAEoBSJ2CgpTY2hlbWFJbmZvEhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRITCgtkZXNjcmlwdGlvbhgDIAEoCRIuCgpjcmVhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCI6ChNEZWxldGVTY2hlbWFSZXF1ZXN0EhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBSIWChREZWxldGVTY2hlbWFSZXNwb25zZSKkAQoRVGVzdFVwY2FzdFJlcXVlc3QSEgoKZXZlbnRfbmFtZRgBIAEoCRIUCgxmcm9tX3ZlcnNpb24YAiABKAUSEgoKdG9fdmVyc2lvbhgDIAEoBRIlCgRkYXRhGAQgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIqCgpkYXRhX3ZhbHVlGAUgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlIpcBChJUZXN0VXBjYXN0UmVzcG9uc2USJQoEZGF0YRgBIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKgoKZGF0YV92YWx1ZRgDIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIuCg1zdGVwc19hcHBsaWVkGAIgAygLMhcuaXJvbmZsb3cudjEuVXBjYXN0U3RlcCJLCgpVcGNhc3RTdGVwEhQKDGZyb21fdmVyc2lvbhgBIAEoBRISCgp0b192ZXJzaW9uGAIgASgFEhMKC2Rlc2NyaXB0aW9uGAMgASgJIksKF0NoZWNrRW5mb3JjZW1lbnRSZXF1ZXN0EhIKCmV2ZW50X25hbWUYASABKAkSHAoUdHJhZmZpY193aW5kb3dfaG91cnMYAiABKAUiiAEKGENoZWNrRW5mb3JjZW1lbnRSZXNwb25zZRIMCgRtb2RlGAEgASgJEikKB3NjaGVtYXMYAiADKAsyGC5pcm9uZmxvdy52MS5TY2hlbWFDaGVjaxIcChR0cmFmZmljX3dpbmRvd19ob3VycxgDIAEoBRIVCg10b3RhbF9zY2hlbWFzGAQgASgFIrcBCgtTY2hlbWFDaGVjaxISCgpldmVudF9uYW1lGAEgASgJEhMKC3NjaGVtYV9oYXNoGAMgASgJEg8KB3ZlcnNpb24YAiABKAUSDwoHYXNzZXJ0cxgEIAEoCBIVCg1jb21waWxlX2Vycm9yGAUgASgJEisKB3RyYWZmaWMYBiADKAsyGi5pcm9uZmxvdy52MS5TY2hlbWFUcmFmZmljEhkKEXRyYWZmaWNfdHJ1bmNhdGVkGAcgASgIIkQKDVNjaGVtYVRyYWZmaWMSDwoHdmVyc2lvbhgBIAEoBRITCgtzY2hlbWFfaGFzaBgCIAEoCRINCgVjb3VudBgDIAEoAzKmBAoSRXZlbnRTY2hlbWFTZXJ2aWNlElkKDlJlZ2lzdGVyU2NoZW1hEiIuaXJvbmZsb3cudjEuUmVnaXN0ZXJTY2hlbWFSZXF1ZXN0GiMuaXJvbmZsb3cudjEuUmVnaXN0ZXJTY2hlbWFSZXNwb25zZRJPCglHZXRTY2hlbWESHS5pcm9uZmxvdy52MS5HZXRTY2hlbWFSZXF1ZXN0Gh4uaXJvbmZsb3cudjEuR2V0U2NoZW1hUmVzcG9uc2UiA5ACARJVCgtMaXN0U2NoZW1hcxIfLmlyb25mbG93LnYxLkxpc3RTY2hlbWFzUmVxdWVzdBogLmlyb25mbG93LnYxLkxpc3RTY2hlbWFzUmVzcG9uc2UiA5ACARJTCgxEZWxldGVTY2hlbWESIC5pcm9uZmxvdy52MS5EZWxldGVTY2hlbWFSZXF1ZXN0GiEuaXJvbmZsb3cudjEuRGVsZXRlU2NoZW1hUmVzcG9uc2USUgoKVGVzdFVwY2FzdBIeLmlyb25mbG93LnYxLlRlc3RVcGNhc3RSZXF1ZXN0Gh8uaXJvbmZsb3cudjEuVGVzdFVwY2FzdFJlc3BvbnNlIgOQAgESZAoQQ2hlY2tFbmZvcmNlbWVudBIkLmlyb25mbG93LnYxLkNoZWNrRW5mb3JjZW1lbnRSZXF1ZXN0GiUuaXJvbmZsb3cudjEuQ2hlY2tFbmZvcmNlbWVudFJlc3BvbnNlIgOQAgFCOlo4Z2l0aHViLmNvbS9zYWhpbmEvaXJvbmZsb3cvYXBpL2dvL2lyb25mbG93L3YxO2lyb25mbG93djFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message ironflow.v1.RegisterSchemaRequest
@@ -53,7 +53,10 @@ export const RegisterSchemaRequestSchema: GenMessage<RegisterSchemaRequest> = /*
  */
 export type RegisterSchemaResponse = Message<"ironflow.v1.RegisterSchemaResponse"> & {
   /**
-   * "created" or "updated"
+   * "created" or "updated". Advisory only: the server reads before the upsert
+   * rather than deriving this from it, so concurrent registrations of the same
+   * (event_name, version) can both report "created". The write is still
+   * correct — last one wins. Display it; do not branch on it. (#1958)
    *
    * @generated from field: string status = 1;
    */
@@ -269,6 +272,16 @@ export type TestUpcastRequest = Message<"ironflow.v1.TestUpcastRequest"> & {
    * @generated from field: google.protobuf.Struct data = 4;
    */
   data?: JsonObject | undefined;
+
+  /**
+   * Set ONLY when the payload is not a JSON object, which data cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * data, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value data_value = 5;
+   */
+  dataValue?: Value | undefined;
 };
 
 /**
@@ -286,6 +299,16 @@ export type TestUpcastResponse = Message<"ironflow.v1.TestUpcastResponse"> & {
    * @generated from field: google.protobuf.Struct data = 1;
    */
   data?: JsonObject | undefined;
+
+  /**
+   * Set ONLY when the payload is not a JSON object, which data cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * data, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value data_value = 3;
+   */
+  dataValue?: Value | undefined;
 
   /**
    * @generated from field: repeated ironflow.v1.UpcastStep steps_applied = 2;
@@ -326,6 +349,172 @@ export type UpcastStep = Message<"ironflow.v1.UpcastStep"> & {
  */
 export const UpcastStepSchema: GenMessage<UpcastStep> = /*@__PURE__*/
   messageDesc(file_ironflow_v1_event_schema, 11);
+
+/**
+ * @generated from message ironflow.v1.CheckEnforcementRequest
+ */
+export type CheckEnforcementRequest = Message<"ironflow.v1.CheckEnforcementRequest"> & {
+  /**
+   * Restrict the report to one event name. Empty reports every registered
+   * schema in the environment.
+   *
+   * @generated from field: string event_name = 1;
+   */
+  eventName: string;
+
+  /**
+   * Traffic sample window, in hours. 0 means the server default (24).
+   *
+   * @generated from field: int32 traffic_window_hours = 2;
+   */
+  trafficWindowHours: number;
+};
+
+/**
+ * Describes the message ironflow.v1.CheckEnforcementRequest.
+ * Use `create(CheckEnforcementRequestSchema)` to create a new message.
+ */
+export const CheckEnforcementRequestSchema: GenMessage<CheckEnforcementRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 12);
+
+/**
+ * @generated from message ironflow.v1.CheckEnforcementResponse
+ */
+export type CheckEnforcementResponse = Message<"ironflow.v1.CheckEnforcementResponse"> & {
+  /**
+   * Server enforcement mode: "off", "warn" or "reject". Read from
+   * IRONFLOW_EVENT_SCHEMA_ENFORCEMENT at startup. "off" is the default and is
+   * silent no-op #1 — with it set, nothing below is being enforced at all.
+   *
+   * @generated from field: string mode = 1;
+   */
+  mode: string;
+
+  /**
+   * @generated from field: repeated ironflow.v1.SchemaCheck schemas = 2;
+   */
+  schemas: SchemaCheck[];
+
+  /**
+   * Hours actually sampled, so a client renders the window it got rather than
+   * the one it asked for.
+   *
+   * @generated from field: int32 traffic_window_hours = 3;
+   */
+  trafficWindowHours: number;
+
+  /**
+   * Total registered schemas matching the request. Greater than the length of
+   * `schemas` when the report hit its per-request cap — a command whose whole
+   * job is "you cannot tell what enforcement is not covering" must not itself
+   * silently omit schemas. Narrow with event_name when it does.
+   *
+   * @generated from field: int32 total_schemas = 4;
+   */
+  totalSchemas: number;
+};
+
+/**
+ * Describes the message ironflow.v1.CheckEnforcementResponse.
+ * Use `create(CheckEnforcementResponseSchema)` to create a new message.
+ */
+export const CheckEnforcementResponseSchema: GenMessage<CheckEnforcementResponse> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 13);
+
+/**
+ * @generated from message ironflow.v1.SchemaCheck
+ */
+export type SchemaCheck = Message<"ironflow.v1.SchemaCheck"> & {
+  /**
+   * @generated from field: string event_name = 1;
+   */
+  eventName: string;
+
+  /**
+   * @generated from field: string schema_hash = 3;
+   */
+  schemaHash: string;
+
+  /**
+   * @generated from field: int32 version = 2;
+   */
+  version: number;
+
+  /**
+   * False when the schema accepts every payload — silent no-op #5. A document
+   * that compiles is not necessarily one that constrains: Draft 2020-12 reads
+   * an unrecognized keyword as an annotation, so a sample payload registered
+   * by mistake is a valid schema that enforces nothing. Heuristic; see
+   * eventschema.AssertsAnything for what it can and cannot claim.
+   *
+   * @generated from field: bool asserts = 4;
+   */
+  asserts: boolean;
+
+  /**
+   * Set when the stored document will not compile — silent no-op #4.
+   * Enforcement fails open on these, so the schema is inert. Registration has
+   * compiled documents since #1951; rows predating that were never parsed.
+   *
+   * @generated from field: string compile_error = 5;
+   */
+  compileError: string;
+
+  /**
+   * Observed traffic for this event NAME, grouped by the version and schema
+   * hash the events carry. A version with no matching row means nothing is
+   * arriving at the version this schema governs; a row whose schema_hash is
+   * empty means those events were never validated.
+   *
+   * @generated from field: repeated ironflow.v1.SchemaTraffic traffic = 6;
+   */
+  traffic: SchemaTraffic[];
+
+  /**
+   * True when the sample hit its scan cap, so counts are a recency window
+   * rather than totals.
+   *
+   * @generated from field: bool traffic_truncated = 7;
+   */
+  trafficTruncated: boolean;
+};
+
+/**
+ * Describes the message ironflow.v1.SchemaCheck.
+ * Use `create(SchemaCheckSchema)` to create a new message.
+ */
+export const SchemaCheckSchema: GenMessage<SchemaCheck> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 14);
+
+/**
+ * @generated from message ironflow.v1.SchemaTraffic
+ */
+export type SchemaTraffic = Message<"ironflow.v1.SchemaTraffic"> & {
+  /**
+   * @generated from field: int32 version = 1;
+   */
+  version: number;
+
+  /**
+   * Empty for events that carry no hash: everything emitted while enforcement
+   * skipped, and everything written before the column existed.
+   *
+   * @generated from field: string schema_hash = 2;
+   */
+  schemaHash: string;
+
+  /**
+   * @generated from field: int64 count = 3;
+   */
+  count: bigint;
+};
+
+/**
+ * Describes the message ironflow.v1.SchemaTraffic.
+ * Use `create(SchemaTrafficSchema)` to create a new message.
+ */
+export const SchemaTrafficSchema: GenMessage<SchemaTraffic> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 15);
 
 /**
  * @generated from service ironflow.v1.EventSchemaService
@@ -370,6 +559,22 @@ export const EventSchemaService: GenService<{
     methodKind: "unary";
     input: typeof TestUpcastRequestSchema;
     output: typeof TestUpcastResponseSchema;
+  },
+  /**
+   * CheckEnforcement reports whether event-schema enforcement is actually
+   * doing anything (#1958). Enforcement has several ways to accept every
+   * payload without validating it, and from outside they are indistinguishable
+   * from "every payload was clean": the mode is off, the name is not governed,
+   * the stored schema will not compile, the schema is permissive, or emitters
+   * are sending a version the schema is not registered at. This is the one
+   * surface that separates them.
+   *
+   * @generated from rpc ironflow.v1.EventSchemaService.CheckEnforcement
+   */
+  checkEnforcement: {
+    methodKind: "unary";
+    input: typeof CheckEnforcementRequestSchema;
+    output: typeof CheckEnforcementResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_ironflow_v1_event_schema, 0);

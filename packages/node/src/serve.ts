@@ -33,6 +33,7 @@ import { ExecutionContext } from "./internal/context.js";
 import { createStepClient, executeCompensations } from "./step.js";
 import { isYieldSignal } from "./internal/errors.js";
 import { createSecretsClient } from "./secrets.js";
+import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
 import { DISPATCH_PATH, handleAgentToolDispatch } from "./agent/dispatch.js";
 
@@ -362,16 +363,16 @@ async function executeHandler(
   // Create step client
   const step = createStepClient(ctx);
 
-  // Build function context
-  const functionContext: FunctionContext = {
-    event: ctx.event,
-    step,
-    run: ctx.runInfo,
-    logger: ctx.logger,
-    secrets: createSecretsClient(request.secrets),
-  };
-
   try {
+    // Validate against config.schema (if any) and build the function context
+    const functionContext: FunctionContext = {
+      event: await validateEventData(fn, ctx.event),
+      step,
+      run: ctx.runInfo,
+      logger: ctx.logger,
+      secrets: createSecretsClient(request.secrets),
+    };
+
     // Execute the function handler
     const result = await withRunContext(ctx.runId, () =>
       fn.handler(functionContext)

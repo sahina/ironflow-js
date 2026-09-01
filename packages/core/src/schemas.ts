@@ -6,6 +6,7 @@
  */
 
 import { z } from "zod";
+import { SchemaValidationError } from "./errors.js";
 
 // ============================================================================
 // Run Status
@@ -26,6 +27,80 @@ export const RunStatusSchema = z.enum([
   "waiting_for_capacity",
   "waiting",
 ]);
+
+/**
+ * Run statuses as encoded by the default protobuf JSON codec.
+ *
+ * `RUN_STATUS_UNSPECIFIED` and unknown future values are rejected instead of
+ * being presented to callers as a different status.
+ */
+export const RunStatusWireSchema = z
+  .enum([
+    "RUN_STATUS_RUNNING",
+    "RUN_STATUS_COMPLETED",
+    "RUN_STATUS_FAILED",
+    "RUN_STATUS_CANCELLED",
+    "RUN_STATUS_PAUSED",
+    "RUN_STATUS_WAITING_FOR_CAPACITY",
+    "RUN_STATUS_WAITING",
+  ])
+  .transform((status) =>
+    RunStatusSchema.parse(status.slice("RUN_STATUS_".length).toLowerCase())
+  );
+
+/** Convert a protobuf JSON run status into the public SDK status. */
+export function runStatusFromWire(value: unknown) {
+  const result = RunStatusWireSchema.safeParse(value);
+  if (!result.success) {
+    const validationErrors = result.error.issues.map((issue) => issue.message);
+    throw new SchemaValidationError(
+      `Invalid run status from server: ${String(value)}`,
+      { validationErrors, cause: result.error }
+    );
+  }
+  return result.data;
+}
+
+/**
+ * Convert a public SDK run status into its protobuf JSON name.
+ *
+ * Status filters land on a protobuf enum field, and Connect unmarshals with
+ * `DiscardUnknown`, which drops unrecognized enum VALUES — not just unknown
+ * fields. A non-canonical spelling is therefore never rejected: the field is
+ * silently zeroed to `RUN_STATUS_UNSPECIFIED`, which the server reads as
+ * "no filter", so the caller gets unfiltered results and no error. This
+ * function is the only place that mistake is caught (#1919).
+ *
+ * `RunStatusSchema` still accepts the retired "pending", but the proto RESERVES
+ * `RUN_STATUS_PENDING`, so a bare uppercase transform would mint exactly the
+ * kind of plausible-looking value the server discards. The accepted set here is
+ * the wire enum, not the public enum.
+ */
+// A Map, not an object literal: a plain object would resolve inherited keys, so
+// runStatusToWire("toString") would return a function instead of throwing, and
+// JSON.stringify would then drop the status field entirely — silently sending
+// an unfiltered ListRuns request, the exact failure this function exists to stop.
+const RUN_STATUS_TO_WIRE = new Map<string, string>([
+  ["running", "RUN_STATUS_RUNNING"],
+  ["completed", "RUN_STATUS_COMPLETED"],
+  ["failed", "RUN_STATUS_FAILED"],
+  ["cancelled", "RUN_STATUS_CANCELLED"],
+  ["paused", "RUN_STATUS_PAUSED"],
+  ["waiting_for_capacity", "RUN_STATUS_WAITING_FOR_CAPACITY"],
+  ["waiting", "RUN_STATUS_WAITING"],
+]);
+
+export function runStatusToWire(status: unknown): string {
+  const wire =
+    typeof status === "string" ? RUN_STATUS_TO_WIRE.get(status) : undefined;
+  if (!wire) {
+    throw new SchemaValidationError(
+      `Invalid run status filter: ${String(status)}`,
+      { validationErrors: [`no protobuf enum value for ${String(status)}`] }
+    );
+  }
+  return wire;
+}
 
 // ============================================================================
 // Push Request (serve.ts)
@@ -78,10 +153,17 @@ export const TriggerResponseSchema = z.object({
   eventId: z.string(),
 });
 
+/**
+ * One run outcome — proto `ironflow.v1.RunResult`.
+ *
+ * Shared by both synchronous RPCs: `TriggerSync` returns a repeated list of
+ * these, `InvokeFunctionSync` returns exactly one. Kept under its original
+ * name because it is public API.
+ */
 export const TriggerSyncResultItemSchema = z.object({
   runId: z.string(),
   functionId: z.string(),
-  status: z.string(),
+  status: RunStatusWireSchema,
   output: z.unknown().optional(),
   error: z
     .object({
@@ -89,7 +171,13 @@ export const TriggerSyncResultItemSchema = z.object({
       code: z.string().optional(),
     })
     .optional(),
-  durationMs: z.number(),
+  // protojson omits zero-valued scalars, so an absent durationMs means 0 — not a
+  // malformed response. The wait-timeout branch (handler.go, triggerSyncResultFromStore)
+  // returns before DurationMs is set, so EVERY timed-out result omits it; a fast
+  // sub-millisecond run does too. Without this default, validation throws and
+  // RunWaitTimeoutError becomes unreachable.
+  durationMs: z.number().default(0),
+  waitTimedOut: z.boolean().default(false),
 });
 
 export const TriggerSyncResponseSchema = z.object({
@@ -97,28 +185,53 @@ export const TriggerSyncResponseSchema = z.object({
   eventId: z.string(),
 });
 
+/**
+ * Response of `InvokeFunctionSync`.
+ *
+ * Exactly one `result`, and deliberately no `eventId`: the run id is the
+ * correlator a direct-invoke caller needs, and the event the engine creates for
+ * the invoke is a synthetic artifact. `result` is required — the server always
+ * sets it, so an absent one is a contract violation and should surface as a
+ * validation failure rather than an empty success.
+ */
+export const InvokeFunctionSyncResponseSchema = z.object({
+  result: TriggerSyncResultItemSchema,
+});
+
+/**
+ * A run as returned by the ConnectRPC run APIs.
+ *
+ * Connect marshals with protojson `EmitUnpopulated:false`, so a zero-valued
+ * scalar is OMITTED from the response entirely — it is never sent as `0` or
+ * `""`. Marking those keys required made zod throw on legitimate runs: a run on
+ * its first attempt omits `attempt`, an invoke-created run omits `eventId`, and
+ * a run whose id is the only populated field omits nearly everything. Every
+ * scalar the server can leave at its zero value therefore carries a default
+ * matching that zero value, NOT `.optional()` — callers still get the field
+ * (#1919).
+ */
 export const RunResponseSchema = z.object({
   id: z.string(),
-  functionId: z.string(),
-  eventId: z.string(),
+  functionId: z.string().default(""),
+  eventId: z.string().default(""),
   executionMode: z.string().optional(),
   workerId: z.string().optional(),
   actorId: z.string().optional(),
-  status: z.string(),
-  attempt: z.number(),
-  maxAttempts: z.number(),
+  status: z.string().default(""),
+  attempt: z.number().default(0),
+  maxAttempts: z.number().default(0),
   input: z.unknown().optional(),
   output: z.unknown().optional(),
   error: z
     .object({
-      message: z.string(),
+      message: z.string().default(""),
       code: z.string().optional(),
     })
     .optional(),
   startedAt: z.string().optional(),
   endedAt: z.string().optional(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
+  createdAt: z.string().default(""),
+  updatedAt: z.string().default(""),
 });
 
 export const ListRunsResponseSchema = z.object({
@@ -202,6 +315,7 @@ export const JobEventSchema = z.object({
   data: z.unknown(),
   timestamp: z.string(),
   version: z.number().int().min(1).default(1),
+  source: z.string().optional(),
   // Tolerate an explicit null on the wire (an absent-metadata event is
   // serialized server-side as JSON null, not omitted), normalizing it back to
   // undefined so consumers see the same shape as a genuinely-absent field. A
@@ -360,7 +474,10 @@ export type ValidatedWSServerMessage = z.infer<typeof WSServerMessageSchema>;
 // Validation Helpers
 // ============================================================================
 
-import { SchemaValidationError } from "./errors.js";
+/** One `path: message` string per Zod issue — the shared shape for every SchemaValidationError. */
+export function formatZodIssues(issues: readonly z.core.$ZodIssue[]): string[] {
+  return issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+}
 
 /**
  * Safely parse JSON and validate against a schema
@@ -380,12 +497,10 @@ export function parseAndValidate<T>(
 
   const result = schema.safeParse(parsed);
   if (!result.success) {
-    const issues = result.error.issues
-      .map((i) => `${i.path.join(".")}: ${i.message}`)
-      .join(", ");
+    const issues = formatZodIssues(result.error.issues);
     throw new SchemaValidationError(
-      `Validation failed in ${context}: ${issues}`,
-      { validationErrors: result.error.issues.map(i => `${i.path.join(".")}: ${i.message}`) }
+      `Validation failed in ${context}: ${issues.join(", ")}`,
+      { validationErrors: issues }
     );
   }
 
@@ -403,12 +518,10 @@ export function validate<T>(
 ): T {
   const result = schema.safeParse(data);
   if (!result.success) {
-    const issues = result.error.issues
-      .map((i) => `${i.path.join(".")}: ${i.message}`)
-      .join(", ");
+    const issues = formatZodIssues(result.error.issues);
     throw new SchemaValidationError(
-      `Validation failed in ${context}: ${issues}`,
-      { validationErrors: result.error.issues.map(i => `${i.path.join(".")}: ${i.message}`) }
+      `Validation failed in ${context}: ${issues.join(", ")}`,
+      { validationErrors: issues }
     );
   }
 

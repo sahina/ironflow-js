@@ -131,8 +131,9 @@ export type {
   // Invoke/Trigger types
   InvokeResult,
   TriggerResult, // deprecated alias for InvokeResult
-  TriggerSyncOptions,
-  TriggerSyncResult,
+  EmitSyncResult,
+  InvokeSyncOptions,
+  InvokeSyncResult,
 
   // Emit types
   EmitOptions,
@@ -292,6 +293,7 @@ export {
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
+  ConflictError,
   isRetryable,
   isIronflowError,
 } from "@ironflow/core";

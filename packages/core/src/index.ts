@@ -72,8 +72,8 @@ export type {
   // Invoke/Trigger types
   InvokeResult,
   TriggerResult, // deprecated alias for InvokeResult
-  TriggerSyncOptions,
-  TriggerSyncResult,
+  InvokeSyncOptions,
+  InvokeSyncResult,
 
   // Emit types
   EmitOptions,
@@ -308,14 +308,15 @@ export {
   InvokeError,
   InvokeTimeoutError,
   StepTimeoutError,
+  RunWaitTimeoutError,
   RunFailedError,
   RunCancelledError,
   AgentInvokeTimeoutError,
-  NoRunCreatedError,
   MemoryCatchupTimeoutError,
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
+  ConflictError,
   AUTH_HELP,
   throwIfAuthError,
   QueueFullError,
@@ -331,6 +332,9 @@ export {
 export {
   // Run schemas
   RunStatusSchema,
+  RunStatusWireSchema,
+  runStatusFromWire,
+  runStatusToWire,
 
   // Push request schemas
   CompletedStepSchema,
@@ -342,6 +346,7 @@ export {
   TriggerResponseSchema,
   TriggerSyncResultItemSchema,
   TriggerSyncResponseSchema,
+  InvokeFunctionSyncResponseSchema,
   RunResponseSchema,
   ListRunsResponseSchema,
   RegisterFunctionResponseSchema,
@@ -388,6 +393,7 @@ export {
   // Validation helpers
   parseAndValidate,
   validate,
+  formatZodIssues,
 } from "./schemas.js";
 
 // ============================================================================
@@ -521,3 +527,4 @@ export type {
 // NOTE: Protobuf and ConnectRPC generated code is NOT exported from the main
 // entry point to avoid loading heavy dependencies for users who only need
 // the HTTP client. Import from "@ironflow/core/gen" if you need them.
+

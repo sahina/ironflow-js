@@ -55,6 +55,20 @@ describe("Default Constants", () => {
     it("should have TRIGGER_SYNC timeout of 30 seconds", () => {
       expect(DEFAULT_TIMEOUTS.TRIGGER_SYNC).toBe(30_000);
     });
+
+    it("should have INVOKE_FUNCTION_SYNC timeout of 30 seconds", () => {
+      expect(DEFAULT_TIMEOUTS.INVOKE_FUNCTION_SYNC).toBe(30_000);
+    });
+
+    it("should add transport headroom on top of the sync wait budget", () => {
+      expect(DEFAULT_TIMEOUTS.SYNC_TRANSPORT_HEADROOM).toBe(5_000);
+      // The trap: a transport deadline <= timeout_ms aborts the request first,
+      // which cancels the run server-side and hides waitTimedOut.
+      expect(
+        DEFAULT_TIMEOUTS.INVOKE_FUNCTION_SYNC +
+          DEFAULT_TIMEOUTS.SYNC_TRANSPORT_HEADROOM
+      ).toBeGreaterThan(DEFAULT_TIMEOUTS.INVOKE_FUNCTION_SYNC);
+    });
   });
 
   describe("DEFAULT_RETRY", () => {
@@ -262,6 +276,9 @@ describe("API_ENDPOINTS", () => {
     expect(API_ENDPOINTS.TRIGGER).toBe("/ironflow.v1.IronflowService/Trigger");
     expect(API_ENDPOINTS.TRIGGER_SYNC).toBe(
       "/ironflow.v1.IronflowService/TriggerSync"
+    );
+    expect(API_ENDPOINTS.INVOKE_FUNCTION_SYNC).toBe(
+      "/ironflow.v1.IronflowService/InvokeFunctionSync"
     );
     expect(API_ENDPOINTS.GET_RUN).toBe("/ironflow.v1.IronflowService/GetRun");
     expect(API_ENDPOINTS.LIST_RUNS).toBe(

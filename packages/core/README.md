@@ -133,7 +133,7 @@ interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   mode?: ExecutionMode;
   /** JSON path for actor-based sticky routing */
   actorKey?: string;
-  /** Zod schema for type-safe event validation */
+  /** Zod schema; validated at runtime before the handler runs */
   schema?: TEventSchema;
   /** Secret names this function requires (resolved by engine at execution time) */
   secrets?: string[];
@@ -381,17 +381,23 @@ interface EmitResult {
   eventId: string;
 }
 
+/** One run's outcome. `emitSync()` returns `EmitSyncResult[]` -- one per
+ *  matched trigger -- and never throws on a run outcome. */
 interface EmitSyncResult {
   /** ID of the triggered run */
   runId: string;
   /** ID of the function that handled the event */
   functionId: string;
   /** Final run status */
-  status: string;
+  status: RunStatus;
   /** Function return value */
   output: unknown;
+  /** Present when the run failed */
+  error?: { message: string; code?: string };
   /** Wall-clock duration in milliseconds */
   durationMs: number;
+  /** The wait budget expired; the run is still going server-side */
+  waitTimedOut: boolean;
 }
 ```
 
@@ -575,9 +581,10 @@ interface ListRunsResult {
 }
 ```
 
-### InvokeResult, TriggerSyncOptions, TriggerSyncResult
+### InvokeResult, InvokeSyncOptions, InvokeSyncResult
 
 ```typescript
+/** Returned by emit() -- the runs the event created, no waiting. */
 interface InvokeResult {
   runIds: string[];
   eventId: string;
@@ -585,19 +592,18 @@ interface InvokeResult {
 
 // TriggerResult is a deprecated alias for InvokeResult
 
-interface TriggerSyncOptions {
-  /** Maximum wait time in ms (default: 30000) */
+/** Argument to the ID-keyed invoke(), which targets one function. */
+interface InvokeSyncOptions<TInput = unknown> {
+  data: TInput;
+  /** Server-side wait budget in ms (default: 30000), NOT a transport deadline */
   timeout?: number;
+  idempotencyKey?: string;
+  metadata?: Record<string, unknown>;
 }
 
-interface TriggerSyncResult {
-  runId: string;
-  functionId: string;
-  status: RunStatus;
-  output?: unknown;
-  error?: { message: string; code?: string };
-  durationMs: number;
-}
+/** Exactly one run. No waitTimedOut -- invoke() throws RunWaitTimeoutError,
+ *  RunFailedError and RunCancelledError instead (ADR 0067). */
+type InvokeSyncResult = Omit<EmitSyncResult, "waitTimedOut">;
 ```
 
 ---
@@ -1537,8 +1543,8 @@ import {
   ValidationError, SchemaValidationError, SignatureError,
   FunctionNotFoundError, RunNotFoundError, StepError, NonRetryableError,
   NotConfiguredError, InvokeError, InvokeTimeoutError, StepTimeoutError,
-  RunFailedError, RunCancelledError,
-  AgentInvokeTimeoutError, NoRunCreatedError, MemoryCatchupTimeoutError,
+  RunWaitTimeoutError, RunFailedError, RunCancelledError,
+  AgentInvokeTimeoutError, MemoryCatchupTimeoutError,
   UnauthenticatedError, EnterpriseRequiredError, UnauthorizedError,
   QueueFullError,
   isRetryable, isIronflowError, toError,
@@ -1569,7 +1575,7 @@ class IronflowError extends Error {
 |---|---|---|---|
 | `ConnectionError` | `CONNECTION_LOST` | true | WebSocket/HTTP connection lost |
 | `SubscriptionError` | `SUBSCRIPTION_ERROR` | true | Subscription setup or delivery failure |
-| `TimeoutError` | `TIMEOUT` | true | HTTP request or sync trigger timeout |
+| `TimeoutError` | `TIMEOUT` | true | HTTP request timeout |
 | `ValidationError` | `VALIDATION_ERROR` | false | Invalid input data |
 | `SchemaValidationError` | `VALIDATION_ERROR` | false | Zod schema validation failure |
 | `SignatureError` | `SIGNATURE_INVALID` | false | Invalid webhook signature |
@@ -1581,10 +1587,10 @@ class IronflowError extends Error {
 | `InvokeError` | `INVOKE_FAILED` | false | `step.invoke()` target failed (has `functionId`, `childRunId`) |
 | `InvokeTimeoutError` | `INVOKE_FAILED` | false | `step.invoke()` timed out (has `timeoutMs`) |
 | `StepTimeoutError` | `STEP_TIMEOUT` | true | `step.run()` exceeded its timeout (has `stepName`, `timeout`) |
-| `RunFailedError` | `RUN_FAILED` | false | `emitSync`/`TriggerSync` run failed (has `runId`, `output`) |
-| `RunCancelledError` | `RUN_CANCELLED` | false | `emitSync`/`TriggerSync` run cancelled (has `runId`) |
+| `RunWaitTimeoutError` | `RUN_WAIT_TIMEOUT` | false | `invoke` stopped waiting while the run remained active (has `runId`, `functionId`, `runStatus`, `timeoutMs`). `emitSync` sets `waitTimedOut` per result instead of throwing |
+| `RunFailedError` | `RUN_FAILED` | false | `invoke`/`InvokeFunctionSync` run failed (has `runId`, `output`). `emitSync` reports `status` + `error` per result instead |
+| `RunCancelledError` | `RUN_CANCELLED` | false | `invoke`/`InvokeFunctionSync` run cancelled (has `runId`). `emitSync` reports `status` per result instead |
 | `AgentInvokeTimeoutError` | `AGENT_INVOKE_TIMEOUT` | true | `agents.invoke()` exceeded `timeoutMs` (has `runId`, `timeoutMs`) |
-| `NoRunCreatedError` | `NO_RUN_CREATED` | false | Trigger response carried no `runIds` (has `functionName`) |
 | `MemoryCatchupTimeoutError` | `MEMORY_CATCHUP_TIMEOUT` | true | `agents.readMemory()` waited past `timeoutMs` for projection catch-up (has `projection`, `minSeq`, `timeoutMs`) |
 | `UnauthenticatedError` | `UNAUTHENTICATED` | false | No/invalid API key (HTTP 401) |
 | `EnterpriseRequiredError` | `ENTERPRISE_REQUIRED` | false | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility |

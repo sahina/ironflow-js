@@ -38,8 +38,9 @@ export type {
 export interface AgentSubscribeRuntimeOptions {
   /**
    * Number of historical events to replay on attach. Default: 1000.
-   * Covers events emitted between `agents.invoke()` returning a runId
-   * via `onRunStarted` and this subscribe attaching.
+   * Covers events emitted before this subscribe attached — including the
+   * whole run when the runId came from a settled `agents.invoke()`, which
+   * waits on one synchronous call and surfaces the id only at the end.
    */
   replay?: number;
 }

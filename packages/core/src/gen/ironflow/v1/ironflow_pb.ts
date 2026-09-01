@@ -6,7 +6,7 @@ import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegen
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { CancelOnSpec, ConcurrencyConfig, DebounceConfig, Error, ExecutionMode, Function, FunctionSchema, FunctionStatus, RetryConfig, Run, RunSchema, RunStatus, Step, StepSchema, Trigger } from "./types_pb.js";
 import { file_ironflow_v1_types } from "./types_pb.js";
-import type { EmptySchema, Timestamp } from "@bufbuild/protobuf/wkt";
+import type { EmptySchema, Timestamp, Value } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { JsonObject, Message } from "@bufbuild/protobuf";
 
@@ -14,7 +14,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/ironflow.proto.
  */
 export const file_ironflow_v1_ironflow: GenFile = /*@__PURE__*/
-  fileDesc("Chppcm9uZmxvdy92MS9pcm9uZmxvdy5wcm90bxILaXJvbmZsb3cudjEi0QQKF1JlZ2lzdGVyRnVuY3Rpb25SZXF1ZXN0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSJgoIdHJpZ2dlcnMYBCADKAsyFC5pcm9uZmxvdy52MS5UcmlnZ2VyEicKBXJldHJ5GAUgASgLMhguaXJvbmZsb3cudjEuUmV0cnlDb25maWcSEgoKdGltZW91dF9tcxgGIAEoBRIzCgtjb25jdXJyZW5jeRgHIAEoCzIeLmlyb25mbG93LnYxLkNvbmN1cnJlbmN5Q29uZmlnEjIKDnByZWZlcnJlZF9tb2RlGAggASgOMhouaXJvbmZsb3cudjEuRXhlY3V0aW9uTW9kZRIUCgxlbmRwb2ludF91cmwYCSABKAkSEQoJYWN0b3Jfa2V5GAogASgJEg8KB3NlY3JldHMYCyADKAkSEQoJcmVjb3JkaW5nGAwgASgIEhsKE3JlY29yZGluZ19yZXRlbnRpb24YDSABKAkSKQoIbWV0YWRhdGEYDyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhUKDWNoYW5nZV9yZWFzb24YECABKAkSLQoIZGVib3VuY2UYESABKAsyGy5pcm9uZmxvdy52MS5EZWJvdW5jZUNvbmZpZxIsCgljYW5jZWxfb24YEyADKAsyGS5pcm9uZmxvdy52MS5DYW5jZWxPblNwZWNKBAgOEA9KBAgSEBNSDnBhdXNlX2JlaGF2aW9yUhRjb21wZW5zYXRlX29uX2NhbmNlbCJUChhSZWdpc3RlckZ1bmN0aW9uUmVzcG9uc2USJwoIZnVuY3Rpb24YASABKAsyFS5pcm9uZmxvdy52MS5GdW5jdGlvbhIPCgdjcmVhdGVkGAIgASgIIiAKEkdldEZ1bmN0aW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJiChRMaXN0RnVuY3Rpb25zUmVxdWVzdBIrCgZzdGF0dXMYASABKA4yGy5pcm9uZmxvdy52MS5GdW5jdGlvblN0YXR1cxINCgVsaW1pdBgCIAEoBRIOCgZjdXJzb3IYAyABKAkiawoVTGlzdEZ1bmN0aW9uc1Jlc3BvbnNlEigKCWZ1bmN0aW9ucxgBIAMoCzIVLmlyb25mbG93LnYxLkZ1bmN0aW9uEhMKC25leHRfY3Vyc29yGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIlYKG1VwZGF0ZUZ1bmN0aW9uU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoCRIrCgZzdGF0dXMYAiABKA4yGy5pcm9uZmxvdy52MS5GdW5jdGlvblN0YXR1cyIjChVEZWxldGVGdW5jdGlvblJlcXVlc3QSCgoCaWQYASABKAkimwEKDlRyaWdnZXJSZXF1ZXN0Eg0KBWV2ZW50GAEgASgJEiUKBGRhdGEYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIpCghtZXRhZGF0YRgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSDwoHdmVyc2lvbhgFIAEoBSI0Cg9UcmlnZ2VyUmVzcG9uc2USDwoHcnVuX2lkcxgBIAMoCRIQCghldmVudF9pZBgCIAEoCSKiAQoSVHJpZ2dlclN5bmNSZXF1ZXN0Eg0KBWV2ZW50GAEgASgJEiUKBGRhdGEYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRISCgp0aW1lb3V0X21zGAQgASgFEikKCG1ldGFkYXRhGAUgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdCJQChNUcmlnZ2VyU3luY1Jlc3BvbnNlEicKB3Jlc3VsdHMYASADKAsyFi5pcm9uZmxvdy52MS5SdW5SZXN1bHQSEAoIZXZlbnRfaWQYAiABKAkiuQEKCVJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSEwoLZnVuY3Rpb25faWQYAiABKAkSJgoGc3RhdHVzGAMgASgOMhYuaXJvbmZsb3cudjEuUnVuU3RhdHVzEicKBm91dHB1dBgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSIQoFZXJyb3IYBSABKAsyEi5pcm9uZmxvdy52MS5FcnJvchITCgtkdXJhdGlvbl9tcxgGIAEoBSJCChNUcmlnZ2VyQmF0Y2hSZXF1ZXN0EisKBmV2ZW50cxgBIAMoCzIbLmlyb25mbG93LnYxLlRyaWdnZXJSZXF1ZXN0IkUKFFRyaWdnZXJCYXRjaFJlc3BvbnNlEi0KB3Jlc3VsdHMYASADKAsyHC5pcm9uZmxvdy52MS5UcmlnZ2VyUmVzcG9uc2UiGwoNR2V0UnVuUmVxdWVzdBIKCgJpZBgBIAEoCSLDAQoPTGlzdFJ1bnNSZXF1ZXN0EhMKC2Z1bmN0aW9uX2lkGAEgASgJEiYKBnN0YXR1cxgCIAEoDjIWLmlyb25mbG93LnYxLlJ1blN0YXR1cxIpCgVzaW5jZRgDIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKQoFdW50aWwYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBWxpbWl0GAUgASgFEg4KBmN1cnNvchgGIAEoCSJcChBMaXN0UnVuc1Jlc3BvbnNlEh4KBHJ1bnMYASADKAsyEC5pcm9uZmxvdy52MS5SdW4SEwoLbmV4dF9jdXJzb3IYAiABKAkSEwoLdG90YWxfY291bnQYAyABKAUiJAoSR2V0UnVuU3RlcHNSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCSI3ChNHZXRSdW5TdGVwc1Jlc3BvbnNlEiAKBXN0ZXBzGAEgAygLMhEuaXJvbmZsb3cudjEuU3RlcCIuChBDYW5jZWxSdW5SZXF1ZXN0EgoKAmlkGAEgASgJEg4KBnJlYXNvbhgCIAEoCSJcChBQYXRjaFN0ZXBSZXF1ZXN0Eg8KB3N0ZXBfaWQYASABKAkSJwoGb3V0cHV0GAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIOCgZyZWFzb24YAyABKAkiNQoQUmVzdW1lUnVuUmVxdWVzdBIOCgZydW5faWQYASABKAkSEQoJZnJvbV9zdGVwGAIgASgJIiEKD1BhdXNlUnVuUmVxdWVzdBIOCgZydW5faWQYASABKAkiIgoQUGF1c2VSdW5SZXNwb25zZRIOCgZzdGF0dXMYASABKAkiJwoVR2V0UGF1c2VkU3RhdGVSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCSJyChZHZXRQYXVzZWRTdGF0ZVJlc3BvbnNlEioKBXN0ZXBzGAEgAygLMhsuaXJvbmZsb3cudjEuUGF1c2VkU3RlcEluZm8SFgoObmV4dF9zdGVwX2hpbnQYAiABKAkSFAoMcGF1c2VfcmVhc29uGAMgASgJIrABCg5QYXVzZWRTdGVwSW5mbxIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEg4KBm91dHB1dBgDIAEoDBIQCghpbmplY3RlZBgEIAEoCBIwCgxjb21wbGV0ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhEKCXN0ZXBfdHlwZRgGIAEoCRIOCgZzdGF0dXMYByABKAkSDQoFZXJyb3IYCCABKAwiXgoXSW5qZWN0U3RlcE91dHB1dFJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEg8KB3N0ZXBfaWQYAiABKAkSEgoKbmV3X291dHB1dBgDIAEoDBIOCgZyZWFzb24YBCABKAkiRAoYSW5qZWN0U3RlcE91dHB1dFJlc3BvbnNlEg8KB3N0ZXBfaWQYASABKAkSFwoPcHJldmlvdXNfb3V0cHV0GAIgASgMIg8KDUhlYWx0aFJlcXVlc3Qi4QEKDkhlYWx0aFJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCRItCgl0aW1lc3RhbXAYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEj8KCmNvbXBvbmVudHMYAyADKAsyKy5pcm9uZmxvdy52MS5IZWFsdGhSZXNwb25zZS5Db21wb25lbnRzRW50cnkaTwoPQ29tcG9uZW50c0VudHJ5EgsKA2tleRgBIAEoCRIrCgV2YWx1ZRgCIAEoCzIcLmlyb25mbG93LnYxLkNvbXBvbmVudEhlYWx0aDoCOAEiMgoPQ29tcG9uZW50SGVhbHRoEg4KBnN0YXR1cxgBIAEoCRIPCgdtZXNzYWdlGAIgASgJIg0KC0luZm9SZXF1ZXN0IqsBCgxJbmZvUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRISCgpnb192ZXJzaW9uGAIgASgJEi4KCnN0YXJ0ZWRfYXQYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhYKDmZ1bmN0aW9uX2NvdW50GAQgASgFEhMKC2FjdGl2ZV9ydW5zGAUgASgFEhkKEWNvbm5lY3RlZF93b3JrZXJzGAYgASgFIvYBChRGdW5jdGlvbkhpc3RvcnlFbnRyeRIQCghldmVudF9pZBgBIAEoCRIWCg5lbnRpdHlfdmVyc2lvbhgCIAEoAxITCgtmdW5jdGlvbl9pZBgDIAEoCRIwChFmdW5jdGlvbl9zbmFwc2hvdBgEIAEoCzIVLmlyb25mbG93LnYxLkZ1bmN0aW9uEhAKCGFjdG9yX2lkGAUgASgJEhUKDWNoYW5nZV9yZWFzb24YBiABKAkSEwoLY2hhbmdlX3R5cGUYByABKAkSLwoLcmVjb3JkZWRfYXQYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIlYKGkxpc3RGdW5jdGlvbkhpc3RvcnlSZXF1ZXN0EhMKC2Z1bmN0aW9uX2lkGAEgASgJEg0KBWxpbWl0GAIgASgFEhQKDGZyb21fdmVyc2lvbhgDIAEoAyJjChtMaXN0RnVuY3Rpb25IaXN0b3J5UmVzcG9uc2USMgoHZW50cmllcxgBIAMoCzIhLmlyb25mbG93LnYxLkZ1bmN0aW9uSGlzdG9yeUVudHJ5EhAKCGhhc19tb3JlGAIgASgIIkMKG0dldEZ1bmN0aW9uQXRWZXJzaW9uUmVxdWVzdBITCgtmdW5jdGlvbl9pZBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgDIlAKHEdldEZ1bmN0aW9uQXRWZXJzaW9uUmVzcG9uc2USMAoFZW50cnkYASABKAsyIS5pcm9uZmxvdy52MS5GdW5jdGlvbkhpc3RvcnlFbnRyeSJWChdSb2xsYmFja0Z1bmN0aW9uUmVxdWVzdBITCgtmdW5jdGlvbl9pZBgBIAEoCRIPCgd2ZXJzaW9uGAIgASgDEhUKDWNoYW5nZV9yZWFzb24YAyABKAkiQwoYUm9sbGJhY2tGdW5jdGlvblJlc3BvbnNlEicKCGZ1bmN0aW9uGAEgASgLMhUuaXJvbmZsb3cudjEuRnVuY3Rpb24y2w4KD0lyb25mbG93U2VydmljZRJfChBSZWdpc3RlckZ1bmN0aW9uEiQuaXJvbmZsb3cudjEuUmVnaXN0ZXJGdW5jdGlvblJlcXVlc3QaJS5pcm9uZmxvdy52MS5SZWdpc3RlckZ1bmN0aW9uUmVzcG9uc2USSgoLR2V0RnVuY3Rpb24SHy5pcm9uZmxvdy52MS5HZXRGdW5jdGlvblJlcXVlc3QaFS5pcm9uZmxvdy52MS5GdW5jdGlvbiIDkAIBElsKDUxpc3RGdW5jdGlvbnMSIS5pcm9uZmxvdy52MS5MaXN0RnVuY3Rpb25zUmVxdWVzdBoiLmlyb25mbG93LnYxLkxpc3RGdW5jdGlvbnNSZXNwb25zZSIDkAIBElcKFFVwZGF0ZUZ1bmN0aW9uU3RhdHVzEiguaXJvbmZsb3cudjEuVXBkYXRlRnVuY3Rpb25TdGF0dXNSZXF1ZXN0GhUuaXJvbmZsb3cudjEuRnVuY3Rpb24STAoORGVsZXRlRnVuY3Rpb24SIi5pcm9uZmxvdy52MS5EZWxldGVGdW5jdGlvblJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkSbQoTTGlzdEZ1bmN0aW9uSGlzdG9yeRInLmlyb25mbG93LnYxLkxpc3RGdW5jdGlvbkhpc3RvcnlSZXF1ZXN0GiguaXJvbmZsb3cudjEuTGlzdEZ1bmN0aW9uSGlzdG9yeVJlc3BvbnNlIgOQAgEScAoUR2V0RnVuY3Rpb25BdFZlcnNpb24SKC5pcm9uZmxvdy52MS5HZXRGdW5jdGlvbkF0VmVyc2lvblJlcXVlc3QaKS5pcm9uZmxvdy52MS5HZXRGdW5jdGlvbkF0VmVyc2lvblJlc3BvbnNlIgOQAgESXwoQUm9sbGJhY2tGdW5jdGlvbhIkLmlyb25mbG93LnYxLlJvbGxiYWNrRnVuY3Rpb25SZXF1ZXN0GiUuaXJvbmZsb3cudjEuUm9sbGJhY2tGdW5jdGlvblJlc3BvbnNlEkQKB1RyaWdnZXISGy5pcm9uZmxvdy52MS5UcmlnZ2VyUmVxdWVzdBocLmlyb25mbG93LnYxLlRyaWdnZXJSZXNwb25zZRJBCgRFbWl0EhsuaXJvbmZsb3cudjEuVHJpZ2dlclJlcXVlc3QaHC5pcm9uZmxvdy52MS5UcmlnZ2VyUmVzcG9uc2USUAoLVHJpZ2dlclN5bmMSHy5pcm9uZmxvdy52MS5UcmlnZ2VyU3luY1JlcXVlc3QaIC5pcm9uZmxvdy52MS5UcmlnZ2VyU3luY1Jlc3BvbnNlElMKDFRyaWdnZXJCYXRjaBIgLmlyb25mbG93LnYxLlRyaWdnZXJCYXRjaFJlcXVlc3QaIS5pcm9uZmxvdy52MS5UcmlnZ2VyQmF0Y2hSZXNwb25zZRI7CgZHZXRSdW4SGi5pcm9uZmxvdy52MS5HZXRSdW5SZXF1ZXN0GhAuaXJvbmZsb3cudjEuUnVuIgOQAgESTAoITGlzdFJ1bnMSHC5pcm9uZmxvdy52MS5MaXN0UnVuc1JlcXVlc3QaHS5pcm9uZmxvdy52MS5MaXN0UnVuc1Jlc3BvbnNlIgOQAgESVQoLR2V0UnVuU3RlcHMSHy5pcm9uZmxvdy52MS5HZXRSdW5TdGVwc1JlcXVlc3QaIC5pcm9uZmxvdy52MS5HZXRSdW5TdGVwc1Jlc3BvbnNlIgOQAgESPAoJQ2FuY2VsUnVuEh0uaXJvbmZsb3cudjEuQ2FuY2VsUnVuUmVxdWVzdBoQLmlyb25mbG93LnYxLlJ1bhI9CglQYXRjaFN0ZXASHS5pcm9uZmxvdy52MS5QYXRjaFN0ZXBSZXF1ZXN0GhEuaXJvbmZsb3cudjEuU3RlcBI8CglSZXN1bWVSdW4SHS5pcm9uZmxvdy52MS5SZXN1bWVSdW5SZXF1ZXN0GhAuaXJvbmZsb3cudjEuUnVuEkcKCFBhdXNlUnVuEhwuaXJvbmZsb3cudjEuUGF1c2VSdW5SZXF1ZXN0Gh0uaXJvbmZsb3cudjEuUGF1c2VSdW5SZXNwb25zZRJeCg5HZXRQYXVzZWRTdGF0ZRIiLmlyb25mbG93LnYxLkdldFBhdXNlZFN0YXRlUmVxdWVzdBojLmlyb25mbG93LnYxLkdldFBhdXNlZFN0YXRlUmVzcG9uc2UiA5ACARJfChBJbmplY3RTdGVwT3V0cHV0EiQuaXJvbmZsb3cudjEuSW5qZWN0U3RlcE91dHB1dFJlcXVlc3QaJS5pcm9uZmxvdy52MS5JbmplY3RTdGVwT3V0cHV0UmVzcG9uc2USQQoGSGVhbHRoEhouaXJvbmZsb3cudjEuSGVhbHRoUmVxdWVzdBobLmlyb25mbG93LnYxLkhlYWx0aFJlc3BvbnNlEjsKBEluZm8SGC5pcm9uZmxvdy52MS5JbmZvUmVxdWVzdBoZLmlyb25mbG93LnYxLkluZm9SZXNwb25zZUI6WjhnaXRodWIuY29tL3NhaGluYS9pcm9uZmxvdy9hcGkvZ28vaXJvbmZsb3cvdjE7aXJvbmZsb3d2MWIGcHJvdG8z", [file_ironflow_v1_types, file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("Chppcm9uZmxvdy92MS9pcm9uZmxvdy5wcm90bxILaXJvbmZsb3cudjEi0QQKF1JlZ2lzdGVyRnVuY3Rpb25SZXF1ZXN0EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSEwoLZGVzY3JpcHRpb24YAyABKAkSJgoIdHJpZ2dlcnMYBCADKAsyFC5pcm9uZmxvdy52MS5UcmlnZ2VyEicKBXJldHJ5GAUgASgLMhguaXJvbmZsb3cudjEuUmV0cnlDb25maWcSEgoKdGltZW91dF9tcxgGIAEoBRIzCgtjb25jdXJyZW5jeRgHIAEoCzIeLmlyb25mbG93LnYxLkNvbmN1cnJlbmN5Q29uZmlnEjIKDnByZWZlcnJlZF9tb2RlGAggASgOMhouaXJvbmZsb3cudjEuRXhlY3V0aW9uTW9kZRIUCgxlbmRwb2ludF91cmwYCSABKAkSEQoJYWN0b3Jfa2V5GAogASgJEg8KB3NlY3JldHMYCyADKAkSEQoJcmVjb3JkaW5nGAwgASgIEhsKE3JlY29yZGluZ19yZXRlbnRpb24YDSABKAkSKQoIbWV0YWRhdGEYDyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhUKDWNoYW5nZV9yZWFzb24YECABKAkSLQoIZGVib3VuY2UYESABKAsyGy5pcm9uZmxvdy52MS5EZWJvdW5jZUNvbmZpZxIsCgljYW5jZWxfb24YEyADKAsyGS5pcm9uZmxvdy52MS5DYW5jZWxPblNwZWNKBAgOEA9KBAgSEBNSDnBhdXNlX2JlaGF2aW9yUhRjb21wZW5zYXRlX29uX2NhbmNlbCJUChhSZWdpc3RlckZ1bmN0aW9uUmVzcG9uc2USJwoIZnVuY3Rpb24YASABKAsyFS5pcm9uZmxvdy52MS5GdW5jdGlvbhIPCgdjcmVhdGVkGAIgASgIIiAKEkdldEZ1bmN0aW9uUmVxdWVzdBIKCgJpZBgBIAEoCSJiChRMaXN0RnVuY3Rpb25zUmVxdWVzdBIrCgZzdGF0dXMYASABKA4yGy5pcm9uZmxvdy52MS5GdW5jdGlvblN0YXR1cxINCgVsaW1pdBgCIAEoBRIOCgZjdXJzb3IYAyABKAkiawoVTGlzdEZ1bmN0aW9uc1Jlc3BvbnNlEigKCWZ1bmN0aW9ucxgBIAMoCzIVLmlyb25mbG93LnYxLkZ1bmN0aW9uEhMKC25leHRfY3Vyc29yGAIgASgJEhMKC3RvdGFsX2NvdW50GAMgASgFIlYKG1VwZGF0ZUZ1bmN0aW9uU3RhdHVzUmVxdWVzdBIKCgJpZBgBIAEoCRIrCgZzdGF0dXMYAiABKA4yGy5pcm9uZmxvdy52MS5GdW5jdGlvblN0YXR1cyIjChVEZWxldGVGdW5jdGlvblJlcXVlc3QSCgoCaWQYASABKAkixwEKDlRyaWdnZXJSZXF1ZXN0Eg0KBWV2ZW50GAEgASgJEiUKBGRhdGEYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EioKCmRhdGFfdmFsdWUYBiABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJEikKCG1ldGFkYXRhGAQgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIPCgd2ZXJzaW9uGAUgASgFIjQKD1RyaWdnZXJSZXNwb25zZRIPCgdydW5faWRzGAEgAygJEhAKCGV2ZW50X2lkGAIgASgJIt8BChJUcmlnZ2VyU3luY1JlcXVlc3QSDQoFZXZlbnQYASABKAkSJQoEZGF0YRgCIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKgoKZGF0YV92YWx1ZRgGIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIXCg9pZGVtcG90ZW5jeV9rZXkYAyABKAkSEgoKdGltZW91dF9tcxgEIAEoBRIpCghtZXRhZGF0YRgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSDwoHdmVyc2lvbhgHIAEoBSJQChNUcmlnZ2VyU3luY1Jlc3BvbnNlEicKB3Jlc3VsdHMYASADKAsyFi5pcm9uZmxvdy52MS5SdW5SZXN1bHQSEAoIZXZlbnRfaWQYAiABKAki/wEKCVJ1blJlc3VsdBIOCgZydW5faWQYASABKAkSEwoLZnVuY3Rpb25faWQYAiABKAkSJgoGc3RhdHVzGAMgASgOMhYuaXJvbmZsb3cudjEuUnVuU3RhdHVzEicKBm91dHB1dBgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSLAoMb3V0cHV0X3ZhbHVlGAggASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEiEKBWVycm9yGAUgASgLMhIuaXJvbmZsb3cudjEuRXJyb3ISEwoLZHVyYXRpb25fbXMYBiABKAUSFgoOd2FpdF90aW1lZF9vdXQYByABKAgi2wEKGUludm9rZUZ1bmN0aW9uU3luY1JlcXVlc3QSEwoLZnVuY3Rpb25faWQYASABKAkSJQoEZGF0YRgCIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKgoKZGF0YV92YWx1ZRgGIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRISCgp0aW1lb3V0X21zGAMgASgFEhcKD2lkZW1wb3RlbmN5X2tleRgEIAEoCRIpCghtZXRhZGF0YRgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QiRAoaSW52b2tlRnVuY3Rpb25TeW5jUmVzcG9uc2USJgoGcmVzdWx0GAEgASgLMhYuaXJvbmZsb3cudjEuUnVuUmVzdWx0IkIKE1RyaWdnZXJCYXRjaFJlcXVlc3QSKwoGZXZlbnRzGAEgAygLMhsuaXJvbmZsb3cudjEuVHJpZ2dlclJlcXVlc3QiRQoUVHJpZ2dlckJhdGNoUmVzcG9uc2USLQoHcmVzdWx0cxgBIAMoCzIcLmlyb25mbG93LnYxLlRyaWdnZXJSZXNwb25zZSIbCg1HZXRSdW5SZXF1ZXN0EgoKAmlkGAEgASgJIsMBCg9MaXN0UnVuc1JlcXVlc3QSEwoLZnVuY3Rpb25faWQYASABKAkSJgoGc3RhdHVzGAIgASgOMhYuaXJvbmZsb3cudjEuUnVuU3RhdHVzEikKBXNpbmNlGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIpCgV1bnRpbBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDQoFbGltaXQYBSABKAUSDgoGY3Vyc29yGAYgASgJIlwKEExpc3RSdW5zUmVzcG9uc2USHgoEcnVucxgBIAMoCzIQLmlyb25mbG93LnYxLlJ1bhITCgtuZXh0X2N1cnNvchgCIAEoCRITCgt0b3RhbF9jb3VudBgDIAEoBSIkChJHZXRSdW5TdGVwc1JlcXVlc3QSDgoGcnVuX2lkGAEgASgJIjcKE0dldFJ1blN0ZXBzUmVzcG9uc2USIAoFc3RlcHMYASADKAsyES5pcm9uZmxvdy52MS5TdGVwIi4KEENhbmNlbFJ1blJlcXVlc3QSCgoCaWQYASABKAkSDgoGcmVhc29uGAIgASgJIooBChBQYXRjaFN0ZXBSZXF1ZXN0Eg8KB3N0ZXBfaWQYASABKAkSJwoGb3V0cHV0GAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYBCABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSDgoGcmVhc29uGAMgASgJIjUKEFJlc3VtZVJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJEhEKCWZyb21fc3RlcBgCIAEoCSIhCg9QYXVzZVJ1blJlcXVlc3QSDgoGcnVuX2lkGAEgASgJIiIKEFBhdXNlUnVuUmVzcG9uc2USDgoGc3RhdHVzGAEgASgJIicKFUdldFBhdXNlZFN0YXRlUmVxdWVzdBIOCgZydW5faWQYASABKAkicgoWR2V0UGF1c2VkU3RhdGVSZXNwb25zZRIqCgVzdGVwcxgBIAMoCzIbLmlyb25mbG93LnYxLlBhdXNlZFN0ZXBJbmZvEhYKDm5leHRfc3RlcF9oaW50GAIgASgJEhQKDHBhdXNlX3JlYXNvbhgDIAEoCSKwAQoOUGF1c2VkU3RlcEluZm8SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRIOCgZvdXRwdXQYAyABKAwSEAoIaW5qZWN0ZWQYBCABKAgSMAoMY29tcGxldGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglzdGVwX3R5cGUYBiABKAkSDgoGc3RhdHVzGAcgASgJEg0KBWVycm9yGAggASgMIl4KF0luamVjdFN0ZXBPdXRwdXRSZXF1ZXN0Eg4KBnJ1bl9pZBgBIAEoCRIPCgdzdGVwX2lkGAIgASgJEhIKCm5ld19vdXRwdXQYAyABKAwSDgoGcmVhc29uGAQgASgJIkQKGEluamVjdFN0ZXBPdXRwdXRSZXNwb25zZRIPCgdzdGVwX2lkGAEgASgJEhcKD3ByZXZpb3VzX291dHB1dBgCIAEoDCIPCg1IZWFsdGhSZXF1ZXN0IuEBCg5IZWFsdGhSZXNwb25zZRIOCgZzdGF0dXMYASABKAkSLQoJdGltZXN0YW1wGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI/Cgpjb21wb25lbnRzGAMgAygLMisuaXJvbmZsb3cudjEuSGVhbHRoUmVzcG9uc2UuQ29tcG9uZW50c0VudHJ5Gk8KD0NvbXBvbmVudHNFbnRyeRILCgNrZXkYASABKAkSKwoFdmFsdWUYAiABKAsyHC5pcm9uZmxvdy52MS5Db21wb25lbnRIZWFsdGg6AjgBIjIKD0NvbXBvbmVudEhlYWx0aBIOCgZzdGF0dXMYASABKAkSDwoHbWVzc2FnZRgCIAEoCSINCgtJbmZvUmVxdWVzdCKrAQoMSW5mb1Jlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSEgoKZ29fdmVyc2lvbhgCIAEoCRIuCgpzdGFydGVkX2F0GAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5mdW5jdGlvbl9jb3VudBgEIAEoBRITCgthY3RpdmVfcnVucxgFIAEoBRIZChFjb25uZWN0ZWRfd29ya2VycxgGIAEoBSL2AQoURnVuY3Rpb25IaXN0b3J5RW50cnkSEAoIZXZlbnRfaWQYASABKAkSFgoOZW50aXR5X3ZlcnNpb24YAiABKAMSEwoLZnVuY3Rpb25faWQYAyABKAkSMAoRZnVuY3Rpb25fc25hcHNob3QYBCABKAsyFS5pcm9uZmxvdy52MS5GdW5jdGlvbhIQCghhY3Rvcl9pZBgFIAEoCRIVCg1jaGFuZ2VfcmVhc29uGAYgASgJEhMKC2NoYW5nZV90eXBlGAcgASgJEi8KC3JlY29yZGVkX2F0GAggASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJWChpMaXN0RnVuY3Rpb25IaXN0b3J5UmVxdWVzdBITCgtmdW5jdGlvbl9pZBgBIAEoCRINCgVsaW1pdBgCIAEoBRIUCgxmcm9tX3ZlcnNpb24YAyABKAMiYwobTGlzdEZ1bmN0aW9uSGlzdG9yeVJlc3BvbnNlEjIKB2VudHJpZXMYASADKAsyIS5pcm9uZmxvdy52MS5GdW5jdGlvbkhpc3RvcnlFbnRyeRIQCghoYXNfbW9yZRgCIAEoCCJDChtHZXRGdW5jdGlvbkF0VmVyc2lvblJlcXVlc3QSEwoLZnVuY3Rpb25faWQYASABKAkSDwoHdmVyc2lvbhgCIAEoAyJQChxHZXRGdW5jdGlvbkF0VmVyc2lvblJlc3BvbnNlEjAKBWVudHJ5GAEgASgLMiEuaXJvbmZsb3cudjEuRnVuY3Rpb25IaXN0b3J5RW50cnkiVgoXUm9sbGJhY2tGdW5jdGlvblJlcXVlc3QSEwoLZnVuY3Rpb25faWQYASABKAkSDwoHdmVyc2lvbhgCIAEoAxIVCg1jaGFuZ2VfcmVhc29uGAMgASgJIkMKGFJvbGxiYWNrRnVuY3Rpb25SZXNwb25zZRInCghmdW5jdGlvbhgBIAEoCzIVLmlyb25mbG93LnYxLkZ1bmN0aW9uMsIPCg9Jcm9uZmxvd1NlcnZpY2USXwoQUmVnaXN0ZXJGdW5jdGlvbhIkLmlyb25mbG93LnYxLlJlZ2lzdGVyRnVuY3Rpb25SZXF1ZXN0GiUuaXJvbmZsb3cudjEuUmVnaXN0ZXJGdW5jdGlvblJlc3BvbnNlEkoKC0dldEZ1bmN0aW9uEh8uaXJvbmZsb3cudjEuR2V0RnVuY3Rpb25SZXF1ZXN0GhUuaXJvbmZsb3cudjEuRnVuY3Rpb24iA5ACARJbCg1MaXN0RnVuY3Rpb25zEiEuaXJvbmZsb3cudjEuTGlzdEZ1bmN0aW9uc1JlcXVlc3QaIi5pcm9uZmxvdy52MS5MaXN0RnVuY3Rpb25zUmVzcG9uc2UiA5ACARJXChRVcGRhdGVGdW5jdGlvblN0YXR1cxIoLmlyb25mbG93LnYxLlVwZGF0ZUZ1bmN0aW9uU3RhdHVzUmVxdWVzdBoVLmlyb25mbG93LnYxLkZ1bmN0aW9uEkwKDkRlbGV0ZUZ1bmN0aW9uEiIuaXJvbmZsb3cudjEuRGVsZXRlRnVuY3Rpb25SZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5Em0KE0xpc3RGdW5jdGlvbkhpc3RvcnkSJy5pcm9uZmxvdy52MS5MaXN0RnVuY3Rpb25IaXN0b3J5UmVxdWVzdBooLmlyb25mbG93LnYxLkxpc3RGdW5jdGlvbkhpc3RvcnlSZXNwb25zZSIDkAIBEnAKFEdldEZ1bmN0aW9uQXRWZXJzaW9uEiguaXJvbmZsb3cudjEuR2V0RnVuY3Rpb25BdFZlcnNpb25SZXF1ZXN0GikuaXJvbmZsb3cudjEuR2V0RnVuY3Rpb25BdFZlcnNpb25SZXNwb25zZSIDkAIBEl8KEFJvbGxiYWNrRnVuY3Rpb24SJC5pcm9uZmxvdy52MS5Sb2xsYmFja0Z1bmN0aW9uUmVxdWVzdBolLmlyb25mbG93LnYxLlJvbGxiYWNrRnVuY3Rpb25SZXNwb25zZRJECgdUcmlnZ2VyEhsuaXJvbmZsb3cudjEuVHJpZ2dlclJlcXVlc3QaHC5pcm9uZmxvdy52MS5UcmlnZ2VyUmVzcG9uc2USQQoERW1pdBIbLmlyb25mbG93LnYxLlRyaWdnZXJSZXF1ZXN0GhwuaXJvbmZsb3cudjEuVHJpZ2dlclJlc3BvbnNlElAKC1RyaWdnZXJTeW5jEh8uaXJvbmZsb3cudjEuVHJpZ2dlclN5bmNSZXF1ZXN0GiAuaXJvbmZsb3cudjEuVHJpZ2dlclN5bmNSZXNwb25zZRJlChJJbnZva2VGdW5jdGlvblN5bmMSJi5pcm9uZmxvdy52MS5JbnZva2VGdW5jdGlvblN5bmNSZXF1ZXN0GicuaXJvbmZsb3cudjEuSW52b2tlRnVuY3Rpb25TeW5jUmVzcG9uc2USUwoMVHJpZ2dlckJhdGNoEiAuaXJvbmZsb3cudjEuVHJpZ2dlckJhdGNoUmVxdWVzdBohLmlyb25mbG93LnYxLlRyaWdnZXJCYXRjaFJlc3BvbnNlEjsKBkdldFJ1bhIaLmlyb25mbG93LnYxLkdldFJ1blJlcXVlc3QaEC5pcm9uZmxvdy52MS5SdW4iA5ACARJMCghMaXN0UnVucxIcLmlyb25mbG93LnYxLkxpc3RSdW5zUmVxdWVzdBodLmlyb25mbG93LnYxLkxpc3RSdW5zUmVzcG9uc2UiA5ACARJVCgtHZXRSdW5TdGVwcxIfLmlyb25mbG93LnYxLkdldFJ1blN0ZXBzUmVxdWVzdBogLmlyb25mbG93LnYxLkdldFJ1blN0ZXBzUmVzcG9uc2UiA5ACARI8CglDYW5jZWxSdW4SHS5pcm9uZmxvdy52MS5DYW5jZWxSdW5SZXF1ZXN0GhAuaXJvbmZsb3cudjEuUnVuEj0KCVBhdGNoU3RlcBIdLmlyb25mbG93LnYxLlBhdGNoU3RlcFJlcXVlc3QaES5pcm9uZmxvdy52MS5TdGVwEjwKCVJlc3VtZVJ1bhIdLmlyb25mbG93LnYxLlJlc3VtZVJ1blJlcXVlc3QaEC5pcm9uZmxvdy52MS5SdW4SRwoIUGF1c2VSdW4SHC5pcm9uZmxvdy52MS5QYXVzZVJ1blJlcXVlc3QaHS5pcm9uZmxvdy52MS5QYXVzZVJ1blJlc3BvbnNlEl4KDkdldFBhdXNlZFN0YXRlEiIuaXJvbmZsb3cudjEuR2V0UGF1c2VkU3RhdGVSZXF1ZXN0GiMuaXJvbmZsb3cudjEuR2V0UGF1c2VkU3RhdGVSZXNwb25zZSIDkAIBEl8KEEluamVjdFN0ZXBPdXRwdXQSJC5pcm9uZmxvdy52MS5JbmplY3RTdGVwT3V0cHV0UmVxdWVzdBolLmlyb25mbG93LnYxLkluamVjdFN0ZXBPdXRwdXRSZXNwb25zZRJBCgZIZWFsdGgSGi5pcm9uZmxvdy52MS5IZWFsdGhSZXF1ZXN0GhsuaXJvbmZsb3cudjEuSGVhbHRoUmVzcG9uc2USOwoESW5mbxIYLmlyb25mbG93LnYxLkluZm9SZXF1ZXN0GhkuaXJvbmZsb3cudjEuSW5mb1Jlc3BvbnNlQjpaOGdpdGh1Yi5jb20vc2FoaW5hL2lyb25mbG93L2FwaS9nby9pcm9uZmxvdy92MTtpcm9uZmxvd3YxYgZwcm90bzM", [file_ironflow_v1_types, file_google_protobuf_empty, file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message ironflow.v1.RegisterFunctionRequest
@@ -280,6 +280,16 @@ export type TriggerRequest = Message<"ironflow.v1.TriggerRequest"> & {
   data?: JsonObject | undefined;
 
   /**
+   * Set ONLY when the payload is not a JSON object, which data cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * data, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value data_value = 6;
+   */
+  dataValue?: Value | undefined;
+
+  /**
    * Optional deduplication key
    *
    * @generated from field: string idempotency_key = 3;
@@ -349,6 +359,16 @@ export type TriggerSyncRequest = Message<"ironflow.v1.TriggerSyncRequest"> & {
   data?: JsonObject | undefined;
 
   /**
+   * Set ONLY when the payload is not a JSON object, which data cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * data, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value data_value = 6;
+   */
+  dataValue?: Value | undefined;
+
+  /**
    * @generated from field: string idempotency_key = 3;
    */
   idempotencyKey: string;
@@ -366,6 +386,22 @@ export type TriggerSyncRequest = Message<"ironflow.v1.TriggerSyncRequest"> & {
    * @generated from field: google.protobuf.Struct metadata = 5;
    */
   metadata?: JsonObject | undefined;
+
+  /**
+   * Event schema version (default 1). Matches TriggerRequest.version -- this
+   * path pinned to 1 until #1955 because the field was absent, which on a
+   * governed event name whose v1 schema had been dropped turned every sync
+   * emit into a 400.
+   *
+   * 7, not 6: #1979 took 6 for data_value on this message while #1955 was in
+   * flight. Both landed on tag 6 through a clean text merge (different lines,
+   * no textual conflict), which protoc rejects and a wire reader would not --
+   * a client setting data_value emits length-delimited bytes that an int32
+   * varint read would silently misparse.
+   *
+   * @generated from field: int32 version = 7;
+   */
+  version: number;
 };
 
 /**
@@ -422,6 +458,16 @@ export type RunResult = Message<"ironflow.v1.RunResult"> & {
   output?: JsonObject | undefined;
 
   /**
+   * Set ONLY when the payload is not a JSON object, which output cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * output, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value output_value = 8;
+   */
+  outputValue?: Value | undefined;
+
+  /**
    * @generated from field: ironflow.v1.Error error = 5;
    */
   error?: Error | undefined;
@@ -430,6 +476,15 @@ export type RunResult = Message<"ironflow.v1.RunResult"> & {
    * @generated from field: int32 duration_ms = 6;
    */
   durationMs: number;
+
+  /**
+   * True when a synchronous call (TriggerSync, InvokeFunctionSync) stopped
+   * waiting before this run reached a terminal state.
+   * The run continues and status contains its last-known state.
+   *
+   * @generated from field: bool wait_timed_out = 7;
+   */
+  waitTimedOut: boolean;
 };
 
 /**
@@ -438,6 +493,91 @@ export type RunResult = Message<"ironflow.v1.RunResult"> & {
  */
 export const RunResultSchema: GenMessage<RunResult> = /*@__PURE__*/
   messageDesc(file_ironflow_v1_ironflow, 11);
+
+/**
+ * @generated from message ironflow.v1.InvokeFunctionSyncRequest
+ */
+export type InvokeFunctionSyncRequest = Message<"ironflow.v1.InvokeFunctionSyncRequest"> & {
+  /**
+   * ID of the function to invoke. Not an event name — no trigger matching runs.
+   *
+   * @generated from field: string function_id = 1;
+   */
+  functionId: string;
+
+  /**
+   * Function input payload
+   *
+   * @generated from field: google.protobuf.Struct data = 2;
+   */
+  data?: JsonObject | undefined;
+
+  /**
+   * Set ONLY when the payload is not a JSON object, which data cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * data, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value data_value = 6;
+   */
+  dataValue?: Value | undefined;
+
+  /**
+   * Max wait time in ms (default: 30000).
+   *
+   * SDK authors: this is the ONLY timeout that belongs on this call. Do not
+   * implement it as an HTTP/fetch abort. Cancelling the request cancels the
+   * RUN (see the rpc comment), so a transport deadline shorter than timeout_ms
+   * kills the run on every timeout and makes wait_timed_out unreachable. Send
+   * the budget here and leave the transport deadline longer — the browser
+   * emitSync precedent is timeout + 5000 — or absent.
+   *
+   * @generated from field: int32 timeout_ms = 3;
+   */
+  timeoutMs: number;
+
+  /**
+   * Optional deduplication key. A repeat call with the same key returns the
+   * original run instead of creating a second one.
+   *
+   * @generated from field: string idempotency_key = 4;
+   */
+  idempotencyKey: string;
+
+  /**
+   * Optional metadata stored on the generated event
+   *
+   * @generated from field: google.protobuf.Struct metadata = 5;
+   */
+  metadata?: JsonObject | undefined;
+};
+
+/**
+ * Describes the message ironflow.v1.InvokeFunctionSyncRequest.
+ * Use `create(InvokeFunctionSyncRequestSchema)` to create a new message.
+ */
+export const InvokeFunctionSyncRequestSchema: GenMessage<InvokeFunctionSyncRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_ironflow, 12);
+
+/**
+ * @generated from message ironflow.v1.InvokeFunctionSyncResponse
+ */
+export type InvokeFunctionSyncResponse = Message<"ironflow.v1.InvokeFunctionSyncResponse"> & {
+  /**
+   * Exactly one run. Singular by design: the single-result guarantee is the
+   * reason this RPC exists alongside TriggerSync's repeated results.
+   *
+   * @generated from field: ironflow.v1.RunResult result = 1;
+   */
+  result?: RunResult | undefined;
+};
+
+/**
+ * Describes the message ironflow.v1.InvokeFunctionSyncResponse.
+ * Use `create(InvokeFunctionSyncResponseSchema)` to create a new message.
+ */
+export const InvokeFunctionSyncResponseSchema: GenMessage<InvokeFunctionSyncResponse> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_ironflow, 13);
 
 /**
  * @generated from message ironflow.v1.TriggerBatchRequest
@@ -454,7 +594,7 @@ export type TriggerBatchRequest = Message<"ironflow.v1.TriggerBatchRequest"> & {
  * Use `create(TriggerBatchRequestSchema)` to create a new message.
  */
 export const TriggerBatchRequestSchema: GenMessage<TriggerBatchRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 12);
+  messageDesc(file_ironflow_v1_ironflow, 14);
 
 /**
  * @generated from message ironflow.v1.TriggerBatchResponse
@@ -471,7 +611,7 @@ export type TriggerBatchResponse = Message<"ironflow.v1.TriggerBatchResponse"> &
  * Use `create(TriggerBatchResponseSchema)` to create a new message.
  */
 export const TriggerBatchResponseSchema: GenMessage<TriggerBatchResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 13);
+  messageDesc(file_ironflow_v1_ironflow, 15);
 
 /**
  * @generated from message ironflow.v1.GetRunRequest
@@ -488,7 +628,7 @@ export type GetRunRequest = Message<"ironflow.v1.GetRunRequest"> & {
  * Use `create(GetRunRequestSchema)` to create a new message.
  */
 export const GetRunRequestSchema: GenMessage<GetRunRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 14);
+  messageDesc(file_ironflow_v1_ironflow, 16);
 
 /**
  * @generated from message ironflow.v1.ListRunsRequest
@@ -540,7 +680,7 @@ export type ListRunsRequest = Message<"ironflow.v1.ListRunsRequest"> & {
  * Use `create(ListRunsRequestSchema)` to create a new message.
  */
 export const ListRunsRequestSchema: GenMessage<ListRunsRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 15);
+  messageDesc(file_ironflow_v1_ironflow, 17);
 
 /**
  * @generated from message ironflow.v1.ListRunsResponse
@@ -567,7 +707,7 @@ export type ListRunsResponse = Message<"ironflow.v1.ListRunsResponse"> & {
  * Use `create(ListRunsResponseSchema)` to create a new message.
  */
 export const ListRunsResponseSchema: GenMessage<ListRunsResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 16);
+  messageDesc(file_ironflow_v1_ironflow, 18);
 
 /**
  * @generated from message ironflow.v1.GetRunStepsRequest
@@ -584,7 +724,7 @@ export type GetRunStepsRequest = Message<"ironflow.v1.GetRunStepsRequest"> & {
  * Use `create(GetRunStepsRequestSchema)` to create a new message.
  */
 export const GetRunStepsRequestSchema: GenMessage<GetRunStepsRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 17);
+  messageDesc(file_ironflow_v1_ironflow, 19);
 
 /**
  * @generated from message ironflow.v1.GetRunStepsResponse
@@ -601,7 +741,7 @@ export type GetRunStepsResponse = Message<"ironflow.v1.GetRunStepsResponse"> & {
  * Use `create(GetRunStepsResponseSchema)` to create a new message.
  */
 export const GetRunStepsResponseSchema: GenMessage<GetRunStepsResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 18);
+  messageDesc(file_ironflow_v1_ironflow, 20);
 
 /**
  * @generated from message ironflow.v1.CancelRunRequest
@@ -623,7 +763,7 @@ export type CancelRunRequest = Message<"ironflow.v1.CancelRunRequest"> & {
  * Use `create(CancelRunRequestSchema)` to create a new message.
  */
 export const CancelRunRequestSchema: GenMessage<CancelRunRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 19);
+  messageDesc(file_ironflow_v1_ironflow, 21);
 
 /**
  * @generated from message ironflow.v1.PatchStepRequest
@@ -642,6 +782,16 @@ export type PatchStepRequest = Message<"ironflow.v1.PatchStepRequest"> & {
   output?: JsonObject | undefined;
 
   /**
+   * Set ONLY when the payload is not a JSON object, which output cannot
+   * represent (#1963). Readers take this when present and fall back to
+   * output, so an object costs no extra bytes and old clients are
+   * unaffected.
+   *
+   * @generated from field: google.protobuf.Value output_value = 4;
+   */
+  outputValue?: Value | undefined;
+
+  /**
    * Audit reason
    *
    * @generated from field: string reason = 3;
@@ -654,7 +804,7 @@ export type PatchStepRequest = Message<"ironflow.v1.PatchStepRequest"> & {
  * Use `create(PatchStepRequestSchema)` to create a new message.
  */
 export const PatchStepRequestSchema: GenMessage<PatchStepRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 20);
+  messageDesc(file_ironflow_v1_ironflow, 22);
 
 /**
  * @generated from message ironflow.v1.ResumeRunRequest
@@ -678,7 +828,7 @@ export type ResumeRunRequest = Message<"ironflow.v1.ResumeRunRequest"> & {
  * Use `create(ResumeRunRequestSchema)` to create a new message.
  */
 export const ResumeRunRequestSchema: GenMessage<ResumeRunRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 21);
+  messageDesc(file_ironflow_v1_ironflow, 23);
 
 /**
  * @generated from message ironflow.v1.PauseRunRequest
@@ -695,7 +845,7 @@ export type PauseRunRequest = Message<"ironflow.v1.PauseRunRequest"> & {
  * Use `create(PauseRunRequestSchema)` to create a new message.
  */
 export const PauseRunRequestSchema: GenMessage<PauseRunRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 22);
+  messageDesc(file_ironflow_v1_ironflow, 24);
 
 /**
  * @generated from message ironflow.v1.PauseRunResponse
@@ -714,7 +864,7 @@ export type PauseRunResponse = Message<"ironflow.v1.PauseRunResponse"> & {
  * Use `create(PauseRunResponseSchema)` to create a new message.
  */
 export const PauseRunResponseSchema: GenMessage<PauseRunResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 23);
+  messageDesc(file_ironflow_v1_ironflow, 25);
 
 /**
  * @generated from message ironflow.v1.GetPausedStateRequest
@@ -731,7 +881,7 @@ export type GetPausedStateRequest = Message<"ironflow.v1.GetPausedStateRequest">
  * Use `create(GetPausedStateRequestSchema)` to create a new message.
  */
 export const GetPausedStateRequestSchema: GenMessage<GetPausedStateRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 24);
+  messageDesc(file_ironflow_v1_ironflow, 26);
 
 /**
  * @generated from message ironflow.v1.GetPausedStateResponse
@@ -762,7 +912,7 @@ export type GetPausedStateResponse = Message<"ironflow.v1.GetPausedStateResponse
  * Use `create(GetPausedStateResponseSchema)` to create a new message.
  */
 export const GetPausedStateResponseSchema: GenMessage<GetPausedStateResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 25);
+  messageDesc(file_ironflow_v1_ironflow, 27);
 
 /**
  * @generated from message ironflow.v1.PausedStepInfo
@@ -823,7 +973,7 @@ export type PausedStepInfo = Message<"ironflow.v1.PausedStepInfo"> & {
  * Use `create(PausedStepInfoSchema)` to create a new message.
  */
 export const PausedStepInfoSchema: GenMessage<PausedStepInfo> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 26);
+  messageDesc(file_ironflow_v1_ironflow, 28);
 
 /**
  * @generated from message ironflow.v1.InjectStepOutputRequest
@@ -857,7 +1007,7 @@ export type InjectStepOutputRequest = Message<"ironflow.v1.InjectStepOutputReque
  * Use `create(InjectStepOutputRequestSchema)` to create a new message.
  */
 export const InjectStepOutputRequestSchema: GenMessage<InjectStepOutputRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 27);
+  messageDesc(file_ironflow_v1_ironflow, 29);
 
 /**
  * @generated from message ironflow.v1.InjectStepOutputResponse
@@ -879,7 +1029,7 @@ export type InjectStepOutputResponse = Message<"ironflow.v1.InjectStepOutputResp
  * Use `create(InjectStepOutputResponseSchema)` to create a new message.
  */
 export const InjectStepOutputResponseSchema: GenMessage<InjectStepOutputResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 28);
+  messageDesc(file_ironflow_v1_ironflow, 30);
 
 /**
  * @generated from message ironflow.v1.HealthRequest
@@ -892,7 +1042,7 @@ export type HealthRequest = Message<"ironflow.v1.HealthRequest"> & {
  * Use `create(HealthRequestSchema)` to create a new message.
  */
 export const HealthRequestSchema: GenMessage<HealthRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 29);
+  messageDesc(file_ironflow_v1_ironflow, 31);
 
 /**
  * @generated from message ironflow.v1.HealthResponse
@@ -921,7 +1071,7 @@ export type HealthResponse = Message<"ironflow.v1.HealthResponse"> & {
  * Use `create(HealthResponseSchema)` to create a new message.
  */
 export const HealthResponseSchema: GenMessage<HealthResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 30);
+  messageDesc(file_ironflow_v1_ironflow, 32);
 
 /**
  * @generated from message ironflow.v1.ComponentHealth
@@ -943,7 +1093,7 @@ export type ComponentHealth = Message<"ironflow.v1.ComponentHealth"> & {
  * Use `create(ComponentHealthSchema)` to create a new message.
  */
 export const ComponentHealthSchema: GenMessage<ComponentHealth> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 31);
+  messageDesc(file_ironflow_v1_ironflow, 33);
 
 /**
  * @generated from message ironflow.v1.InfoRequest
@@ -956,7 +1106,7 @@ export type InfoRequest = Message<"ironflow.v1.InfoRequest"> & {
  * Use `create(InfoRequestSchema)` to create a new message.
  */
 export const InfoRequestSchema: GenMessage<InfoRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 32);
+  messageDesc(file_ironflow_v1_ironflow, 34);
 
 /**
  * @generated from message ironflow.v1.InfoResponse
@@ -998,7 +1148,7 @@ export type InfoResponse = Message<"ironflow.v1.InfoResponse"> & {
  * Use `create(InfoResponseSchema)` to create a new message.
  */
 export const InfoResponseSchema: GenMessage<InfoResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 33);
+  messageDesc(file_ironflow_v1_ironflow, 35);
 
 /**
  * @generated from message ironflow.v1.FunctionHistoryEntry
@@ -1054,7 +1204,7 @@ export type FunctionHistoryEntry = Message<"ironflow.v1.FunctionHistoryEntry"> &
  * Use `create(FunctionHistoryEntrySchema)` to create a new message.
  */
 export const FunctionHistoryEntrySchema: GenMessage<FunctionHistoryEntry> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 34);
+  messageDesc(file_ironflow_v1_ironflow, 36);
 
 /**
  * @generated from message ironflow.v1.ListFunctionHistoryRequest
@@ -1083,7 +1233,7 @@ export type ListFunctionHistoryRequest = Message<"ironflow.v1.ListFunctionHistor
  * Use `create(ListFunctionHistoryRequestSchema)` to create a new message.
  */
 export const ListFunctionHistoryRequestSchema: GenMessage<ListFunctionHistoryRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 35);
+  messageDesc(file_ironflow_v1_ironflow, 37);
 
 /**
  * @generated from message ironflow.v1.ListFunctionHistoryResponse
@@ -1105,7 +1255,7 @@ export type ListFunctionHistoryResponse = Message<"ironflow.v1.ListFunctionHisto
  * Use `create(ListFunctionHistoryResponseSchema)` to create a new message.
  */
 export const ListFunctionHistoryResponseSchema: GenMessage<ListFunctionHistoryResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 36);
+  messageDesc(file_ironflow_v1_ironflow, 38);
 
 /**
  * @generated from message ironflow.v1.GetFunctionAtVersionRequest
@@ -1127,7 +1277,7 @@ export type GetFunctionAtVersionRequest = Message<"ironflow.v1.GetFunctionAtVers
  * Use `create(GetFunctionAtVersionRequestSchema)` to create a new message.
  */
 export const GetFunctionAtVersionRequestSchema: GenMessage<GetFunctionAtVersionRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 37);
+  messageDesc(file_ironflow_v1_ironflow, 39);
 
 /**
  * @generated from message ironflow.v1.GetFunctionAtVersionResponse
@@ -1144,7 +1294,7 @@ export type GetFunctionAtVersionResponse = Message<"ironflow.v1.GetFunctionAtVer
  * Use `create(GetFunctionAtVersionResponseSchema)` to create a new message.
  */
 export const GetFunctionAtVersionResponseSchema: GenMessage<GetFunctionAtVersionResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 38);
+  messageDesc(file_ironflow_v1_ironflow, 40);
 
 /**
  * @generated from message ironflow.v1.RollbackFunctionRequest
@@ -1171,7 +1321,7 @@ export type RollbackFunctionRequest = Message<"ironflow.v1.RollbackFunctionReque
  * Use `create(RollbackFunctionRequestSchema)` to create a new message.
  */
 export const RollbackFunctionRequestSchema: GenMessage<RollbackFunctionRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 39);
+  messageDesc(file_ironflow_v1_ironflow, 41);
 
 /**
  * @generated from message ironflow.v1.RollbackFunctionResponse
@@ -1188,7 +1338,7 @@ export type RollbackFunctionResponse = Message<"ironflow.v1.RollbackFunctionResp
  * Use `create(RollbackFunctionResponseSchema)` to create a new message.
  */
 export const RollbackFunctionResponseSchema: GenMessage<RollbackFunctionResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_ironflow, 40);
+  messageDesc(file_ironflow_v1_ironflow, 42);
 
 /**
  * --- Function Management ---
@@ -1305,6 +1455,20 @@ export const IronflowService: GenService<{
     methodKind: "unary";
     input: typeof TriggerSyncRequestSchema;
     output: typeof TriggerSyncResponseSchema;
+  },
+  /**
+   * Invoke one function by ID and wait for its single run to finish.
+   * Unlike TriggerSync, which is event-keyed and fans out to every matching
+   * function, this targets exactly one function and returns exactly one
+   * result. Cancelling the request cancels the run (ADR 0067) — the call has
+   * a single consumer, so a caller that goes away leaves the run with none.
+   *
+   * @generated from rpc ironflow.v1.IronflowService.InvokeFunctionSync
+   */
+  invokeFunctionSync: {
+    methodKind: "unary";
+    input: typeof InvokeFunctionSyncRequestSchema;
+    output: typeof InvokeFunctionSyncResponseSchema;
   },
   /**
    * Batch trigger multiple events

@@ -369,10 +369,16 @@ console.log(published.eventId, published.sequence);
 ### Emit and Wait, Batch Emit
 
 ```typescript
-// Wait for the triggered run to reach a terminal state.
-// Throws RunFailedError / RunCancelledError if it does not complete.
-const result = await ironflow.emitSync('order.placed', { orderId: '123' }, { timeout: 30000 });
-console.log(result.runId, result.status, result.output, result.durationMs);
+// Wait for EVERY run the event triggers. Returns EmitSyncResult[] -- an event
+// that matches nothing returns []. Run outcomes are never thrown: inspect
+// status, error and waitTimedOut per element. A wait timeout leaves the run active.
+const results = await ironflow.emitSync('order.placed', { orderId: '123' }, {
+  timeout: 30000,
+  idempotencyKey: 'order-123-placed',
+});
+for (const r of results) {
+  console.log(r.runId, r.functionId, r.status, r.output, r.waitTimedOut);
+}
 
 // One round trip, one EmitResult per event, in order
 const results = await ironflow.triggerBatch([
@@ -558,17 +564,27 @@ which mode you are in; results report `queued: false, pending: false`.
 
 ### Invoke a Workflow Function
 
+`invoke()` is keyed by **function ID** and blocks for that one run's result over
+`InvokeFunctionSync`. Because there is exactly one run, it throws
+`RunFailedError`, `RunCancelledError` and `RunWaitTimeoutError` on the outcome --
+the deliberate counterpart to `emitSync()`, which never does (ADR 0067).
+
 ```typescript
 import { ironflow } from '@ironflow/browser';
 
-// Invoke with typed input
+// Invoke one function by ID, with typed input
 const result = await ironflow.invoke<{ orderId: string }>('process-order', {
   data: { orderId: '123' },
+  timeout: 30000,        // server-side wait budget, not a transport deadline
+  idempotencyKey: 'order-123',
 });
 
-console.log(result.runIds);   // ['run_abc123']
-console.log(result.eventId);  // Event ID that triggered the run
+console.log(result.runId, result.status, result.output, result.durationMs);
 ```
+
+Aborting the request cancels the run server-side: `InvokeFunctionSync` ties the
+run's lifetime to the request context. To start a function *by event* without
+waiting, use `emit()`, which returns `{ runIds, eventId }`.
 
 ### Get Run Status
 
@@ -707,7 +723,7 @@ Spec: `src/agents/spec.md`. Issue #625.
 
 ### `agents.invoke(name, payload, opts?)`
 
-Fire-and-wait. Triggers the agent, subscribes to its run events, resolves on the terminal `system.run.{runId}.completed` event.
+Fire-and-wait. One `InvokeFunctionSync` call: the server creates exactly one run, waits for it, and returns its outcome. There is no subscribe and no replay window (ADR 0067).
 
 ```typescript
 import { ironflow } from '@ironflow/browser';
@@ -718,9 +734,11 @@ const result = await ironflow.agents.invoke<{ category: string }>(
   {
     timeoutMs: 60_000,             // default 30s
     idempotencyKey: 'click-abc',   // server-side dedup
-    signal: ac.signal,             // AbortController
-    replay: 1000,                  // default; covers the race window
-    onRunStarted: (runId) => {},   // optional: surfaces runId before terminal
+    signal: ac.signal,             // AbortController; the server cancels the run
+    // replay:       DEPRECATED, unread -- there is no subscription to replay
+    // onRunStarted: DEPRECATED -- now fires AFTER the run settles, not before
+    //               the wait. Use agents.subscribe(runId, { replay }) for
+    //               live progress.
   }
 );
 console.log(result.runId, result.output, result.durationMs);
@@ -731,11 +749,10 @@ Errors:
 | Throws | When |
 |---|---|
 | `ValidationError` | empty/oversized `name` |
-| `AbortError` (DOMException) | `signal` aborts; SDK calls `cancelRun(runId)` server-side |
-| `AgentInvokeTimeoutError` | local `timeoutMs` elapsed; SDK calls `cancelRun(runId)` |
-| `NoRunCreatedError` | server returned empty `runIds` |
-| `RunFailedError` | `system.run.{runId}.failed` |
-| `RunCancelledError` | `system.run.{runId}.cancelled` |
+| `AbortError` (DOMException) | `signal` aborts; the request dies and the **server** cancels the run -- the SDK issues no `cancelRun` |
+| `AgentInvokeTimeoutError` | `timeoutMs` elapsed. An expired budget deliberately leaves the run alive, so here the SDK does best-effort `cancelRun(runId)` |
+| `RunFailedError` | the run failed |
+| `RunCancelledError` | the run was cancelled |
 
 ### `agents.subscribe(runId, callbacks, opts?)`
 
@@ -1612,10 +1629,10 @@ import {
   TimeoutError,            // Request timeouts
   ValidationError,         // Invalid response or input validation
   NotConfiguredError,      // Client used before configure() was called
+  RunWaitTimeoutError,     // invoke() wait expired; durable run continues
   RunFailedError,          // agents.invoke: terminal run failure
   RunCancelledError,       // agents.invoke: terminal run cancellation
   AgentInvokeTimeoutError, // agents.invoke: local timeoutMs elapsed
-  NoRunCreatedError,       // agents.invoke: server returned no runIds
   QueueFullError,          // offline queue at 500 writes or 5 MB
 } from '@ironflow/browser';
 ```
@@ -1653,9 +1670,9 @@ Common error codes returned by the client:
 |------|-------------|
 | `HTTP_4xx` / `HTTP_5xx` | HTTP status-based errors |
 | `TIMEOUT` | Request exceeded the configured timeout |
+| `RUN_WAIT_TIMEOUT` | `invoke()` stopped waiting; the durable run continues. `emitSync()` sets `waitTimedOut` per result instead of throwing |
 | `REQUEST_FAILED` | Network or fetch failure |
 | `PATCH_FAILED` | Step patch operation failed |
-| `RESUME_FAILED` | Run resume operation failed |
 | `NOT_CONFIGURED` | Client used before `configure()` |
 
 ## Browser Compatibility
@@ -1688,7 +1705,7 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Pub/Sub types:** `PublishOptions`, `PublishResult`
 
-**Invoke/Trigger types:** `InvokeResult`, `TriggerResult` (deprecated alias), `TriggerSyncOptions`, `TriggerSyncResult`
+**Invoke/Trigger types:** `InvokeResult`, `TriggerResult` (deprecated alias), `EmitSyncResult`, `InvokeSyncOptions`, `InvokeSyncResult`
 
 **Subscription types:** `SubscribeOptions`, `Subscription`, `AckableSubscription`, `SubscriptionEvent`, `SubscriptionErrorInfo`, `SubscriptionCallbacks`, `ConnectionState`, `AckHandle`
 

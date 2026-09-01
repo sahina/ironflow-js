@@ -34,6 +34,19 @@ export const DEFAULT_TIMEOUTS = {
   FUNCTION: 600_000,
   /** Default trigger sync timeout (30 seconds). */
   TRIGGER_SYNC: 30_000,
+  /** Default InvokeFunctionSync wait budget (30 seconds), sent as `timeout_ms`. */
+  INVOKE_FUNCTION_SYNC: 30_000,
+  /**
+   * Headroom added ON TOP OF the wait budget to form the transport deadline of a
+   * synchronous call: `transportDeadline = timeout_ms + SYNC_TRANSPORT_HEADROOM`.
+   *
+   * The wait budget belongs in the request body (`timeout_ms`), never in an HTTP
+   * abort. A transport deadline at or below `timeout_ms` aborts the request first,
+   * which the server reads as an abandoned caller: it cancels the run, and
+   * `waitTimedOut` becomes unreachable. Precedent: browser
+   * `emitSync` sends `timeout + 5000` (`sdk/js/browser/src/client.ts:1495`).
+   */
+  SYNC_TRANSPORT_HEADROOM: 5_000,
 } as const;
 
 /** Default retry configuration for function steps */
@@ -230,12 +243,16 @@ export const API_ENDPOINTS = {
   TRIGGER: "/ironflow.v1.IronflowService/Trigger",
   /** Trigger a function synchronously */
   TRIGGER_SYNC: "/ironflow.v1.IronflowService/TriggerSync",
+  /** Invoke a function by ID synchronously and wait for its single run */
+  INVOKE_FUNCTION_SYNC: "/ironflow.v1.IronflowService/InvokeFunctionSync",
   /** Get a specific run */
   GET_RUN: "/ironflow.v1.IronflowService/GetRun",
   /** List runs */
   LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
   /** Cancel a run */
   CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
+  /** Resume a paused or failed run */
+  RESUME_RUN: "/ironflow.v1.IronflowService/ResumeRun",
   /** Register a function */
   REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
   /** Health check */

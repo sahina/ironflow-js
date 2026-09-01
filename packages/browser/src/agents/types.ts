@@ -5,7 +5,7 @@
  */
 
 import type {
-  InvokeResult,
+  InvokeSyncResult,
   ProjectionStateResult,
   Run,
   Subscription,
@@ -19,15 +19,18 @@ import type {
  */
 export interface AgentInvokeOptions {
   /**
-   * Local timeout in milliseconds. When elapsed, throws
-   * `AgentInvokeTimeoutError` and best-effort calls
-   * `cancelRun(runId)` server-side. Default: 30000.
+   * Wait budget in milliseconds, sent to the server as `timeout_ms`. When it
+   * expires the server returns with the run still alive; the SDK throws
+   * `AgentInvokeTimeoutError` and best-effort calls `cancelRun(runId)`.
+   * Default: 30000.
    */
   timeoutMs?: number;
 
   /**
-   * Caller cancellation. When the signal aborts, throws an `AbortError`
-   * (DOMException) and best-effort calls `cancelRun(runId)`.
+   * Caller cancellation. Aborts the HTTP request, which the server reads as an
+   * abandoned caller and cancels the run for us (ADR 0067 / Q19); the call
+   * then throws an `AbortError` (DOMException). No client-side `cancelRun` is
+   * issued on this path — the server already did it.
    */
   signal?: AbortSignal;
 
@@ -38,17 +41,22 @@ export interface AgentInvokeOptions {
   idempotencyKey?: string;
 
   /**
-   * Number of historical events to replay on subscribe. Default: 100.
-   * Replay covers the race window between Trigger return and subscribe attach.
+   * @deprecated Unread. `invoke()` no longer subscribes to run events — it
+   * waits on a single `InvokeFunctionSync` response — so there is no replay
+   * budget to size. Pass `replay` to `agents.subscribe(runId, ...)` instead.
    */
   replay?: number;
 
   /**
-   * Called once with the runId as soon as `Trigger` returns and before
-   * the wait begins. Lets callers attach a separate progress subscription
-   * (e.g., `agents.subscribe(runId)`) without waiting for the terminal
-   * event. May return a Promise; the SDK awaits it so any async setup
-   * (subscription attach) completes before terminal events dispatch.
+   * Called once with the runId. May return a Promise; the SDK awaits it
+   * before resolving.
+   *
+   * @deprecated Fires AFTER the run has settled, not before the wait. The
+   * synchronous RPC returns the runId and the terminal outcome in the same
+   * response, so there is no earlier moment at which the id exists on the
+   * client. Attaching a live progress subscription from this hook no longer
+   * works; use `agents.subscribe(runId, { replay })` after the call, or drive
+   * progress from a subscription you open before invoking.
    */
   onRunStarted?: (runId: string) => void | Promise<void>;
 }
@@ -154,8 +162,13 @@ export interface AgentMemoryResult<TState = unknown> {
 export interface AgentClientLike {
   invoke<T = unknown>(
     functionId: string,
-    options: { data: T; idempotencyKey?: string }
-  ): Promise<InvokeResult>;
+    options: {
+      data: T;
+      timeout?: number;
+      idempotencyKey?: string;
+      signal?: AbortSignal;
+    }
+  ): Promise<InvokeSyncResult>;
 
   subscribe<T = unknown>(
     pattern: string | string[],

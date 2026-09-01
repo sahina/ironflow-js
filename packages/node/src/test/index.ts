@@ -12,6 +12,7 @@ import {
   type TestStepRegistries,
   type TestStepState,
 } from "./test-step.js";
+import { validateEventData } from "../internal/validate-event.js";
 
 export interface TestClientConfig {
   functions: AnyIronflowFunction[];
@@ -101,20 +102,19 @@ export function createTestClient(config: TestClientConfig): TestClient {
         },
       };
 
-      const ctx: FunctionContext = {
-        event,
-        step,
-        run: {
-          id: `test-run-${Date.now()}`,
-          functionId: fn.config.id,
-          attempt: 1,
-          startedAt: new Date(),
-        },
-        logger: noopLogger,
-        secrets: noopSecrets,
-      };
-
       try {
+        const ctx: FunctionContext = {
+          event: await validateEventData(fn, event),
+          step,
+          run: {
+            id: `test-run-${Date.now()}`,
+            functionId: fn.config.id,
+            attempt: 1,
+            startedAt: new Date(),
+          },
+          logger: noopLogger,
+          secrets: noopSecrets,
+        };
         const output = await fn.handler(ctx);
         return buildTestRun("completed", state.steps, output, undefined, []);
       } catch (error) {

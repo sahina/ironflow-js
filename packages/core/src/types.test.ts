@@ -14,7 +14,129 @@ import {
   type JobId,
   type WorkerId,
   type SubscriptionId,
+  type EmitSyncResult,
+  type InvokeSyncResult,
+  type InvokeSyncOptions,
 } from "./types.js";
+
+describe("EmitSyncResult", () => {
+  it("carries the per-run outcome emitSync() no longer throws for", () => {
+    const result: EmitSyncResult = {
+      runId: "run-1",
+      functionId: "fn-1",
+      status: "failed",
+      output: undefined,
+      error: { message: "boom", code: "STEP_FAILED" },
+      durationMs: 12,
+      waitTimedOut: false,
+    };
+
+    expect(result.status).toBe("failed");
+    expect(result.error?.message).toBe("boom");
+    expect(result.waitTimedOut).toBe(false);
+  });
+
+  it("reports an expired wait budget on a run that is still alive", () => {
+    const result: EmitSyncResult = {
+      runId: "run-1",
+      functionId: "fn-1",
+      status: "running",
+      output: undefined,
+      durationMs: 30_000,
+      waitTimedOut: true,
+    };
+
+    expect(result.waitTimedOut).toBe(true);
+    expect(result.status).toBe("running");
+  });
+
+  it("rejects a status outside RunStatus", () => {
+    const result: EmitSyncResult = {
+      runId: "run-1",
+      functionId: "fn-1",
+      // @ts-expect-error status is RunStatus since #1920 — an unknown wire status
+      // throws SchemaValidationError during parsing and never reaches a caller.
+      status: "RUN_STATUS_FUTURE",
+      output: undefined,
+      durationMs: 0,
+      waitTimedOut: false,
+    };
+
+    expect(result.runId).toBe("run-1");
+  });
+
+  it("requires waitTimedOut so a mapper cannot silently drop it", () => {
+    // @ts-expect-error waitTimedOut is required on the per-run shape.
+    const result: EmitSyncResult = {
+      runId: "run-1",
+      functionId: "fn-1",
+      status: "completed",
+      output: undefined,
+      durationMs: 0,
+    };
+
+    expect(result.runId).toBe("run-1");
+  });
+
+  it("is an array-per-call shape: one element per matched run", () => {
+    const results: EmitSyncResult[] = [
+      { runId: "run-1", functionId: "fn-1", status: "completed", output: 1, durationMs: 1, waitTimedOut: false },
+      { runId: "run-2", functionId: "fn-2", status: "failed", output: undefined, durationMs: 2, waitTimedOut: false },
+    ];
+
+    expect(results.map((r) => r.functionId)).toEqual(["fn-1", "fn-2"]);
+  });
+});
+
+describe("InvokeSyncResult", () => {
+  it("drops waitTimedOut — invoke() throws RunWaitTimeoutError instead", () => {
+    const result: InvokeSyncResult = {
+      runId: "run-1",
+      functionId: "fn-1",
+      status: "completed",
+      output: { ok: true },
+      durationMs: 5,
+    };
+
+    expect(result.output).toEqual({ ok: true });
+    // @ts-expect-error waitTimedOut is not part of the single-run invoke shape.
+    expect(result.waitTimedOut).toBeUndefined();
+  });
+
+  it("accepts a mapped EmitSyncResult — the wire shape is the same RunResult", () => {
+    const perRun: EmitSyncResult = {
+      runId: "run-1",
+      functionId: "fn-1",
+      status: "completed",
+      output: undefined,
+      durationMs: 5,
+      waitTimedOut: false,
+    };
+    const result: InvokeSyncResult = perRun;
+
+    expect(result.runId).toBe("run-1");
+  });
+});
+
+describe("InvokeSyncOptions", () => {
+  it("carries the wait budget, dedup key and metadata", () => {
+    const options: InvokeSyncOptions<{ orderId: string }> = {
+      data: { orderId: "123" },
+      timeout: 60_000,
+      idempotencyKey: "key-1",
+      metadata: { source: "test" },
+    };
+
+    expect(options.data.orderId).toBe("123");
+    expect(options.timeout).toBe(60_000);
+    expect(options.idempotencyKey).toBe("key-1");
+  });
+
+  it("requires only data", () => {
+    const options: InvokeSyncOptions = { data: null };
+    expect(options.timeout).toBeUndefined();
+  });
+});
 
 describe("Branded ID Factories", () => {
   describe("createRunId", () => {

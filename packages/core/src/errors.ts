@@ -4,6 +4,8 @@
  * Provides a hierarchy of error types for different failure scenarios.
  */
 
+import type { RunStatus } from "./types.js";
+
 /**
  * Base error class for all Ironflow errors
  */
@@ -331,6 +333,37 @@ export function toError(error: unknown): Error {
 }
 
 /**
+ * Thrown when emitSync stops waiting before its selected run reaches a
+ * terminal state. The durable run continues and can be inspected by runId.
+ */
+export class RunWaitTimeoutError extends IronflowError {
+  public readonly runId: string;
+  public readonly functionId: string;
+  public readonly runStatus: RunStatus;
+  public readonly timeoutMs: number;
+
+  constructor(
+    runId: string,
+    functionId: string,
+    runStatus: RunStatus,
+    timeoutMs: number
+  ) {
+    super(
+      `Run ${runId} did not reach a terminal state within ${timeoutMs}ms`,
+      {
+        code: "RUN_WAIT_TIMEOUT",
+        retryable: false,
+      }
+    );
+    this.name = "RunWaitTimeoutError";
+    this.runId = runId;
+    this.functionId = functionId;
+    this.runStatus = runStatus;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+/**
  * Thrown when a run fails (emitSync / TriggerSync)
  */
 export class RunFailedError extends IronflowError {
@@ -380,23 +413,6 @@ export class AgentInvokeTimeoutError extends IronflowError {
     this.name = "AgentInvokeTimeoutError";
     this.runId = runId;
     this.timeoutMs = timeoutMs;
-  }
-}
-
-/**
- * Thrown when a Trigger response carries no runIds. Indicates server
- * misconfiguration or a function not registered for the supplied name.
- */
-export class NoRunCreatedError extends IronflowError {
-  public readonly functionName: string;
-
-  constructor(functionName: string) {
-    super(`No run created for "${functionName}" (empty runIds)`, {
-      code: "NO_RUN_CREATED",
-      retryable: false,
-    });
-    this.name = "NoRunCreatedError";
-    this.functionName = functionName;
   }
 }
 
@@ -460,6 +476,24 @@ export class UnauthorizedError extends IronflowError {
       retryable: false,
     });
     this.name = "UnauthorizedError";
+  }
+}
+
+/**
+ * Thrown when the request conflicts with state already in flight (HTTP 409).
+ *
+ * `resumeRun` throws it when an identical resume is already inside the
+ * server's dedupe window (#1963): the run is left exactly as it was found, so
+ * the caller should wait for the first resume to land. Deliberately not
+ * retryable — retrying is the thing this error reports against.
+ */
+export class ConflictError extends IronflowError {
+  constructor(message = "Conflicts with an operation already in flight") {
+    super(message, {
+      code: "CONFLICT",
+      retryable: false,
+    });
+    this.name = "ConflictError";
   }
 }
 

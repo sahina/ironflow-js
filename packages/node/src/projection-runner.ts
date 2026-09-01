@@ -628,7 +628,18 @@ export class ProjectionRunner {
         }),
       }
     );
-    if (!resp.ok) throw new Error(`Save state failed: ${resp.status}`);
+    if (!resp.ok) {
+      // Include the server's message, not just the status. The commonest cause
+      // is a managed handler that does not `return state`: the handler's result
+      // is `undefined`, JSON.stringify drops the key entirely, and the server
+      // rejects the stateless save with InvalidArgument naming the missing
+      // return. A bare "Save state failed: 400" throws that explanation away
+      // and leaves the developer with nothing to act on.
+      const detail = await resp.text().catch(() => "");
+      throw new Error(
+        `Save state failed: ${resp.status}${detail ? ` — ${detail}` : ""}`
+      );
+    }
   }
 
   private async ackEvents(

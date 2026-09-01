@@ -15,6 +15,7 @@ import {
   InvokeError,
   InvokeTimeoutError,
   StepTimeoutError,
+  RunWaitTimeoutError,
   isRetryable,
   isIronflowError,
   toError,
@@ -91,6 +92,25 @@ describe("TimeoutError", () => {
     expect(error.code).toBe("TIMEOUT");
     expect(error.timeoutMs).toBe(5000);
     expect(error.retryable).toBe(true);
+  });
+});
+
+describe("RunWaitTimeoutError", () => {
+  it("carries the unfinished run without recommending a duplicate retry", () => {
+    const error = new RunWaitTimeoutError(
+      "run-123",
+      "process-order",
+      "waiting",
+      30000
+    );
+
+    expect(error.name).toBe("RunWaitTimeoutError");
+    expect(error.code).toBe("RUN_WAIT_TIMEOUT");
+    expect(error.retryable).toBe(false);
+    expect(error.runId).toBe("run-123");
+    expect(error.functionId).toBe("process-order");
+    expect(error.runStatus).toBe("waiting");
+    expect(error.timeoutMs).toBe(30000);
   });
 });
 
@@ -281,6 +301,7 @@ describe("isRetryable", () => {
   it.each([
     ["ConnectionError", new ConnectionError("test"), true],
     ["TimeoutError", new TimeoutError("test", 1000), true],
+    ["RunWaitTimeoutError", new RunWaitTimeoutError("run", "fn", "running", 1000), false],
     ["SubscriptionError (default)", new SubscriptionError("test"), true],
     ["ValidationError", new ValidationError("test"), false],
     ["SignatureError", new SignatureError("test"), false],

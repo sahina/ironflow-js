@@ -10,7 +10,6 @@ import type {
   RunStatus,
   ListRunsOptions,
   ListRunsResult,
-  InvokeResult,
   EmitOptions,
   EmitResult,
   PublishOptions,
@@ -92,6 +91,7 @@ import type {
 import {
   NotConfiguredError,
   IronflowError,
+  RunWaitTimeoutError,
   RunFailedError,
   RunCancelledError,
   UnauthenticatedError,
@@ -102,16 +102,21 @@ import {
   createNoopLogger,
   DEFAULT_TIMEOUTS,
   HEADERS,
+  API_ENDPOINTS,
   TriggerResponseSchema,
   TriggerSyncResponseSchema,
+  InvokeFunctionSyncResponseSchema,
   RunResponseSchema,
   ListRunsResponseSchema,
-  RunStatusSchema,
+  runStatusFromWire,
+  runStatusToWire,
   ErrorResponseSchema,
   safeJsonParse,
   patterns,
   peelProjectionEnvelope,
   type EmitSyncResult,
+  type InvokeSyncOptions,
+  type InvokeSyncResult,
   webhookVerifyConfigToWire,
   webhookGraceToWire,
   webhookSourceFromWire,
@@ -487,35 +492,76 @@ class IronflowClient {
   // ============================================================================
 
   /**
-   * Invoke a workflow function by ID
+   * Invoke a workflow function by ID and wait for its run to finish.
+   *
+   * Keyed by function ID, not by event name — exactly one run is created, so
+   * the outcome is unambiguous and travels as a throw: `RunFailedError` if the
+   * run failed, `RunCancelledError` if it was cancelled, `RunWaitTimeoutError`
+   * if the wait budget expired while the run was still going. Use `emit()` for
+   * the fire-and-forget, event-keyed, possibly-fan-out path.
+   *
+   * `options.timeout` is a server-side wait budget sent as `timeout_ms`, NOT a
+   * transport deadline: `InvokeFunctionSync` ties the run's lifetime to the
+   * request context, so aborting the HTTP request cancels the run. The
+   * transport deadline is therefore set to the budget plus
+   * `SYNC_TRANSPORT_HEADROOM`. `options.signal` is the deliberate exception —
+   * it aborts the request, and the server cancels the run in response.
    *
    * @example
    * ```typescript
-   * const run = await ironflow.invoke<OrderInput, OrderOutput>('process-order', {
+   * const run = await ironflow.invoke<OrderInput>('process-order', {
    *   data: { orderId: '123' }
    * });
+   * console.log(run.runId, run.output);
    * ```
    */
   async invoke<TInput = unknown>(
     functionId: string,
-    options: { data: TInput; idempotencyKey?: string }
-  ): Promise<InvokeResult> {
+    options: InvokeSyncOptions<TInput> & { signal?: AbortSignal }
+  ): Promise<InvokeSyncResult> {
     this.ensureConfigured();
 
+    const timeout = options.timeout ?? DEFAULT_TIMEOUTS.INVOKE_FUNCTION_SYNC;
+
     const response = await this.request(
-      TriggerResponseSchema,
+      InvokeFunctionSyncResponseSchema,
       "POST",
-      "/ironflow.v1.IronflowService/Trigger",
+      API_ENDPOINTS.INVOKE_FUNCTION_SYNC,
       {
-        event: functionId,
+        function_id: functionId,
         data: options.data,
+        timeout_ms: timeout,
         idempotency_key: options.idempotencyKey,
-      }
+        metadata: options.metadata,
+      },
+      timeout + DEFAULT_TIMEOUTS.SYNC_TRANSPORT_HEADROOM,
+      options.signal
     );
 
+    const result = response.result;
+
+    if (result.waitTimedOut) {
+      throw new RunWaitTimeoutError(
+        result.runId,
+        result.functionId,
+        result.status,
+        timeout
+      );
+    }
+    if (result.status === "failed") {
+      throw new RunFailedError(result.runId, result.output, result.error?.message);
+    }
+    if (result.status === "cancelled") {
+      throw new RunCancelledError(result.runId);
+    }
+
     return {
-      runIds: response.runIds ?? [],
-      eventId: response.eventId,
+      runId: result.runId,
+      functionId: result.functionId,
+      status: result.status,
+      output: result.output,
+      error: result.error,
+      durationMs: result.durationMs,
     };
   }
 
@@ -570,7 +616,7 @@ class IronflowClient {
       "/ironflow.v1.IronflowService/ListRuns",
       {
         function_id: options?.functionId,
-        status: options?.status?.toUpperCase(),
+        status: options?.status ? runStatusToWire(options.status) : undefined,
         limit: options?.limit,
         cursor: options?.cursor,
       }
@@ -644,43 +690,24 @@ class IronflowClient {
 
   /**
    * Resume a paused or failed run
+   *
+   * On the Connect RPC since #1963, alongside getRun/cancelRun. It used to POST
+   * the REST route with its own hand-rolled fetch, which meant a second decode
+   * path (mapRestRunResponse, deleted) and an IronflowError carrying no HTTP
+   * status. It now shares request(), so a deduplicated resume surfaces as
+   * status 409 with retryable false.
    */
   async resumeRun(runId: string, fromStep?: string): Promise<Run> {
     this.ensureConfigured();
 
-    const url = `${this.config!.serverUrl}/api/v1/runs/resume`;
-    const timeout = this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const response = await this.request(
+      RunResponseSchema,
+      "POST",
+      "/ironflow.v1.IronflowService/ResumeRun",
+      { runId, fromStep: fromStep || "" }
+    );
 
-    try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
-      };
-      this.applyAuthHeader(headers);
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ run_id: runId, from_step: fromStep || "" }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const error = safeJsonParse(await response.text()) as
-          | { message?: string; code?: string }
-          | undefined;
-        throw new IronflowError(
-          error?.message || `Resume run failed: ${response.status}`,
-          { code: error?.code || "RESUME_FAILED" }
-        );
-      }
-
-      return response.json();
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    return this.mapRunResponse(response);
   }
 
   /**
@@ -1331,7 +1358,9 @@ class IronflowClient {
       {
         event: eventName,
         data,
-        ...(options?.version ? { version: options.version } : {}),
+        // See triggerBatch: `!== undefined`, so a negative reaches the
+        // server rather than being silently emitted as version 1.
+        ...(options?.version !== undefined ? { version: options.version } : {}),
         idempotency_key: options?.idempotencyKey,
         metadata: options?.metadata,
         namespace: options?.namespace,
@@ -1467,57 +1496,69 @@ class IronflowClient {
   }
 
   /**
-   * Emit an event synchronously — waits for the triggered run to complete and returns the result.
+   * Emit an event synchronously — waits for every triggered run and returns one
+   * result per run.
    *
-   * Calls the TriggerSync endpoint, which blocks until the run finishes or the timeout elapses.
-   * Throws RunFailedError if the run fails, RunCancelledError if it is cancelled.
+   * An event can match several triggers, so this returns an array: one
+   * `EmitSyncResult` per matched run, in the order the server reported them.
+   * An event that matches nothing returns `[]` — that is a legitimate outcome,
+   * not an error.
+   *
+   * Run outcomes are **never thrown**. Inspect `status`, `error` and
+   * `waitTimedOut` per result; a fan-out where one run fails and another
+   * succeeds is only readable that way. Transport, protocol and validation
+   * failures still throw. Use `invoke()` when you want the throwing shape —
+   * it targets one function by ID and so has exactly one outcome to report.
+   *
+   * `options.timeout` is the server-side wait budget (`timeout_ms`); the
+   * transport deadline is that plus `SYNC_TRANSPORT_HEADROOM`, so an expired
+   * budget comes back as `waitTimedOut` with the run still alive rather than
+   * as an aborted request.
    *
    * @example
    * ```typescript
-   * const result = await ironflow.emitSync("order.placed", { orderId: "123" });
-   * console.log("Output:", result.output);
+   * const results = await ironflow.emitSync("order.placed", { orderId: "123" });
+   * for (const r of results) {
+   *   if (r.waitTimedOut) console.log(r.functionId, "still running");
+   *   else if (r.status === "failed") console.log(r.functionId, r.error?.message);
+   *   else console.log(r.functionId, r.output);
+   * }
    * ```
    */
   async emitSync(
     eventName: string,
     data: unknown,
-    options?: { timeout?: number }
-  ): Promise<EmitSyncResult> {
+    options?: { timeout?: number; idempotencyKey?: string; version?: number }
+  ): Promise<EmitSyncResult[]> {
     this.ensureConfigured();
 
-    const timeout = options?.timeout ?? 30000;
+    const timeout = options?.timeout ?? DEFAULT_TIMEOUTS.TRIGGER_SYNC;
 
     const response = await this.request(
       TriggerSyncResponseSchema,
       "POST",
-      "/ironflow.v1.IronflowService/TriggerSync",
-      { event: eventName, data, timeout_ms: timeout }
+      API_ENDPOINTS.TRIGGER_SYNC,
+      {
+        event: eventName,
+        data,
+        timeout_ms: timeout,
+        idempotency_key: options?.idempotencyKey,
+        // See the node twin: undefined is omitted, a negative is forwarded so
+        // the server reports it rather than the client swallowing it.
+        version: options?.version,
+      },
+      timeout + DEFAULT_TIMEOUTS.SYNC_TRANSPORT_HEADROOM
     );
 
-    const results = response.results;
-    if (!results?.length) {
-      throw new IronflowError("No results returned from TriggerSync", { code: "NO_RESULTS", retryable: false });
-    }
-
-    const result = results[0];
-    if (!result) {
-      throw new IronflowError("No results returned from TriggerSync", { code: "NO_RESULTS", retryable: false });
-    }
-
-    if (result.status === "failed") {
-      throw new RunFailedError(result.runId, result.error);
-    }
-    if (result.status === "cancelled") {
-      throw new RunCancelledError(result.runId);
-    }
-
-    return {
+    return (response.results ?? []).map((result) => ({
       runId: result.runId,
       functionId: result.functionId,
       status: result.status,
       output: result.output,
+      error: result.error,
       durationMs: result.durationMs,
-    };
+      waitTimedOut: result.waitTimedOut,
+    }));
   }
 
   // ============================================================================
@@ -3199,12 +3240,24 @@ class IronflowClient {
     method: string,
     path: string,
     body: unknown,
-    handle: (response: Response) => Promise<T>
+    handle: (response: Response) => Promise<T>,
+    timeoutOverrideMs?: number,
+    signal?: AbortSignal
   ): Promise<T> {
+    // An already-aborted signal fires no `abort` event, so it has to be read
+    // rather than listened for — otherwise the request goes out and only the
+    // response is discarded.
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+
     const url = `${this.config!.serverUrl}${path}`;
-    const timeout = this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
+    const timeout =
+      timeoutOverrideMs ?? this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
+    const onExternalAbort = (): void => controller.abort();
+    signal?.addEventListener("abort", onExternalAbort, { once: true });
 
     try {
       const headers: Record<string, string> = {
@@ -3254,6 +3307,16 @@ class IronflowClient {
         throw error;
       }
 
+      // Caller cancellation and deadline expiry share one AbortController, so
+      // discriminate on the caller's signal, not on the error: surfacing an
+      // explicit abort as `code: "TIMEOUT"` (retryable) would invite a retry of
+      // something the caller just cancelled. Read before the AbortError shape
+      // check — a rejected `fetch` is not guaranteed to hand back something
+      // that survives an `instanceof Error` across realms.
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+
       if (error instanceof Error && error.name === "AbortError") {
         throw new IronflowError(
           `Request timeout after ${timeout}ms for ${method} ${path}`,
@@ -3276,6 +3339,9 @@ class IronflowClient {
       );
     } finally {
       clearTimeout(timeoutId);
+      // A caller-owned controller can outlive many requests; leaving the
+      // listener attached would leak one per call.
+      signal?.removeEventListener("abort", onExternalAbort);
     }
   }
 
@@ -3289,44 +3355,53 @@ class IronflowClient {
     schema: z.ZodType<T>,
     method: string,
     path: string,
-    body: unknown
+    body: unknown,
+    timeoutOverrideMs?: number,
+    signal?: AbortSignal
   ): Promise<T> {
-    return this.send(method, path, body, async (response) => {
-      const responseBody = await response.text();
+    return this.send(
+      method,
+      path,
+      body,
+      async (response) => {
+        const responseBody = await response.text();
 
-      if (!response.ok) {
-        const errorResult = ErrorResponseSchema.safeParse(
-          safeJsonParse(responseBody)
-        );
-        const errorData = errorResult.success
-          ? errorResult.data
-          : { message: responseBody };
+        if (!response.ok) {
+          const errorResult = ErrorResponseSchema.safeParse(
+            safeJsonParse(responseBody)
+          );
+          const errorData = errorResult.success
+            ? errorResult.data
+            : { message: responseBody };
 
-        throw new IronflowError(
-          errorData.message ?? `Request failed: ${response.status}`,
-          {
-            code: errorData.code ?? `HTTP_${response.status}`,
-            status: response.status,
-            retryable: isRetryableStatus(response.status),
-          }
-        );
-      }
+          throw new IronflowError(
+            errorData.message ?? `Request failed: ${response.status}`,
+            {
+              code: errorData.code ?? `HTTP_${response.status}`,
+              status: response.status,
+              retryable: isRetryableStatus(response.status),
+            }
+          );
+        }
 
-      const parsed = safeJsonParse(responseBody);
-      if (parsed === undefined) {
-        throw new ValidationError("Invalid JSON response from server");
-      }
+        const parsed = safeJsonParse(responseBody);
+        if (parsed === undefined) {
+          throw new ValidationError("Invalid JSON response from server");
+        }
 
-      const result = schema.safeParse(parsed);
-      if (!result.success) {
-        const issues = result.error.issues
-          .map((i) => `${i.path.join(".")}: ${i.message}`)
-          .join(", ");
-        throw new ValidationError(`Invalid response from server: ${issues}`);
-      }
+        const result = schema.safeParse(parsed);
+        if (!result.success) {
+          const issues = result.error.issues
+            .map((i) => `${i.path.join(".")}: ${i.message}`)
+            .join(", ");
+          throw new ValidationError(`Invalid response from server: ${issues}`);
+        }
 
-      return result.data;
-    });
+        return result.data;
+      },
+      timeoutOverrideMs,
+      signal
+    );
   }
 
   /**
@@ -3463,10 +3538,7 @@ class IronflowClient {
   }
 
   private mapRunResponse(response: z.infer<typeof RunResponseSchema>): Run {
-    // ConnectRPC returns proto enum strings like "RUN_STATUS_COMPLETED" — normalize to "completed"
-    const rawStatus = response.status.toLowerCase().replace(/^run_status_/, "");
-    const statusResult = RunStatusSchema.safeParse(rawStatus);
-    const status: RunStatus = statusResult.success ? statusResult.data : "failed";
+    const status: RunStatus = runStatusFromWire(response.status);
 
     return {
       id: response.id,

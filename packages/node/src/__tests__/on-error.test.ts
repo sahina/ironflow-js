@@ -9,6 +9,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       GET_RUN: "/ironflow.v1.IronflowService/GetRun",
       LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
       CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
+      RESUME_RUN: "/ironflow.v1.IronflowService/ResumeRun",
       REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
       HEALTH: "/ironflow.v1.IronflowService/Health",
     },
@@ -19,6 +20,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     UnauthenticatedError: actual.UnauthenticatedError,
     EnterpriseRequiredError: actual.EnterpriseRequiredError,
     UnauthorizedError: actual.UnauthorizedError,
+    ConflictError: actual.ConflictError,
   };
 });
 
@@ -257,7 +259,9 @@ describe("onError handler", () => {
         expect.any(Error),
         expect.objectContaining({
           method: "resumeRun",
-          endpoint: "/api/v1/runs/resume",
+          // Moved onto the Connect RPC in #1963; it now reports through
+          // request() like every other run API instead of its own fetch.
+          endpoint: "/ironflow.v1.IronflowService/ResumeRun",
           statusCode: 404,
         })
       );

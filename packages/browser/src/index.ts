@@ -125,8 +125,9 @@ export type {
   // Invoke/Trigger types
   InvokeResult,
   TriggerResult, // deprecated alias for InvokeResult
-  TriggerSyncOptions,
-  TriggerSyncResult,
+  InvokeSyncOptions, // options + result of the ID-keyed sync `invoke()`
+  InvokeSyncResult,
+  EmitSyncResult, // one element of what `emitSync()` returns
 
   // Subscription types
   SubscribeOptions,
@@ -221,10 +222,10 @@ export {
   TimeoutError,
   ValidationError,
   NotConfiguredError,
+  RunWaitTimeoutError,
   RunFailedError,
   RunCancelledError,
   AgentInvokeTimeoutError,
-  NoRunCreatedError,
   isRetryable,
   isIronflowError,
 } from "@ironflow/core";

@@ -10,18 +10,29 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       GET_RUN: "/ironflow.v1.IronflowService/GetRun",
       LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
       CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
+      RESUME_RUN: "/ironflow.v1.IronflowService/ResumeRun",
       REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
       HEALTH: "/ironflow.v1.IronflowService/Health",
+      TRIGGER_SYNC: "/ironflow.v1.IronflowService/TriggerSync",
+      INVOKE_FUNCTION_SYNC: "/ironflow.v1.IronflowService/InvokeFunctionSync",
     },
     DEFAULT_SERVER_URL: "http://localhost:9123",
+    DEFAULT_TIMEOUTS: actual.DEFAULT_TIMEOUTS,
+    InvokeFunctionSyncResponseSchema: actual.InvokeFunctionSyncResponseSchema,
+    validate: actual.validate,
     getServerUrl: () => undefined,
     IronflowError: actual.IronflowError,
+    runStatusFromWire: actual.runStatusFromWire,
+    runStatusToWire: actual.runStatusToWire,
+    RunWaitTimeoutError: actual.RunWaitTimeoutError,
     RunFailedError: actual.RunFailedError,
     RunCancelledError: actual.RunCancelledError,
     UnauthenticatedError: actual.UnauthenticatedError,
     EnterpriseRequiredError: actual.EnterpriseRequiredError,
     UnauthorizedError: actual.UnauthorizedError,
+    ConflictError: actual.ConflictError,
     ValidationError: actual.ValidationError,
+    TriggerSyncResponseSchema: actual.TriggerSyncResponseSchema,
     peelProjectionEnvelope: actual.peelProjectionEnvelope,
     // Pure wire mappers — pass them through rather than stubbing, since the
     // webhook tests below assert on exactly the shape they produce.
@@ -39,6 +50,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
 
 // Import after mocking
 const { createClient } = await import("./client.js");
+const { ConflictError } = await import("@ironflow/core");
 
 describe("IronflowClient", () => {
   afterEach(() => {
@@ -328,6 +340,40 @@ describe("IronflowClient", () => {
       const body = JSON.parse(call[1]?.body as string);
       expect(body.version).toBe(2);
     });
+
+    // The guard changed from truthiness to `!== undefined` precisely so a
+    // negative reaches the server and comes back as a 400 with the reason,
+    // rather than the client dropping it and emitting at version 1 silently.
+    // Under the old `if (options?.version)` this assertion fails.
+    it("forwards a negative version instead of dropping it", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ runIds: [], eventId: "evt-1" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      await client.emit("order.placed", { orderId: "123" }, { version: -1 });
+
+      const call = assertDefined(mockFetch.mock.calls[mockFetch.mock.calls.length - 1]);
+      const body = JSON.parse(call[1]?.body as string);
+      expect(body.version).toBe(-1);
+    });
+
+    it("sends the version on emitSync", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ eventId: "evt-1", results: [] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      await client.emitSync("order.placed", { orderId: "123" }, { version: 2 });
+
+      const call = assertDefined(mockFetch.mock.calls[mockFetch.mock.calls.length - 1]);
+      const body = JSON.parse(call[1]?.body as string);
+      expect(body.version).toBe(2);
+    });
   });
 
   describe("event reads", () => {
@@ -534,7 +580,7 @@ describe("IronflowClient", () => {
         json: () =>
           Promise.resolve({
             id: "run_123",
-            status: "completed",
+            status: "RUN_STATUS_COMPLETED",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -556,7 +602,10 @@ describe("IronflowClient", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            runs: [{ id: "run_1" }, { id: "run_2" }],
+            runs: [
+              { id: "run_1", status: "RUN_STATUS_COMPLETED" },
+              { id: "run_2", status: "RUN_STATUS_RUNNING" },
+            ],
             totalCount: 2,
           }),
       });
@@ -577,7 +626,7 @@ describe("IronflowClient", () => {
         json: () =>
           Promise.resolve({
             id: "run_123",
-            status: "cancelled",
+            status: "RUN_STATUS_CANCELLED",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -961,13 +1010,14 @@ describe("IronflowClient", () => {
   });
 
   describe("resumeRun", () => {
-    it("should make POST request to /api/v1/runs/resume", async () => {
+    it("should POST the ResumeRun RPC with lowerCamel proto fields", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
+        status: 200,
         json: () =>
           Promise.resolve({
             id: "run_123",
-            status: "running",
+            status: "RUN_STATUS_RUNNING",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -981,13 +1031,12 @@ describe("IronflowClient", () => {
       expect(result.id).toBe("run_123");
       expect(result.status).toBe("running");
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/runs/resume",
+        "http://localhost:9123/ironflow.v1.IronflowService/ResumeRun",
         expect.objectContaining({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            run_id: "run_123",
-            from_step: "step_2",
+            runId: "run_123",
+            fromStep: "step_2",
           }),
         })
       );
@@ -996,7 +1045,8 @@ describe("IronflowClient", () => {
     it("should set Authorization header when apiKey is provided", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "run_123", status: "running" }),
+        status: 200,
+        json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_RUNNING" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -1008,20 +1058,21 @@ describe("IronflowClient", () => {
       await client.resumeRun("run_123");
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/runs/resume",
+        expect.any(String),
         expect.objectContaining({
-          headers: {
+          headers: expect.objectContaining({
             "Content-Type": "application/json",
             Authorization: "Bearer my-secret",
-          },
+          }),
         })
       );
     });
 
-    it("should default from_step to empty string when not provided", async () => {
+    it("should default fromStep to empty string when not provided", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "run_123", status: "running" }),
+        status: 200,
+        json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_RUNNING" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -1033,8 +1084,8 @@ describe("IronflowClient", () => {
         expect.any(String),
         expect.objectContaining({
           body: JSON.stringify({
-            run_id: "run_123",
-            from_step: "",
+            runId: "run_123",
+            fromStep: "",
           }),
         })
       );
@@ -1052,6 +1103,57 @@ describe("IronflowClient", () => {
 
       await expect(client.resumeRun("run_123")).rejects.toThrow(
         "internal server error"
+      );
+    });
+
+    // #1963: the reason resumeRun moved onto Connect at all. A resume that is
+    // already in flight inside the server's dedupe window comes back 409, and
+    // request()'s typed-error table turns that into ConflictError. Before the
+    // migration this route bypassed request() entirely and threw a bare Error.
+    it("should throw ConflictError when the resume is already in flight", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              code: "already_exists",
+              message:
+                "a resume for this run is already in flight; wait for it to land before retrying",
+            })
+          ),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient();
+
+      await expect(client.resumeRun("run_123")).rejects.toThrow(ConflictError);
+      await expect(client.resumeRun("run_123")).rejects.toThrow(
+        "already in flight"
+      );
+    });
+
+    // request() applies the client timeout and reports through onError; the
+    // hand-rolled fetch this replaced did both independently (#1963).
+    it("should report failures through onError with the RPC endpoint", async () => {
+      const onError = vi.fn();
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        text: () => Promise.resolve("{}"),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ onError });
+
+      await expect(client.resumeRun("run_123")).rejects.toThrow();
+      expect(onError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          method: "resumeRun",
+          endpoint: "/ironflow.v1.IronflowService/ResumeRun",
+          statusCode: 409,
+        })
       );
     });
   });
@@ -1646,14 +1748,14 @@ describe("IronflowClient", () => {
               {
                 id: "step_1",
                 name: "fetch-data",
-                output: '{"url":"https://example.com","result":42}',
+                output: "eyJ1cmwiOiJodHRwczovL2V4YW1wbGUuY29tIiwicmVzdWx0Ijo0Mn0=",
                 injected: false,
                 completedAt: "2026-03-01T10:00:00Z",
               },
               {
                 id: "step_2",
                 name: "transform",
-                output: '{"transformed":true}',
+                output: "eyJ0cmFuc2Zvcm1lZCI6dHJ1ZX0=",
                 injected: true,
                 completedAt: "2026-03-01T10:01:00Z",
               },
@@ -1783,7 +1885,7 @@ describe("IronflowClient", () => {
         json: () =>
           Promise.resolve({
             stepId: "step_xyz",
-            previousOutput: '{"old":"value"}',
+            previousOutput: "eyJvbGQiOiJ2YWx1ZSJ9",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -1813,7 +1915,7 @@ describe("IronflowClient", () => {
       const body = JSON.parse(call[1]?.body as string);
       expect(body.run_id).toBe("run_abc123");
       expect(body.step_id).toBe("step_xyz");
-      expect(body.new_output).toBe('{"corrected":true}');
+      expect(body.new_output).toBe("eyJjb3JyZWN0ZWQiOnRydWV9");
       expect(body.reason).toBe("Manual correction");
     });
 
@@ -1823,7 +1925,7 @@ describe("IronflowClient", () => {
         json: () =>
           Promise.resolve({
             stepId: "step_1",
-            previousOutput: '{"x":1}',
+            previousOutput: "eyJ4IjoxfQ==",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -1875,7 +1977,9 @@ describe("IronflowClient", () => {
 
       const call = assertDefined(mockFetch.mock.calls[0]);
       const body = JSON.parse(call[1]?.body as string);
-      expect(body.new_output).toBe(JSON.stringify(complexOutput));
+      expect(body.new_output).toBe(
+        Buffer.from(JSON.stringify(complexOutput), "utf8").toString("base64")
+      );
     });
 
     it("should throw on server error", async () => {
@@ -1902,32 +2006,37 @@ describe("IronflowClient", () => {
   });
 
   describe("emitSync", () => {
-    it("should return EmitSyncResult when run completes successfully", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            results: [
-              {
-                runId: "run_abc123",
-                functionId: "my-function",
-                status: "completed",
-                output: { total: 99.99 },
-                durationMs: 42,
-              },
-            ],
-          }),
-      });
+    const okResponse = (results: unknown[]) => ({
+      ok: true,
+      json: () => Promise.resolve({ eventId: "evt_1", results }),
+    });
+
+    it("should return one result per matched run", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResponse([
+          {
+            runId: "run_abc123",
+            functionId: "my-function",
+            status: "RUN_STATUS_COMPLETED",
+            output: { total: 99.99 },
+            durationMs: 42,
+          },
+        ])
+      );
       vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.emitSync("order.placed", { orderId: "123" });
+      const results = await client.emitSync("order.placed", { orderId: "123" });
 
+      expect(results).toHaveLength(1);
+      const result = assertDefined(results[0]);
       expect(result.runId).toBe("run_abc123");
       expect(result.functionId).toBe("my-function");
       expect(result.status).toBe("completed");
       expect(result.output).toEqual({ total: 99.99 });
       expect(result.durationMs).toBe(42);
+      expect(result.waitTimedOut).toBe(false);
+      expect(result.error).toBeUndefined();
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.IronflowService/TriggerSync",
         expect.objectContaining({ method: "POST" })
@@ -1939,22 +2048,110 @@ describe("IronflowClient", () => {
       expect(body.timeout_ms).toBe(30000);
     });
 
-    it("should pass custom timeout in request body", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            results: [
-              {
-                runId: "run_abc",
-                functionId: "fn",
-                status: "completed",
-                output: null,
-                durationMs: 10,
-              },
-            ],
-          }),
+    it("should return every run of a fan-out, dropping none", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResponse([
+          {
+            runId: "run_1",
+            functionId: "fn-a",
+            status: "RUN_STATUS_COMPLETED",
+            output: { a: 1 },
+            durationMs: 10,
+          },
+          {
+            runId: "run_2",
+            functionId: "fn-b",
+            status: "RUN_STATUS_COMPLETED",
+            output: { b: 2 },
+            durationMs: 20,
+          },
+          {
+            runId: "run_3",
+            functionId: "fn-c",
+            status: "RUN_STATUS_COMPLETED",
+            output: { c: 3 },
+            durationMs: 30,
+          },
+        ])
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const results = await client.emitSync("order.placed", {});
+
+      expect(results.map((r) => r.runId)).toEqual(["run_1", "run_2", "run_3"]);
+      expect(results.map((r) => r.functionId)).toEqual(["fn-a", "fn-b", "fn-c"]);
+      expect(results.map((r) => r.output)).toEqual([{ a: 1 }, { b: 2 }, { c: 3 }]);
+    });
+
+    it("should report a mixed fan-out per run instead of throwing", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResponse([
+          {
+            runId: "run_ok",
+            functionId: "fn-ok",
+            status: "RUN_STATUS_COMPLETED",
+            output: { ok: true },
+            durationMs: 5,
+          },
+          {
+            runId: "run_fail",
+            functionId: "fn-fail",
+            status: "RUN_STATUS_FAILED",
+            output: { partial: true },
+            error: { message: "something broke", code: "STEP_FAILED" },
+            durationMs: 7,
+          },
+          {
+            runId: "run_cancel",
+            functionId: "fn-cancel",
+            status: "RUN_STATUS_CANCELLED",
+            output: null,
+            durationMs: 0,
+          },
+          {
+            runId: "run_slow",
+            functionId: "fn-slow",
+            status: "RUN_STATUS_RUNNING",
+            durationMs: 0,
+            waitTimedOut: true,
+          },
+        ])
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const results = await client.emitSync("order.placed", {});
+
+      expect(results).toHaveLength(4);
+      expect(results.map((r) => r.status)).toEqual([
+        "completed",
+        "failed",
+        "cancelled",
+        "running",
+      ]);
+      expect(assertDefined(results[1]).error).toEqual({
+        message: "something broke",
+        code: "STEP_FAILED",
       });
+      expect(assertDefined(results[1]).output).toEqual({ partial: true });
+      expect(assertDefined(results[0]).error).toBeUndefined();
+      expect(assertDefined(results[3]).waitTimedOut).toBe(true);
+      expect(assertDefined(results[2]).waitTimedOut).toBe(false);
+    });
+
+    it("should pass custom timeout in request body", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResponse([
+          {
+            runId: "run_abc",
+            functionId: "fn",
+            status: "RUN_STATUS_COMPLETED",
+            output: null,
+            durationMs: 10,
+          },
+        ])
+      );
       vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
@@ -1965,71 +2162,125 @@ describe("IronflowClient", () => {
       expect(body.timeout_ms).toBe(60000);
     });
 
-    it("should throw RunFailedError when run status is failed", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            results: [
-              {
-                runId: "run_fail",
-                functionId: "my-function",
-                status: "failed",
-                output: null,
-                error: { message: "something broke", code: "STEP_FAILED" },
-                durationMs: 5,
-              },
-            ],
-          }),
-      });
+    // The wire is all snake_case in every SDK (browser client.ts:1557-1562, Go
+    // client.go:507). Asserting the exact key set, not per-key presence, is what
+    // makes a drift back to camelCase fail here: sending both spellings would
+    // still satisfy a presence check, and protojson would accept it silently.
+    it("should send an all-snake_case body with idempotency_key", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(okResponse([]));
       vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
+      await client.emitSync("ping", {}, { idempotencyKey: "dedupe-1" });
 
-      const err = await client.emitSync("order.placed", {}).catch((e) => e);
-      expect(err.constructor.name).toBe("RunFailedError");
-      expect(err.runId).toBe("run_fail");
-      expect(err.code).toBe("RUN_FAILED");
+      const call = assertDefined(mockFetch.mock.calls[0]);
+      const body = JSON.parse(call[1]?.body as string);
+      expect(Object.keys(body).sort()).toEqual([
+        "data",
+        "event",
+        "idempotency_key",
+        "timeout_ms",
+      ]);
+      expect(body.idempotency_key).toBe("dedupe-1");
     });
 
-    it("should throw RunCancelledError when run status is cancelled", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            results: [
-              {
-                runId: "run_cancel",
-                functionId: "my-function",
-                status: "cancelled",
-                output: null,
-                durationMs: 0,
-              },
-            ],
-          }),
-      });
+    it("should omit idempotency_key when not supplied", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(okResponse([]));
       vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
+      await client.emitSync("ping", {});
 
-      const err = await client.emitSync("order.placed", {}).catch((e) => e);
-      expect(err.constructor.name).toBe("RunCancelledError");
-      expect(err.runId).toBe("run_cancel");
-      expect(err.code).toBe("RUN_CANCELLED");
+      const call = assertDefined(mockFetch.mock.calls[0]);
+      const body = JSON.parse(call[1]?.body as string);
+      expect(Object.keys(body).sort()).toEqual(["data", "event", "timeout_ms"]);
     });
 
-    it("should throw IronflowError when server returns empty results", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ results: [] }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-
-      await expect(client.emitSync("test.event", {})).rejects.toThrow(
-        "No results returned from TriggerSync"
+    // No durationMs — protojson omits it on the wait-timeout branch, which never
+    // sets it. Do not add it back: a fixture that supplies it stops testing the
+    // shape the server actually sends, and emitSync would throw here in
+    // production while staying green. Body verbatim from the integration test.
+    it("should surface a wait timeout as a result, not a throw", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResponse([
+          {
+            runId: "run_waiting",
+            functionId: "slow-function",
+            status: "RUN_STATUS_WAITING_FOR_CAPACITY",
+            waitTimedOut: true,
+          },
+        ])
       );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const results = await client.emitSync("work.started", {}, { timeout: 1234 });
+
+      const result = assertDefined(results[0]);
+      expect(result.waitTimedOut).toBe(true);
+      expect(result.status).toBe("waiting_for_capacity");
+      expect(result.runId).toBe("run_waiting");
+      expect(result.durationMs).toBe(0);
+    });
+
+    it("should reject an unspecified wire status", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResponse([
+          {
+            runId: "run_unspecified",
+            functionId: "my-function",
+            status: "RUN_STATUS_UNSPECIFIED",
+            durationMs: 0,
+          },
+        ])
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(client.emitSync("order.placed", {})).rejects.toMatchObject({
+        name: "SchemaValidationError",
+        code: "VALIDATION_ERROR",
+        retryable: false,
+      });
+    });
+
+    // Sibling of invoke's "reject a response missing the required result".
+    // The hand-rolled structural cast this method used before could not see a
+    // missing field — it returned `runId: undefined` typed as a string.
+    //
+    // `runId` specifically: the server always writes a non-empty UUID there, so
+    // its absence is always a contract violation. Do NOT switch this fixture to
+    // omit `durationMs` — protojson drops that field whenever the run measured
+    // 0ms, so a response without it is normal, not malformed.
+    it("should reject a result item missing a required field", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResponse([
+          {
+            // runId omitted
+            functionId: "my-function",
+            status: "RUN_STATUS_COMPLETED",
+            durationMs: 3,
+          },
+        ])
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(client.emitSync("order.placed", {})).rejects.toMatchObject({
+        name: "SchemaValidationError",
+        code: "VALIDATION_ERROR",
+      });
+    });
+
+    it("should return an empty array when the event matched no trigger", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(okResponse([]));
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(client.emitSync("test.event", {})).resolves.toEqual([]);
     });
 
     it("should throw on HTTP error response", async () => {
@@ -2045,6 +2296,255 @@ describe("IronflowClient", () => {
       await expect(client.emitSync("test.event", {})).rejects.toThrow(
         "internal server error"
       );
+    });
+
+    it("should not turn the wait budget into a transport abort", async () => {
+      vi.useFakeTimers();
+      try {
+        // A fetch that never settles keeps the abort timer armed — with a
+        // resolved mock the `finally { clearTimeout }` disarms it immediately
+        // and the assertion below would pass for the wrong reason.
+        let signal: AbortSignal | undefined;
+        const mockFetch = vi.fn().mockImplementation((_url, init) => {
+          signal = init.signal;
+          return new Promise(() => {});
+        });
+        vi.stubGlobal("fetch", mockFetch);
+
+        const client = createClient({
+          serverUrl: "http://localhost:9123",
+          // A short client-level timeout must not shorten a sync wait.
+          timeout: 1000,
+        });
+        void client.emitSync("slow.event", {}, { timeout: 20000 }).catch(() => {});
+        await Promise.resolve();
+
+        const call = assertDefined(mockFetch.mock.calls[0]);
+        expect(JSON.parse(call[1]?.body as string).timeout_ms).toBe(20000);
+
+        // The server is still inside its own 20s budget: the request must live.
+        await vi.advanceTimersByTimeAsync(20000);
+        expect(assertDefined(signal).aborted).toBe(false);
+
+        // Only past budget + SYNC_TRANSPORT_HEADROOM does the transport give up.
+        await vi.advanceTimersByTimeAsync(5001);
+        expect(assertDefined(signal).aborted).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("invoke", () => {
+    const okResult = (result: unknown) => ({
+      ok: true,
+      json: () => Promise.resolve({ result }),
+    });
+
+    it("should invoke a function by ID and return one result", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResult({
+          runId: "run_inv1",
+          functionId: "process-order",
+          status: "RUN_STATUS_COMPLETED",
+          output: { total: 42 },
+          durationMs: 12,
+        })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const result = await client.invoke("process-order", {
+        data: { orderId: "123" },
+      });
+
+      expect(result).toEqual({
+        runId: "run_inv1",
+        functionId: "process-order",
+        status: "completed",
+        output: { total: 42 },
+        error: undefined,
+        durationMs: 12,
+      });
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.IronflowService/InvokeFunctionSync",
+        expect.objectContaining({ method: "POST" })
+      );
+      const call = assertDefined(mockFetch.mock.calls[0]);
+      const body = JSON.parse(call[1]?.body as string);
+      // Exact key set, same reason as emitSync above.
+      expect(Object.keys(body).sort()).toEqual([
+        "data",
+        "function_id",
+        "timeout_ms",
+      ]);
+      expect(body.function_id).toBe("process-order");
+      expect(body.data).toEqual({ orderId: "123" });
+      expect(body.timeout_ms).toBe(30000);
+    });
+
+    it("should thread timeout, idempotency_key and metadata into the body", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResult({
+          runId: "run_inv2",
+          functionId: "fn",
+          status: "RUN_STATUS_COMPLETED",
+          output: null,
+          durationMs: 1,
+        })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      await client.invoke("fn", {
+        data: {},
+        timeout: 5000,
+        idempotencyKey: "dedupe-2",
+        metadata: { tenant: "acme" },
+      });
+
+      const call = assertDefined(mockFetch.mock.calls[0]);
+      const body = JSON.parse(call[1]?.body as string);
+      expect(Object.keys(body).sort()).toEqual([
+        "data",
+        "function_id",
+        "idempotency_key",
+        "metadata",
+        "timeout_ms",
+      ]);
+      expect(body.timeout_ms).toBe(5000);
+      expect(body.idempotency_key).toBe("dedupe-2");
+      expect(body.metadata).toEqual({ tenant: "acme" });
+    });
+
+    it("should throw RunFailedError when the run failed", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResult({
+          runId: "run_fail",
+          functionId: "fn",
+          status: "RUN_STATUS_FAILED",
+          output: { partial: true },
+          error: { message: "something broke", code: "STEP_FAILED" },
+          durationMs: 5,
+        })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const err = await client.invoke("fn", { data: {} }).catch((e) => e);
+
+      expect(err.constructor.name).toBe("RunFailedError");
+      expect(err.runId).toBe("run_fail");
+      expect(err.code).toBe("RUN_FAILED");
+      expect(err.message).toBe("something broke");
+      expect(err.output).toEqual({ partial: true });
+    });
+
+    it("should throw RunCancelledError when the run was cancelled", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResult({
+          runId: "run_cancel",
+          functionId: "fn",
+          status: "RUN_STATUS_CANCELLED",
+          output: null,
+          durationMs: 0,
+        })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const err = await client.invoke("fn", { data: {} }).catch((e) => e);
+
+      expect(err.constructor.name).toBe("RunCancelledError");
+      expect(err.runId).toBe("run_cancel");
+      expect(err.code).toBe("RUN_CANCELLED");
+    });
+
+    // Same omitted durationMs as the emitSync case above — and here it decides
+    // which error the caller sees: with a required durationMs, validate() throws
+    // SchemaValidationError at :734 and the RunWaitTimeoutError check below is
+    // never reached.
+    it("should throw RunWaitTimeoutError when the wait budget expired", async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        okResult({
+          runId: "run_waiting",
+          functionId: "slow-function",
+          status: "RUN_STATUS_RUNNING",
+          waitTimedOut: true,
+        })
+      );
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(
+        client.invoke("slow-function", { data: {}, timeout: 1234 })
+      ).rejects.toMatchObject({
+        name: "RunWaitTimeoutError",
+        code: "RUN_WAIT_TIMEOUT",
+        retryable: false,
+        runId: "run_waiting",
+        functionId: "slow-function",
+        runStatus: "running",
+        timeoutMs: 1234,
+      });
+    });
+
+    it("should reject a response missing the required result", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(client.invoke("fn", { data: {} })).rejects.toMatchObject({
+        name: "SchemaValidationError",
+        code: "VALIDATION_ERROR",
+      });
+    });
+
+    it("should throw on HTTP error response", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        text: () => Promise.resolve('function "nope" not found'),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+
+      await expect(client.invoke("nope", { data: {} })).rejects.toThrow(
+        'function "nope" not found'
+      );
+    });
+
+    it("should not turn the wait budget into a transport abort", async () => {
+      vi.useFakeTimers();
+      try {
+        let signal: AbortSignal | undefined;
+        const mockFetch = vi.fn().mockImplementation((_url, init) => {
+          signal = init.signal;
+          return new Promise(() => {});
+        });
+        vi.stubGlobal("fetch", mockFetch);
+
+        // Aborting THIS request cancels the run server-side (Q19), so the
+        // transport must outlive the wait budget or `waitTimedOut` is
+        // unreachable and every timeout kills the run.
+        const client = createClient({ serverUrl: "http://localhost:9123", timeout: 1000 });
+        void client.invoke("fn", { data: {}, timeout: 20000 }).catch(() => {});
+        await Promise.resolve();
+
+        await vi.advanceTimersByTimeAsync(20000);
+        expect(assertDefined(signal).aborted).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(5001);
+        expect(assertDefined(signal).aborted).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -3877,5 +4377,136 @@ describe("IronflowClient", () => {
         expect.objectContaining({ method: "POST" })
       );
     });
+  });
+});
+
+// #1963: resumeRun is on the Connect RPC now, so it decodes the same protojson
+// lowerCamel shape as getRun/listRuns/cancelRun through the shared run mapper.
+// It used to POST the REST route, which writes store.Run with snake_case tags —
+// a second wire shape and a second decoder (mapRestRunResponse, since deleted)
+// that #1919 had to add because `response.json() as Run` read undefined on every
+// multi-word property.
+describe("resumeRun Connect decoding", () => {
+  it("decodes the protojson run shape through the shared mapper", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          id: "run_123",
+          functionId: "process-order",
+          eventId: "evt_9",
+          status: "RUN_STATUS_RUNNING",
+          attempt: 2,
+          maxAttempts: 3,
+          startedAt: "2025-01-01T00:00:00Z",
+          createdAt: "2025-01-01T00:00:00Z",
+          updatedAt: "2025-01-01T00:02:00Z",
+        }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const client = createClient();
+    const result = await client.resumeRun("run_123");
+
+    expect(result.functionId).toBe("process-order");
+    expect(result.eventId).toBe("evt_9");
+    expect(result.maxAttempts).toBe(3);
+    expect(result.attempt).toBe(2);
+    expect(result.status).toBe("running");
+    expect(result.createdAt).toBe("2025-01-01T00:00:00Z");
+    expect(result.startedAt).toBe("2025-01-01T00:00:00Z");
+  });
+
+  it("rejects a status the SDK cannot name", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_QUARANTINED" }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const client = createClient();
+    await expect(client.resumeRun("run_123")).rejects.toThrow();
+  });
+});
+
+// #1919: PausedStepInfo carries stepType, status and error (proto fields 6/7/8).
+// Failed steps are exposed by GetPausedState precisely so they can be repaired
+// via injectStepOutput — without these a caller cannot tell a failed step from a
+// completed one, which defeats the purpose of the API.
+describe("getPausedState step metadata", () => {
+  it("surfaces stepType, status and the base64-decoded error", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          steps: [
+            {
+              id: "step_1",
+              name: "charge",
+              output: "eyJjaGFyZ2VkIjp0cnVlfQ==",
+              injected: false,
+              completedAt: "2026-03-01T10:00:00Z",
+              stepType: "invoke",
+              status: "completed",
+            },
+            {
+              id: "step_2",
+              name: "ship",
+              injected: false,
+              completedAt: "2026-03-01T10:01:00Z",
+              stepType: "invoke_function",
+              status: "failed",
+              error: "eyJtZXNzYWdlIjoiYm9vbSJ9",
+            },
+          ],
+          nextStepHint: "retry",
+          pauseReason: "injection",
+        }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const client = createClient();
+    const state = await client.getPausedState("run_123");
+
+    const [ok, bad] = state.steps;
+    if (!ok || !bad) throw new Error("expected two steps");
+
+    expect(ok.stepType).toBe("invoke");
+    expect(ok.status).toBe("completed");
+    expect(ok.output).toEqual({ charged: true });
+    // A completed step carries no error.
+    expect(ok.error).toBeNull();
+
+    expect(bad.stepType).toBe("invoke_function");
+    expect(bad.status).toBe("failed");
+    // error is a proto bytes field too, so it also arrives base64-encoded.
+    expect(bad.error).toEqual({ message: "boom" });
+  });
+
+  // EmitUnpopulated:false omits these when empty, so they must not be undefined.
+  it("defaults stepType and status when the server omits them", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          steps: [{ id: "step_1", name: "charge", injected: false, completedAt: "" }],
+          nextStepHint: "",
+          pauseReason: "",
+        }),
+    });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const client = createClient();
+    const state = await client.getPausedState("run_123");
+
+    const [step] = state.steps;
+    if (!step) throw new Error("expected one step");
+
+    expect(step.stepType).toBe("");
+    expect(step.status).toBe("");
+    expect(step.error).toBeNull();
+    expect(step.output).toBeNull();
   });
 });

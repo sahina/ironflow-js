@@ -700,14 +700,44 @@ await client.emit('order.placed', { orderId: '123' }, {
 
 ### emitSync(eventName, data, options?)
 
-Emit and wait for the triggered run to reach a terminal state. Useful in tests
-and request/response paths; throws `RunFailedError` or `RunCancelledError`
-(import from `@ironflow/core`) if the run does not complete.
+Emit and wait for **every** run the event triggers. Returns `EmitSyncResult[]`,
+one element per matched trigger; an event that matches nothing returns `[]`.
+
+Run outcomes are never thrown -- with N results there is no unambiguous choice
+of which failure to raise. Inspect `status`, `error` and `waitTimedOut` per
+element; transport, protocol and validation errors still throw. A wait timeout
+leaves the durable run active.
 
 ```typescript
-const result = await client.emitSync('order.placed', { orderId: '123' }, { timeout: 30000 });
+const results = await client.emitSync('order.placed', { orderId: '123' }, {
+  timeout: 30000,
+  idempotencyKey: 'order-123-placed',
+});
+for (const r of results) {
+  console.log(r.runId, r.functionId, r.status, r.output, r.waitTimedOut);
+}
+```
+
+### invoke(functionId, options)
+
+Run **one** function by ID and wait for its single result, over
+`InvokeFunctionSync`. Because there is exactly one run, this one *does* throw
+`RunFailedError`, `RunCancelledError`, or non-retryable `RunWaitTimeoutError`,
+imported from `@ironflow/core` (ADR 0067).
+
+```typescript
+const result = await client.invoke('process-order', {
+  data: { orderId: '123' },
+  timeout: 30000,           // server-side wait budget, not a transport deadline
+  idempotencyKey: 'order-123',
+});
 console.log(result.runId, result.status, result.output, result.durationMs);
 ```
+
+Aborting the call, or dropping the connection, cancels the run server-side.
+Node's built-in `fetch` enforces a ~300 s undici headers timeout that no
+`AbortController` overrides, so a wait budget above ~295 s dies at the socket
+and the run is cancelled -- use `emit()` plus a subscription for waits that long.
 
 ### triggerBatch(events)
 
@@ -1747,7 +1777,7 @@ The upcaster chain must be complete. If v2->v3 is registered but v1->v2 is missi
 
 ## Error Handling
 
-These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. Core defines more — notably `StepTimeoutError` (thrown by `step.run()` on timeout), `RunFailedError`, and `RunCancelledError` (thrown by `client.emitSync()`) — import those from `@ironflow/core` directly:
+These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. Core defines more, including `StepTimeoutError` from `step.run()` and `RunWaitTimeoutError`, `RunFailedError`, and `RunCancelledError` from `client.invoke()`. Import those from `@ironflow/core` directly:
 
 | Error Class | Description |
 |-------------|-------------|
