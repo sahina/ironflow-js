@@ -685,6 +685,58 @@ export class StreamingUnsupportedError extends Error {
   }
 }
 
+/**
+ * Start a runner per configured projection, streaming where the server supports
+ * it and polling where it does not. Shared by both pull workers: projections are
+ * plain HTTP and have nothing to do with how the worker receives its jobs, so
+ * the streaming worker accepting `projections` and doing nothing with them was
+ * silence, not a design (#2027).
+ *
+ * Returns the started runners so the caller can stop them; failures are logged,
+ * never thrown — a broken projection must not take the worker down.
+ */
+export function startProjectionRunners(opts: {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  projections: IronflowProjection<any, any>[] | undefined;
+  baseUrl: string;
+  headers: Record<string, string>;
+  logger: Logger;
+  signal?: AbortSignal;
+}): ProjectionRunner[] {
+  if (!opts.projections?.length) {
+    return [];
+  }
+
+  const runners: ProjectionRunner[] = [];
+  for (const projection of opts.projections) {
+    const runner = createProjectionRunner({
+      projection,
+      baseUrl: opts.baseUrl,
+      headers: opts.headers,
+      logger: opts.logger,
+      signal: opts.signal,
+    });
+    runners.push(runner);
+
+    // Try streaming first, fall back to polling if unsupported
+    runner.startStreaming().catch((err) => {
+      if (err instanceof StreamingUnsupportedError) {
+        opts.logger.info(
+          `Streaming not available for ${projection.config.name}, falling back to polling`
+        );
+        runner.start().catch((pollErr) => {
+          opts.logger.error(`Projection runner failed: ${pollErr}`);
+        });
+      } else {
+        opts.logger.error(`Projection runner failed: ${err}`);
+      }
+    });
+  }
+
+  opts.logger.info(`Started ${runners.length} projection runner(s)`);
+  return runners;
+}
+
 export function createProjectionRunner(config: ProjectionRunnerConfig): ProjectionRunner {
   return new ProjectionRunner(config);
 }

@@ -20,8 +20,6 @@ import {
   createNoopLogger,
   DEFAULT_SERVER_URL,
   DEFAULT_WORKER,
-  HEADERS,
-  DEFAULT_ENVIRONMENT,
   getServerUrl,
   type ValidatedJobAssignment,
 } from "@ironflow/core";
@@ -29,31 +27,23 @@ import type { WorkerConfig, Worker } from "./types.js";
 import { ExecutionContext } from "./internal/context.js";
 import { createStepClient, executeCompensations } from "./step.js";
 import { isYieldSignal, type YieldInfo } from "./internal/errors.js";
-import { createProjectionRunner, StreamingUnsupportedError, type ProjectionRunner } from "./projection-runner.js";
+import { startProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
 import { errorDetail } from "./internal/error-detail.js";
+import {
+  CODE_HASH_META_KEY,
+  buildWorkerHeaders,
+  functionCodeHash,
+  registerFunctions,
+  resolveEnvironment,
+} from "./internal/register-functions.js";
 import { SDK_VERSION } from "./version.js";
-import { createHash } from "node:crypto";
 
-// Reserved metadata key carrying a hash of the handler source (#1280). The engine
-// bumps a function's VERSION only when its registered config changes, and
-// functionsConfigEqual compares metadata — so stamping the code hash here is what
-// makes a code-only reload observable (ironflow_await_reload + the desktop
-// staleness chip gate on that version bump). Reserved (`__` prefix) so it doesn't
-// collide with user metadata.
-export const CODE_HASH_META_KEY = "__ironflow_code_hash";
-
-// functionCodeHash is a short deterministic hash of a handler's SOURCE. Content
-// hash, NOT a nonce: two distinct instances with identical source (an identical
-// dev-process restart) hash the same, so the version is not inflated; a body edit
-// changes the source → the hash → the registered metadata → the engine version.
-// Caveat: reflects the handler body only — edits to an imported helper the handler
-// calls are not visible in handler.toString(). Exported for tests.
-export function functionCodeHash(handler: unknown): string {
-  return createHash("sha256").update(String(handler)).digest("hex").slice(0, 16);
-}
+// Re-exported for back-compat: both live in internal/register-functions.ts,
+// which the streaming worker also uses (#2027).
+export { CODE_HASH_META_KEY, functionCodeHash };
 
 /**
  * Worker lifecycle states
@@ -128,8 +118,7 @@ class IronflowWorker implements Worker {
       config.heartbeatInterval ?? DEFAULT_WORKER.HEARTBEAT_INTERVAL_MS;
     this.reconnectDelay =
       config.reconnectDelay ?? DEFAULT_WORKER.RECONNECT_DELAY_MS;
-    this.environment =
-      config.environment ?? process.env.IRONFLOW_ENV ?? DEFAULT_ENVIRONMENT;
+    this.environment = resolveEnvironment(config.environment);
     this.apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
 
     // Initialize logger
@@ -253,14 +242,7 @@ class IronflowWorker implements Worker {
    * Build common headers including environment
    */
   private buildHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      [HEADERS.ENVIRONMENT]: this.environment,
-    };
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
-    }
-    return headers;
+    return buildWorkerHeaders(this.environment, this.apiKey);
   }
 
   /**
@@ -282,7 +264,13 @@ class IronflowWorker implements Worker {
     const baseUrl = this.config.serverUrl!.replace(/\/$/, "");
 
     // Register functions so the event router can find them
-    await this.registerFunctions(baseUrl);
+    await registerFunctions({
+      baseUrl,
+      functions: this.functionMap,
+      headers: this.buildHeaders(),
+      logger: this.logger,
+      signal: this.abortController?.signal,
+    });
 
     // Register worker
     await this.registerWorker(baseUrl);
@@ -298,72 +286,6 @@ class IronflowWorker implements Worker {
 
     // Poll for jobs
     await this.pollForJobs(baseUrl);
-  }
-
-  /**
-   * Register all worker functions with the Ironflow server
-   */
-  private async registerFunctions(baseUrl: string): Promise<void> {
-    for (const [fnId, fn] of this.functionMap) {
-      const body: Record<string, unknown> = {
-        id: fn.config.id,
-        name: fn.config.name || fn.config.id,
-        triggers: fn.config.triggers || [],
-        preferredMode: "EXECUTION_MODE_PULL",
-      };
-
-      if (fn.config.description) body.description = fn.config.description;
-      if (fn.config.retry) body.retry = fn.config.retry;
-      if (fn.config.timeout) body.timeoutMs = fn.config.timeout;
-      if (fn.config.concurrency) body.concurrency = fn.config.concurrency;
-      if (fn.config.debounce) {
-        // Server expects snake_case period_ms / max_wait_ms;
-        // SDK uses camelCase for parity with the rest of the TS surface.
-        body.debounce = {
-          period_ms: fn.config.debounce.periodMs,
-          key: fn.config.debounce.key ?? "",
-          ...(fn.config.debounce.maxWaitMs != null
-            ? { max_wait_ms: fn.config.debounce.maxWaitMs }
-            : {}),
-        };
-      }
-      if (fn.config.actorKey) body.actorKey = fn.config.actorKey;
-      if (fn.config.recording != null) body.recording = fn.config.recording;
-      if (fn.config.recordingRetention != null) body.recordingRetention = fn.config.recordingRetention;
-      // Stamp a hash of the handler source so a code edit changes the registered
-      // config → the engine bumps the version → the reload barrier fires (#1280).
-      body.metadata = { ...(fn.config.metadata ?? {}), [CODE_HASH_META_KEY]: functionCodeHash(fn.handler) };
-      if (fn.config.secrets?.length) body.secrets = fn.config.secrets;
-      if (fn.config.cancelOn?.length) {
-        body.cancelOn = fn.config.cancelOn.map((s) => ({
-          event: s.event,
-          match: s.match,
-        }));
-      }
-
-      const response = await fetch(
-        `${baseUrl}/ironflow.v1.IronflowService/RegisterFunction`,
-        {
-          method: "POST",
-          headers: this.buildHeaders(),
-          body: JSON.stringify(body),
-          signal: this.abortController?.signal,
-        }
-      );
-
-      if (!response.ok) {
-        // Read the body BEFORE throwIfAuthError: a Response body can only be
-        // consumed once, and the auth throw would take the reason with it.
-        const detail = await errorDetail(response);
-        throwIfAuthError(response.status, `Failed to register function ${fnId}`);
-        throw new IronflowError(
-          `Failed to register function ${fnId}: ${detail}`,
-          { code: "FUNCTION_REGISTRATION_FAILED" }
-        );
-      }
-
-      this.logger.info(`Registered function: ${fnId}`);
-    }
   }
 
   /**
@@ -405,38 +327,13 @@ class IronflowWorker implements Worker {
    * Start projection runners in background
    */
   private startProjectionRunners(baseUrl: string): void {
-    if (!this.config.projections?.length) {
-      return;
-    }
-
-    for (const proj of this.config.projections) {
-      const runner = createProjectionRunner({
-        projection: proj,
-        baseUrl,
-        headers: this.buildHeaders(),
-        logger: this.logger,
-        signal: this.abortController?.signal,
-      });
-      this.projectionRunners.push(runner);
-
-      // Try streaming first, fall back to polling if unsupported
-      runner.startStreaming().catch((err) => {
-        if (err instanceof StreamingUnsupportedError) {
-          this.logger.info(
-            `Streaming not available for ${proj.config.name}, falling back to polling`
-          );
-          runner.start().catch((pollErr) => {
-            this.logger.error(`Projection runner failed: ${pollErr}`);
-          });
-        } else {
-          this.logger.error(`Projection runner failed: ${err}`);
-        }
-      });
-    }
-
-    this.logger.info(
-      `Started ${this.config.projections.length} projection runner(s)`
-    );
+    this.projectionRunners = startProjectionRunners({
+      projections: this.config.projections,
+      baseUrl,
+      headers: this.buildHeaders(),
+      logger: this.logger,
+      signal: this.abortController?.signal,
+    });
   }
 
   /**

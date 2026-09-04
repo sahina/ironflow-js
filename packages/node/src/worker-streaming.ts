@@ -20,6 +20,9 @@ import {
   createNoopLogger,
   DEFAULT_SERVER_URL,
   DEFAULT_WORKER,
+  HEADERS,
+  UnauthenticatedError,
+  UnauthorizedError,
 } from "@ironflow/core";
 import {
   WorkerService,
@@ -43,6 +46,12 @@ import { isRetryable } from "@ironflow/core";
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
+import {
+  buildWorkerHeaders,
+  registerFunctions,
+  resolveEnvironment,
+} from "./internal/register-functions.js";
+import { startProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
 import { SDK_VERSION } from "./version.js";
 
 /**
@@ -98,10 +107,12 @@ class StreamingWorker implements Worker {
   private readonly reconnectDelay: number;
   private readonly logger: Logger;
   private readonly apiKey?: string;
+  private readonly environment: string;
 
   private state: WorkerState = "idle";
   private activeJobs: Map<string, ActiveJob> = new Map();
   private heartbeatTimer?: ReturnType<typeof setInterval>;
+  private projectionRunners: ProjectionRunner[] = [];
   private abortController?: AbortController;
   private sendMessage?: (msg: WorkerMessage) => void;
 
@@ -118,6 +129,7 @@ class StreamingWorker implements Worker {
     this.reconnectDelay =
       config.reconnectDelay ?? DEFAULT_WORKER.RECONNECT_DELAY_MS;
     this.apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
+    this.environment = resolveEnvironment(config.environment);
 
     // Initialize logger
     if (config.logger === false) {
@@ -168,12 +180,17 @@ class StreamingWorker implements Worker {
         }
 
         // Auth failures do not fix themselves on the reconnect cadence (#1673).
+        // Two shapes reach here: a ConnectError from the stream, and a plain
+        // Unauthenticated/UnauthorizedError from the function registration
+        // fetch that now runs first (#2027) — that one is not a ConnectError.
         if (
-          error instanceof ConnectError &&
-          (error.code === Code.Unauthenticated ||
-            error.code === Code.PermissionDenied)
+          (error instanceof ConnectError &&
+            (error.code === Code.Unauthenticated ||
+              error.code === Code.PermissionDenied)) ||
+          error instanceof UnauthenticatedError ||
+          error instanceof UnauthorizedError
         ) {
-          this.logger.error(`Stream authentication failed: ${error.message}. ${AUTH_HELP}`);
+          this.logger.error(`Stream authentication failed: ${String(error)}. ${AUTH_HELP}`);
           this.stop();
           throw error;
         }
@@ -222,11 +239,27 @@ class StreamingWorker implements Worker {
       this.heartbeatTimer = undefined;
     }
 
+    this.stopProjectionRunners();
+
     // Cancel all active jobs
     for (const job of this.activeJobs.values()) {
       job.abortController.abort();
     }
     this.activeJobs.clear();
+  }
+
+  private stopProjectionRunners(): void {
+    for (const runner of this.projectionRunners) {
+      runner.stop().catch(() => {});
+    }
+    this.projectionRunners = [];
+  }
+
+  /**
+   * Build common headers including environment
+   */
+  private buildHeaders(): Record<string, string> {
+    return buildWorkerHeaders(this.environment, this.apiKey);
   }
 
   /**
@@ -235,19 +268,38 @@ class StreamingWorker implements Worker {
   private async connect(): Promise<void> {
     this.state = "connecting";
 
+    // Clean up from a previous connection (e.g. after a server restart).
+    this.stopProjectionRunners();
+
+    // Register the function definitions so the event router can match triggers
+    // to them. The register frame below carries function *names* only, so
+    // without this the worker heartbeats forever and executes nothing (#2027).
+    // Inside connect(), not start(), so a reconnect re-registers — a worker that
+    // outlives a server restart comes back with its functions intact.
+    await registerFunctions({
+      baseUrl: this.config.serverUrl!,
+      functions: this.functionMap,
+      headers: this.buildHeaders(),
+      logger: this.logger,
+      signal: this.abortController?.signal,
+    });
+
     // Create Connect transport with HTTP/2 for bidirectional streaming
     const apiKey = this.apiKey;
+    const environment = this.environment;
     const transport = createConnectTransport({
       baseUrl: this.config.serverUrl!,
       httpVersion: "2",
-      interceptors: apiKey
-        ? [
-            (next) => async (req) => {
-              req.header.set("Authorization", `Bearer ${apiKey}`);
-              return next(req);
-            },
-          ]
-        : [],
+      interceptors: [
+        (next) => async (req) => {
+          if (apiKey) req.header.set("Authorization", `Bearer ${apiKey}`);
+          // Scope the stream to the same environment the definitions were
+          // registered into — otherwise the worker waits in env_default for
+          // jobs created elsewhere (#2027).
+          req.header.set(HEADERS.ENVIRONMENT, environment);
+          return next(req);
+        },
+      ],
     });
 
     // Create client with type assertion due to connect-es v1/v2 type mismatch
@@ -301,6 +353,15 @@ class StreamingWorker implements Worker {
 
     this.state = "connected";
     this.logger.info("Connected to server via streaming");
+
+    // Projections are plain HTTP and independent of the job transport.
+    this.projectionRunners = startProjectionRunners({
+      projections: this.config.projections,
+      baseUrl: this.config.serverUrl!.replace(/\/$/, ""),
+      headers: this.buildHeaders(),
+      logger: this.logger,
+      signal: this.abortController?.signal,
+    });
 
     // Start heartbeat
     this.startHeartbeat();
