@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/core",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "description": "Core types, schemas, and protocol definitions for Ironflow SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,6 +25,11 @@
       "types": "./dist/gen/index.d.ts",
       "import": "./dist/gen/index.js",
       "default": "./dist/gen/index.js"
+    },
+    "./gen/*": {
+      "types": "./dist/gen/*.d.ts",
+      "import": "./dist/gen/*.js",
+      "default": "./dist/gen/*.js"
     }
   },
   "sideEffects": false,
@@ -45,7 +50,7 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@bufbuild/protobuf": "^2.14.0",
+    "@bufbuild/protobuf": "^2.14.1",
     "@connectrpc/connect": "^2.1.2"
   },
   "devDependencies": {

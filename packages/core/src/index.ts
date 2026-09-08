@@ -317,6 +317,8 @@ export {
   EnterpriseRequiredError,
   UnauthorizedError,
   ConflictError,
+  ContendedError,
+  InjectionUnverifiedError,
   AUTH_HELP,
   throwIfAuthError,
   QueueFullError,
@@ -528,3 +530,22 @@ export type {
 // entry point to avoid loading heavy dependencies for users who only need
 // the HTTP client. Import from "@ironflow/core/gen" if you need them.
 
+export { connectHTTPError, ERROR_REASON_HEADER, ERROR_REASON } from "./connect-errors.js";
+
+export { waitResultFromWire, type WaitWireResult } from "./wait-wire.js";
+
+export { schemaFromWire, type SchemaWire } from "./schema-wire.js";
+
+export { functionListFromWire } from "./function-list-wire.js";
+
+export {
+  runInspectionFromWire,
+  stepInspectionFromWire,
+} from "./run-introspection-wire.js";
+export {
+  projectionRegistryFromWire,
+  projectionInspectionFromWire,
+  projectionStateFromWire,
+  projectionStatusFromWire,
+  rebuildJobFromWire,
+} from "./projection-wire.js";

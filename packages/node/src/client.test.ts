@@ -22,6 +22,9 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     validate: actual.validate,
     getServerUrl: () => undefined,
     IronflowError: actual.IronflowError,
+    connectHTTPError: actual.connectHTTPError,
+    AUTH_HELP: actual.AUTH_HELP,
+    waitResultFromWire: actual.waitResultFromWire,
     runStatusFromWire: actual.runStatusFromWire,
     runStatusToWire: actual.runStatusToWire,
     RunWaitTimeoutError: actual.RunWaitTimeoutError,
@@ -31,9 +34,11 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     EnterpriseRequiredError: actual.EnterpriseRequiredError,
     UnauthorizedError: actual.UnauthorizedError,
     ConflictError: actual.ConflictError,
+    ContendedError: actual.ContendedError,
     ValidationError: actual.ValidationError,
     TriggerSyncResponseSchema: actual.TriggerSyncResponseSchema,
-    peelProjectionEnvelope: actual.peelProjectionEnvelope,
+    projectionStateFromWire: actual.projectionStateFromWire,
+    rebuildJobFromWire: actual.rebuildJobFromWire,
     // Pure wire mappers — pass them through rather than stubbing, since the
     // webhook tests below assert on exactly the shape they produce.
     webhookVerifyConfigToWire: actual.webhookVerifyConfigToWire,
@@ -44,13 +49,14 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     functionHistoryEntryFromWire: actual.functionHistoryEntryFromWire,
     storedEventFromWire: actual.storedEventFromWire,
     runStepFromWire: actual.runStepFromWire,
+    stepInspectionFromWire: actual.stepInspectionFromWire,
     consumerGroupFromWire: actual.consumerGroupFromWire,
   };
 });
 
 // Import after mocking
 const { createClient } = await import("./client.js");
-const { ConflictError } = await import("@ironflow/core");
+const { ConflictError, ContendedError } = await import("@ironflow/core");
 
 describe("IronflowClient", () => {
   afterEach(() => {
@@ -74,13 +80,13 @@ describe("IronflowClient", () => {
 
     it("should fall back to IRONFLOW_API_KEY when apiKey is not provided", async () => {
       vi.stubEnv("IRONFLOW_API_KEY", "env-key");
-      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
       vi.stubGlobal("fetch", mockFetch);
 
       await createClient({ serverUrl: "http://localhost:9123" }).patchStep("step_123", {});
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/steps/patch",
+        "http://localhost:9123/ironflow.v1.IronflowService/PatchStep",
         expect.objectContaining({
           headers: {
             "Content-Type": "application/json",
@@ -95,13 +101,13 @@ describe("IronflowClient", () => {
     // `||` rather than `??`: `apiKey: process.env.X ?? ""` must still authenticate.
     it("should treat an empty apiKey as unset and fall back", async () => {
       vi.stubEnv("IRONFLOW_API_KEY", "env-key");
-      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
       vi.stubGlobal("fetch", mockFetch);
 
       await createClient({ serverUrl: "http://localhost:9123", apiKey: "" }).patchStep("step_123", {});
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/steps/patch",
+        "http://localhost:9123/ironflow.v1.IronflowService/PatchStep",
         expect.objectContaining({
           headers: {
             "Content-Type": "application/json",
@@ -113,7 +119,7 @@ describe("IronflowClient", () => {
 
     it("should prefer an explicit apiKey over IRONFLOW_API_KEY", async () => {
       vi.stubEnv("IRONFLOW_API_KEY", "env-key");
-      const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+      const mockFetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
       vi.stubGlobal("fetch", mockFetch);
 
       await createClient({
@@ -122,7 +128,7 @@ describe("IronflowClient", () => {
       }).patchStep("step_123", {});
 
       expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/steps/patch",
+        "http://localhost:9123/ironflow.v1.IronflowService/PatchStep",
         expect.objectContaining({
           headers: {
             "Content-Type": "application/json",
@@ -449,7 +455,7 @@ describe("IronflowClient", () => {
         .mockResolvedValueOnce({
           ok: true,
           json: () => Promise.resolve({
-            steps: [{ id: "row-1", run_id: "run-1", step_id: "charge", step_type: "invoke", sequence: 1, status: "completed", attempt: 1, created_at: "now", updated_at: "now" }],
+            steps: [{ id: "row-1", runId: "run-1", stepId: "charge", stepType: "STEP_TYPE_INVOKE", sequence: 1, status: "STEP_STATUS_COMPLETED", attempt: 1, createdAt: "now", updatedAt: "now" }],
             count: 1,
           }),
         })
@@ -460,7 +466,7 @@ describe("IronflowClient", () => {
       expect((await client.getRunSteps("run-1")).steps[0]?.stepId).toBe("charge");
       expect(await client.getRunStreams("run-1")).toEqual({ entityIds: ["order-1"] });
       expect(mockFetch.mock.calls.map(([url]) => url)).toEqual([
-        "http://localhost:9123/api/v1/runs/run-1/steps",
+        "http://localhost:9123/ironflow.v1.IronflowService/GetRunSteps",
         "http://localhost:9123/api/v1/runs/run-1/streams",
       ]);
     });
@@ -920,95 +926,6 @@ describe("IronflowClient", () => {
     });
   });
 
-  describe("patchStep", () => {
-    it("should make POST request to /api/v1/steps/patch", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({
-        serverUrl: "http://localhost:9123",
-      });
-
-      await client.patchStep("step_123", { result: "fixed" }, "manual fix");
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/steps/patch",
-        expect.objectContaining({
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            step_id: "step_123",
-            output: { result: "fixed" },
-            reason: "manual fix",
-          }),
-        })
-      );
-    });
-
-    it("should set Authorization header when apiKey is provided", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({
-        serverUrl: "http://localhost:9123",
-        apiKey: "test-key",
-      });
-
-      await client.patchStep("step_123", { result: "fixed" });
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/steps/patch",
-        expect.objectContaining({
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: "Bearer test-key",
-          },
-        })
-      );
-    });
-
-    it("should default reason to empty string when not provided", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-
-      await client.patchStep("step_123", { result: "fixed" });
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          body: JSON.stringify({
-            step_id: "step_123",
-            output: { result: "fixed" },
-            reason: "",
-          }),
-        })
-      );
-    });
-
-    it("should throw error on failed request", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        text: () => Promise.resolve("step not found"),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-
-      await expect(
-        client.patchStep("step_123", { result: "fixed" })
-      ).rejects.toThrow("step not found");
-    });
-  });
-
   describe("resumeRun", () => {
     it("should POST the ResumeRun RPC with lowerCamel proto fields", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
@@ -1133,6 +1050,57 @@ describe("IronflowClient", () => {
       );
     });
 
+    // #2074: 409 stopped meaning one thing. Connect serializes both
+    // `already_exists` (wait for the first resume) and `aborted` (a lost CAS
+    // race — re-read and reissue) to it, so the status alone picks the wrong
+    // advice for one of them. The discriminator is the Connect code in the
+    // error body, which connectRequest used to read only as a message fallback
+    // and then discard.
+    //
+    // The CLASS is the whole discrimination. Both errors carry
+    // `retryable: false` — `aborted` means "retry at a higher level", not
+    // "reissue these bytes" — so an assertion on the flag alone would pass on
+    // every row and prove nothing.
+    it.each([
+      {
+        name: "aborted is contention",
+        body: { code: "aborted", message: "resume run contended after retry" },
+        want: () => ContendedError,
+        notWant: () => ConflictError,
+      },
+      {
+        name: "already_exists is dedupe",
+        body: {
+          code: "already_exists",
+          message: "a resume for this run is already in flight",
+        },
+        want: () => ConflictError,
+        notWant: () => ContendedError,
+      },
+      {
+        // A REST-shaped 409 carries no Connect code at all. It has to keep
+        // landing on ConflictError, which is the pre-#2074 behavior.
+        name: "no code stays a conflict",
+        body: { message: "conflict" },
+        want: () => ConflictError,
+        notWant: () => ContendedError,
+      },
+    ])("409 discrimination: $name", async ({ body, want, notWant }) => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        text: () => Promise.resolve(JSON.stringify(body)),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient();
+      const error = await client.resumeRun("run_123").catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(want());
+      expect(error).not.toBeInstanceOf(notWant());
+      expect((error as { retryable: boolean }).retryable).toBe(false);
+    });
+
     // request() applies the client timeout and reports through onError; the
     // hand-rolled fetch this replaced did both independently (#1963).
     it("should report failures through onError with the RPC endpoint", async () => {
@@ -1158,86 +1126,6 @@ describe("IronflowClient", () => {
     });
   });
 
-  describe("listFunctions", () => {
-    it("should make GET request to /api/v1/functions", async () => {
-      const mockFunctions = [
-        { id: "fn_1", name: "Function 1" },
-        { id: "fn_2", name: "Function 2" },
-      ];
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ functions: mockFunctions }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({
-        serverUrl: "http://localhost:9123",
-      });
-
-      const result = await client.listFunctions();
-
-      expect(result).toEqual(mockFunctions);
-      expect(result).toHaveLength(2);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/functions",
-        expect.objectContaining({
-          method: "GET",
-        })
-      );
-    });
-
-    it("should set Authorization header when apiKey is provided", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ functions: [] }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({
-        serverUrl: "http://localhost:9123",
-        apiKey: "fn-key",
-      });
-
-      await client.listFunctions();
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/functions",
-        expect.objectContaining({
-          headers: {
-            Authorization: "Bearer fn-key",
-          },
-        })
-      );
-    });
-
-    it("should return empty array when functions is missing", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({}),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-
-      const result = await client.listFunctions();
-
-      expect(result).toEqual([]);
-    });
-
-    it("should throw error on failed request", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 503,
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-
-      await expect(client.listFunctions()).rejects.toThrow(
-        "List functions failed: 503"
-      );
-    });
-  });
 
   describe("listWorkers", () => {
     it("should make GET request to /api/v1/workers", async () => {
@@ -2566,254 +2454,6 @@ describe("IronflowClient", () => {
       );
     });
 
-    describe("get", () => {
-      // Wire shape mirrors `internal/server/server.go:2531` ProjectionResponse:
-      // embedded ProjectionRegistry (envelope-level fields) + nested `state`
-      // ProjectionState row carrying user state under `.state.state`.
-      it("peels wire envelope and returns flat ProjectionStateResult", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              name: "order-summary",
-              version: 10,
-              mode: "managed",
-              last_event_seq: 42,
-              updated_at: "2026-01-01T00:00:00Z",
-              state: {
-                projection_name: "order-summary",
-                environment_id: "env_default",
-                partition_key: "__global__",
-                state: { totalOrders: 42 },
-                last_event_id: "evt-42",
-                last_event_seq: 42,
-                last_event_time: "2026-01-01T00:00:00Z",
-                version: 10,
-                updated_at: "2026-01-01T00:00:00Z",
-              },
-            }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient({ serverUrl: "http://localhost:9123" });
-        const result = await client.projections.get<{ totalOrders: number }>(
-          "order-summary"
-        );
-
-        expect(result.name).toBe("order-summary");
-        expect(result.partition).toBe("__global__");
-        expect(result.state).toEqual({ totalOrders: 42 });
-        expect(result.lastEventId).toBe("evt-42");
-        expect(result.lastEventSeq).toBe(42);
-        expect(result.lastEventTime).toEqual(new Date("2026-01-01T00:00:00Z"));
-        expect(result.version).toBe(10);
-        expect(result.mode).toBe("managed");
-        expect(result.updatedAt).toEqual(new Date("2026-01-01T00:00:00Z"));
-        expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:9123/api/v1/projections/order-summary",
-          expect.objectContaining({ method: "GET" })
-        );
-      });
-
-      it("returns empty state when server omits inner state row", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              name: "fresh",
-              version: 1,
-              mode: "managed",
-              last_event_seq: 0,
-              updated_at: "2026-01-01T00:00:00Z",
-            }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient({ serverUrl: "http://localhost:9123" });
-        const result = await client.projections.get("fresh");
-
-        expect(result.state).toEqual({});
-        expect(result.partition).toBe("__global__");
-        expect(result.lastEventTime).toBeUndefined();
-        expect(result.lastEventSeq).toBe(0);
-      });
-
-      it("threads partition option through query string and echoes it back when no state row", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              name: "by-customer",
-              version: 1,
-              mode: "managed",
-              last_event_seq: 0,
-              updated_at: "2026-01-01T00:00:00Z",
-            }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient({ serverUrl: "http://localhost:9123" });
-        const result = await client.projections.get("by-customer", {
-          partition: "customer-99",
-        });
-
-        expect(result.partition).toBe("customer-99");
-        expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:9123/api/v1/projections/by-customer?partition=customer-99",
-          expect.objectContaining({ method: "GET" })
-        );
-      });
-
-      it("throws PROJECTION_ENVELOPE_DRIFT when inner state.state field is missing", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              name: "drifted",
-              version: 1,
-              mode: "managed",
-              last_event_seq: 0,
-              updated_at: "2026-01-01T00:00:00Z",
-              state: {
-                projection_name: "drifted",
-                partition_key: "__global__",
-                last_event_id: "evt-1",
-              },
-            }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient({ serverUrl: "http://localhost:9123" });
-        await expect(client.projections.get("drifted")).rejects.toThrow(
-          /projection envelope drift/
-        );
-      });
-
-      it("should throw on server error", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: false,
-          status: 404,
-          json: () => Promise.resolve({ error: "projection not found" }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient();
-
-        await expect(
-          client.projections.get("missing-projection")
-        ).rejects.toThrow("projection not found");
-      });
-    });
-
-    describe("list", () => {
-      it("should return array of projection statuses", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve([
-              {
-                name: "order-summary",
-                status: "active",
-                eventCount: 100,
-                lastEventAt: "2026-01-01T00:00:00Z",
-                errorCount: 0,
-                lastError: "",
-                consumerName: "proj-order-summary",
-              },
-              {
-                name: "user-stats",
-                status: "paused",
-                eventCount: 50,
-                lastEventAt: "2026-02-01T00:00:00Z",
-                errorCount: 2,
-                lastError: "timeout",
-                consumerName: "proj-user-stats",
-              },
-            ]),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient({ serverUrl: "http://localhost:9123" });
-        const result = await client.projections.list();
-
-        expect(result).toHaveLength(2);
-        expect(assertDefined(result[0]).name).toBe("order-summary");
-        expect(assertDefined(result[0]).status).toBe("active");
-        expect(assertDefined(result[1]).name).toBe("user-stats");
-        expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:9123/api/v1/projections",
-          expect.objectContaining({ method: "GET" })
-        );
-      });
-
-      it("should return empty array when no projections exist", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve([]),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient();
-        const result = await client.projections.list();
-
-        expect(result).toEqual([]);
-      });
-    });
-
-    describe("getStatus", () => {
-      it("should return operational status for a projection", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              name: "order-summary",
-              status: "active",
-              mode: "managed",
-              lastEventSeq: 250,
-              lag: 0,
-              updatedAt: "2026-03-01T00:00:00Z",
-            }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient({ serverUrl: "http://localhost:9123" });
-        const result = await client.projections.getStatus("order-summary");
-
-        expect(result.name).toBe("order-summary");
-        expect(result.status).toBe("active");
-        expect(result.lastEventSeq).toBe(250);
-        expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:9123/api/v1/projections/order-summary/status",
-          expect.objectContaining({ method: "GET" })
-        );
-      });
-    });
-
-    describe("rebuild", () => {
-      it("should trigger a rebuild and return job status", async () => {
-        const mockFetch = vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve({
-              name: "order-summary",
-              status: "running",
-              progress: 0,
-              startedAt: "2026-03-01T12:00:00Z",
-            }),
-        });
-        vi.stubGlobal("fetch", mockFetch);
-
-        const client = createClient({ serverUrl: "http://localhost:9123" });
-        const result = await client.projections.rebuild("order-summary");
-
-        expect(result.name).toBe("order-summary");
-        expect(result.status).toBe("running");
-        expect(mockFetch).toHaveBeenCalledWith(
-          "http://localhost:9123/api/v1/projections/order-summary/rebuild",
-          expect.objectContaining({ method: "POST" })
-        );
-      });
-    });
   });
 
   describe("getRunStateAt", () => {
@@ -3150,109 +2790,7 @@ describe("IronflowClient", () => {
   // streams.listStreams + streams.getEntityHistory
   // ============================================================================
 
-  describe("streams.listStreams", () => {
-    it("should GET /api/v1/streams and return list", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            streams: [
-              { entityId: "order-1", entityType: "order", version: 3, eventCount: 3, lastEventAt: "2026-01-01T00:00:00Z" },
-              { entityId: "order-2", entityType: "order", version: 1, eventCount: 1, lastEventAt: "2026-01-02T00:00:00Z" },
-            ],
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
 
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.streams.listStreams();
-
-      expect(result).toHaveLength(2);
-      expect(assertDefined(result[0]).entityId).toBe("order-1");
-      expect(assertDefined(result[0]).entityType).toBe("order");
-      expect(assertDefined(result[0]).version).toBe(3);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/streams",
-        expect.objectContaining({ method: "GET" })
-      );
-    });
-
-    it("should return empty array when streams is missing", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({}),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      const result = await client.streams.listStreams();
-      expect(result).toEqual([]);
-    });
-
-    it("should throw on 500", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({ error: "server error" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      await expect(client.streams.listStreams()).rejects.toThrow("server error");
-    });
-  });
-
-  describe("streams.getEntityHistory", () => {
-    it("should GET /api/v1/streams/:entityId/history and return events", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            entries: [
-              { event_name: "order.created", event_data: { total: 100 }, entity_version: 1, timestamp: "2026-01-01T00:00:00Z" },
-              { event_name: "order.shipped", event_data: { carrier: "ups" }, entity_version: 2, timestamp: "2026-01-02T00:00:00Z" },
-            ],
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.streams.getEntityHistory("order-123");
-
-      expect(result).toHaveLength(2);
-      expect(assertDefined(result[0]).eventName).toBe("order.created");
-      expect(assertDefined(result[0]).version).toBe(1);
-      expect(assertDefined(result[1]).eventName).toBe("order.shipped");
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/streams/order-123/history",
-        expect.objectContaining({ method: "GET" })
-      );
-    });
-
-    it("should return empty array when events is missing", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({}),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      const result = await client.streams.getEntityHistory("order-999");
-      expect(result).toEqual([]);
-    });
-
-    it("should throw on 404", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        json: () => Promise.resolve({ error: "entity not found" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      await expect(client.streams.getEntityHistory("missing")).rejects.toThrow("entity not found");
-    });
-  });
 
   // ============================================================================
   // projects sub-client
@@ -3534,258 +3072,6 @@ describe("IronflowClient", () => {
 
       const client = createClient();
       await expect(client.environments.delete("missing")).rejects.toThrow("environment not found");
-    });
-  });
-
-  describe("schemas.register", () => {
-    it("should POST /api/v1/events/schemas and return created schema", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            event_name: "order.placed",
-            version: 1,
-            schema_json: JSON.stringify({ type: "object" }),
-            created_at: "2026-03-28T00:00:00Z",
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.schemas.register({
-        name: "order.placed",
-        version: 1,
-        schema: { type: "object" },
-      });
-
-      expect(result.event_name).toBe("order.placed");
-      expect(result.version).toBe(1);
-      expect(result.created_at).toBe("2026-03-28T00:00:00Z");
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/events/schemas",
-        expect.objectContaining({ method: "POST" })
-      );
-      const call = assertDefined(mockFetch.mock.calls[0]);
-      const body = JSON.parse(call[1]?.body as string);
-      expect(body.event_name).toBe("order.placed");
-      expect(body.version).toBe(1);
-      expect(body.schema_json).toBe(JSON.stringify({ type: "object" }));
-    });
-
-    it("should throw on 500", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({ error: "internal server error" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      await expect(
-        client.schemas.register({ name: "x", version: 1, schema: {} })
-      ).rejects.toThrow("internal server error");
-    });
-  });
-
-  describe("schemas.list", () => {
-    it("should GET /api/v1/events/schemas and return array", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            schemas: [
-              { event_name: "order.placed", version: 1, schema_json: "{}", created_at: "2026-03-28T00:00:00Z" },
-              { event_name: "order.placed", version: 2, schema_json: "{}", created_at: "2026-03-29T00:00:00Z" },
-            ],
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.schemas.list();
-
-      expect(result).toHaveLength(2);
-      expect(assertDefined(result[0]).event_name).toBe("order.placed");
-      expect(assertDefined(result[1]).version).toBe(2);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/events/schemas",
-        expect.objectContaining({ method: "GET" })
-      );
-    });
-
-    it("should return empty array when schemas is missing", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({}),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      const result = await client.schemas.list();
-      expect(result).toEqual([]);
-    });
-  });
-
-  describe("schemas.get", () => {
-    it("should GET /api/v1/events/schemas/:name and return schema", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            event_name: "order.placed",
-            version: 2,
-            schema_json: JSON.stringify({ type: "object" }),
-            created_at: "2026-03-28T00:00:00Z",
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.schemas.get("order.placed");
-
-      expect(result.event_name).toBe("order.placed");
-      expect(result.version).toBe(2);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/events/schemas/order.placed",
-        expect.objectContaining({ method: "GET" })
-      );
-    });
-
-    it("should throw on 404", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        json: () => Promise.resolve({ error: "schema not found" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      await expect(client.schemas.get("nonexistent")).rejects.toThrow("schema not found");
-    });
-  });
-
-  describe("schemas.getVersion", () => {
-    it("should GET /api/v1/events/schemas/:name/:version and return schema", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            event_name: "order.placed",
-            version: 1,
-            schema_json: JSON.stringify({ type: "object" }),
-            created_at: "2026-03-28T00:00:00Z",
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.schemas.getVersion("order.placed", 1);
-
-      expect(result.version).toBe(1);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/events/schemas/order.placed/1",
-        expect.objectContaining({ method: "GET" })
-      );
-    });
-  });
-
-  describe("schemas.delete", () => {
-    it("should DELETE /api/v1/events/schemas/:name/:version", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 204,
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      await client.schemas.delete("order.placed", 1);
-
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/events/schemas/order.placed/1",
-        expect.objectContaining({ method: "DELETE" })
-      );
-    });
-
-    it("should throw on 404", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 404,
-        json: () => Promise.resolve({ error: "schema not found" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      await expect(client.schemas.delete("nonexistent", 1)).rejects.toThrow("schema not found");
-    });
-  });
-
-  describe("schemas.testUpcast", () => {
-    it("should POST /api/v1/events/upcast and return result", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            success: true,
-            data: { orderId: "123", totalV2: 99.99 },
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.schemas.testUpcast({
-        eventName: "order.placed",
-        fromVersion: 1,
-        toVersion: 2,
-        data: { orderId: "123", total: 99.99 },
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFetch).toHaveBeenCalledWith(
-        "http://localhost:9123/api/v1/events/upcast",
-        expect.objectContaining({ method: "POST" })
-      );
-      const call = assertDefined(mockFetch.mock.calls[0]);
-      const body = JSON.parse(call[1]?.body as string);
-      expect(body.eventName).toBe("order.placed");
-      expect(body.fromVersion).toBe(1);
-      expect(body.toVersion).toBe(2);
-    });
-
-    it("should return failure result with error message", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            success: false,
-            error: "no upcaster registered for version 1 → 3",
-          }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      const result = await client.schemas.testUpcast({
-        eventName: "order.placed",
-        fromVersion: 1,
-        toVersion: 3,
-        data: {},
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("no upcaster");
-    });
-
-    it("should throw on 500", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        json: () => Promise.resolve({ error: "internal server error" }),
-      });
-      vi.stubGlobal("fetch", mockFetch);
-
-      const client = createClient();
-      await expect(
-        client.schemas.testUpcast({ eventName: "x", fromVersion: 1, toVersion: 2, data: {} })
-      ).rejects.toThrow("internal server error");
     });
   });
 

@@ -226,26 +226,33 @@ export function serve(config: ServeConfig): UniversalHandler {
           const emitUrl = config.serverUrl || process.env.IRONFLOW_URL;
           if (emitUrl) {
             const emitBody: Record<string, unknown> = {
-              name: event.name,
-              data: event.data,
+              event: event.name,
+              ...(event.data !== null &&
+              typeof event.data === "object" &&
+              !Array.isArray(event.data)
+                ? { data: event.data }
+                : { dataValue: event.data ?? null }),
             };
             if (event.idempotencyKey) {
               emitBody.idempotencyKey = event.idempotencyKey;
             }
-            // /api/v1/events is not a public route (isPublicPath rejects every
-            // /api/ path), so an unauthenticated emit 502s the whole webhook
+            // Event emission requires authentication, so an unauthenticated emit fails the webhook
             // outside dev mode. Same env key the step callbacks below use.
             const emitHeaders: Record<string, string> = {
               "Content-Type": "application/json",
             };
             if (process.env.IRONFLOW_API_KEY) {
-              emitHeaders["Authorization"] = `Bearer ${process.env.IRONFLOW_API_KEY}`;
+              emitHeaders["Authorization"] =
+                `Bearer ${process.env.IRONFLOW_API_KEY}`;
             }
-            const emitResp = await fetch(`${emitUrl}/api/v1/events`, {
-              method: "POST",
-              headers: emitHeaders,
-              body: JSON.stringify(emitBody),
-            });
+            const emitResp = await fetch(
+              `${emitUrl}/ironflow.v1.IronflowService/Emit`,
+              {
+                method: "POST",
+                headers: emitHeaders,
+                body: JSON.stringify(emitBody),
+              },
+            );
             if (!emitResp.ok) {
               const errText = await emitResp.text();
               return sendResponse(502, {

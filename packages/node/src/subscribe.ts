@@ -560,6 +560,38 @@ export class SubscriptionClient {
         for (const cb of this.errorCallbacks) {
           cb(errorInfo);
         }
+        // AND SETTLE ANY PENDING SUBSCRIBE (#2056). `subscribe()` resolves only from
+        // `subscription_result`, so before this a server that answered a subscribe with the
+        // GENERIC error frame — which is what it sends for "PubSub not configured" — left the
+        // promise pending forever on a socket that was up. The caller had no timeout and no
+        // rejection: just a subscription that never existed and never said so.
+        //
+        // ALL OF THEM, because this frame carries no pattern and there is no honest way to tell
+        // which subscribe it belongs to. Filtering by `code` would only look like precision — the
+        // server reuses the same codes for subscribe and unsubscribe (ErrorCodeInvalidPattern for
+        // both), so any filter is a guess. This does mean an unrelated generic error arriving
+        // while subscribes are in flight now rejects them; that is strictly better than the state
+        // it replaces, where those same subscribes hung forever whenever the error WAS theirs and
+        // survived only by luck when it was not.
+        //
+        // The fan-out above still runs first and is unchanged: consumers registered on `onError`
+        // expect this frame, and settling pending is additional rather than a replacement.
+        //
+        // DELETE BEFORE REJECTING, the way `handleSubscribeFailed` does. A caller whose `.catch`
+        // synchronously re-subscribes the same pattern must not find a stale entry and be told
+        // `Already subscribed to pattern` — clearing the map is the whole reason a retry is
+        // possible at all.
+        if (this.pending.size > 0) {
+          const stranded = [...this.pending.values()];
+          this.pending.clear();
+          for (const pending of stranded) {
+            pending.reject(
+              new Error(
+                `Subscribe to ${pending.pattern} failed: ${message.code} ${message.message}`,
+              ),
+            );
+          }
+        }
         break;
       }
     }

@@ -972,9 +972,9 @@ describe("webhook routing", () => {
     expect(body.event.data).toEqual({ amount: 100 });
   });
 
-  // /api/v1/events is not a public route, so an unauthenticated emit 502s the
+  // /ironflow.v1.IronflowService/Emit is not a public route, so an unauthenticated emit 502s the
   // whole webhook outside dev mode (#1672 review).
-  it("authenticates the emit to /api/v1/events with IRONFLOW_API_KEY", async () => {
+  it("authenticates the emit to /ironflow.v1.IronflowService/Emit with IRONFLOW_API_KEY", async () => {
     vi.stubEnv("IRONFLOW_API_KEY", "env-key");
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, text: () => Promise.resolve("") });
     vi.stubGlobal("fetch", mockFetch);
@@ -995,7 +995,7 @@ describe("webhook routing", () => {
     );
 
     const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://localhost:9123/api/v1/events");
+    expect(url).toBe("http://localhost:9123/ironflow.v1.IronflowService/Emit");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer env-key");
 
     vi.unstubAllGlobals();

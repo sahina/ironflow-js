@@ -480,12 +480,18 @@ export class UnauthorizedError extends IronflowError {
 }
 
 /**
- * Thrown when the request conflicts with state already in flight (HTTP 409).
+ * Thrown when the request conflicts with state already in flight (HTTP 409 /
+ * Connect `already_exists`).
  *
  * `resumeRun` throws it when an identical resume is already inside the
  * server's dedupe window (#1963): the run is left exactly as it was found, so
  * the caller should wait for the first resume to land. Deliberately not
  * retryable — retrying is the thing this error reports against.
+ *
+ * Two Connect codes serialize to 409 with opposite retry advice, so the status
+ * alone cannot pick between them (#2074). `already_exists` lands here;
+ * `aborted` lands in {@link ContendedError}. A 409 carrying no Connect code —
+ * every REST route — still lands here, which is the pre-#2074 behavior.
  */
 export class ConflictError extends IronflowError {
   constructor(message = "Conflicts with an operation already in flight") {
@@ -494,6 +500,65 @@ export class ConflictError extends IronflowError {
       retryable: false,
     });
     this.name = "ConflictError";
+  }
+}
+
+/**
+ * Thrown when a concurrent write won and the server abandoned this one
+ * (HTTP 409 / Connect `aborted`).
+ *
+ * The sibling of {@link ConflictError} at the same status, and its opposite:
+ * nothing was applied, so the call can be made again — but **re-read first**.
+ * gRPC defines `aborted` as "retry at a higher level", meaning restart the
+ * read-modify-write. `retryable` is false because it advertises something
+ * narrower — a blind reissue of the identical body — and that is wrong for
+ * both halves of `aborted`. Where the caller supplied the version
+ * (`streams.append`, the webhook mutators) the reissue fails identically;
+ * where the server read the version itself (`updateFunction`,
+ * `updateFunctionStatus`, `rollbackFunction`, `cancelRun`) it could land,
+ * silently re-applying a write the caller never re-read. `resumeRun` is in
+ * that second group and #1972 does not move it: the RPC takes no version from
+ * the caller, and the engine reads it server-side for the CAS.
+ *
+ * A separate class rather than a flag on `ConflictError` because callers
+ * already key on `ConflictError` to mean "wait, do not retry" — folding
+ * contention into it would make that check wrong for half its instances. The
+ * two carry identical flags on purpose: the discriminator is the type.
+ */
+export class ContendedError extends IronflowError {
+  constructor(message = "Lost a race with a concurrent write; re-read and reissue") {
+    super(message, {
+      code: "CONTENDED",
+      retryable: false,
+    });
+    this.name = "ContendedError";
+  }
+}
+
+/**
+ * Thrown when `injectStepOutput` wrote the step but could not confirm the run
+ * stood still around the write (Connect `aborted` +
+ * `Ironflow-Error-Reason: injection_unverified`).
+ *
+ * The opposite of {@link ContendedError} at the SAME Connect code, which is
+ * why the header exists. Contention means nothing was applied and the call can
+ * be reissued; this means the step **did** change and a blind reissue writes
+ * over state the caller has not looked at. Read the step — `output` carries
+ * the injected value and `originalOutput` the pre-injection one — and decide,
+ * rather than retrying.
+ *
+ * Before #2093's review every `aborted` became a `ContendedError`, whose doc
+ * promises "nothing was applied": true for the other producers of that code
+ * and a lie for this one, in the dangerous direction. `retryable` is false for
+ * the same reason it is false on its sibling, and more so.
+ */
+export class InjectionUnverifiedError extends IronflowError {
+  constructor(message = "The injection was written but the run moved during the write; inspect the step before retrying") {
+    super(message, {
+      code: "INJECTION_UNVERIFIED",
+      retryable: false,
+    });
+    this.name = "InjectionUnverifiedError";
   }
 }
 

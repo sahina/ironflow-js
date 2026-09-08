@@ -41,11 +41,11 @@ describe.skipIf(!INTEGRATION_ENABLED)("Browser SDK Integration", () => {
 
   describe("Event emission", () => {
     it("should emit an event via REST API", async () => {
-      const response = await fetch(`${SERVER_URL}/api/v1/events`, {
+      const response = await fetch(`${SERVER_URL}/ironflow.v1.IronflowService/Emit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "integration.test.event",
+          event: "integration.test.event",
           data: { test: true, timestamp: Date.now() },
         }),
       });
@@ -58,7 +58,7 @@ describe.skipIf(!INTEGRATION_ENABLED)("Browser SDK Integration", () => {
 
   describe("Workflow operations", () => {
     it("should list runs", async () => {
-      const response = await fetch(`${SERVER_URL}/api/v1/runs?limit=10`);
+      const response = await fetch(`${SERVER_URL}/ironflow.v1.IronflowService/ListRuns`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({limit:10})});
       expect(response.ok).toBe(true);
 
       const result = await response.json();
@@ -67,7 +67,7 @@ describe.skipIf(!INTEGRATION_ENABLED)("Browser SDK Integration", () => {
     });
 
     it("should get functions list", async () => {
-      const response = await fetch(`${SERVER_URL}/api/v1/functions`);
+      const response = await fetch(`${SERVER_URL}/ironflow.v1.IronflowService/ListFunctions`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
       expect(response.ok).toBe(true);
 
       const result = await response.json();

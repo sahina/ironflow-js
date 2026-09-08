@@ -21,6 +21,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     EnterpriseRequiredError: actual.EnterpriseRequiredError,
     UnauthorizedError: actual.UnauthorizedError,
     ConflictError: actual.ConflictError,
+    ContendedError: actual.ContendedError,
   };
 });
 
@@ -234,7 +235,7 @@ describe("onError handler", () => {
         expect.any(Error),
         expect.objectContaining({
           method: "patchStep",
-          endpoint: "/api/v1/steps/patch",
+          endpoint: "/ironflow.v1.IronflowService/PatchStep",
           statusCode: 500,
         })
       );
@@ -286,7 +287,7 @@ describe("onError handler", () => {
         expect.any(Error),
         expect.objectContaining({
           method: "listFunctions",
-          endpoint: "/api/v1/functions",
+          endpoint: "/ironflow.v1.IronflowService/ListFunctions",
           statusCode: 503,
         })
       );
@@ -332,7 +333,7 @@ describe("onError handler", () => {
         expect.any(Error),
         expect.objectContaining({
           method: "listFunctions",
-          endpoint: "/api/v1/functions",
+          endpoint: "/ironflow.v1.IronflowService/ListFunctions",
           statusCode: undefined,
         })
       );

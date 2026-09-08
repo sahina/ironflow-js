@@ -299,6 +299,98 @@ describe("SubscriptionClient", () => {
       client.close();
     });
 
+    it("rejects a pending subscribe when the server answers a generic error frame", async () => {
+      // #2056. `subscribe()` settles only from `subscription_result`, so a server answering the
+      // GENERIC error frame — what it sends for "PubSub not configured" — left this promise
+      // pending forever on a socket that was up: no timeout, no rejection, and a subscription
+      // that never existed and never said so.
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({
+        serverUrl: "http://localhost:9123",
+      });
+      await client.connect();
+
+      const subPromise = client.subscribe("system.run.>", { onEvent: () => {} });
+
+      mockWs.simulateMessage({
+        type: "error",
+        code: "INTERNAL_ERROR",
+        message: "PubSub not configured",
+      });
+
+      await expect(subPromise).rejects.toThrow("PubSub not configured");
+
+      client.close();
+    });
+
+    it("still fans a generic error frame out to the global handlers", async () => {
+      // Settling pending is ADDITIONAL, not a replacement: consumers registered on `onError`
+      // expect this frame, and a fix that swallowed it would be a second bug.
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({
+        serverUrl: "http://localhost:9123",
+      });
+      await client.connect();
+
+      const seen: { code: string }[] = [];
+      client.onError((e) => seen.push({ code: e.code }));
+      const subPromise = client
+        .subscribe("system.run.>", { onEvent: () => {} })
+        .catch(() => {});
+
+      mockWs.simulateMessage({
+        type: "error",
+        code: "INTERNAL_ERROR",
+        message: "PubSub not configured",
+      });
+
+      await subPromise;
+      expect(seen).toEqual([{ code: "INTERNAL_ERROR" }]);
+
+      client.close();
+    });
+
+    it("clears the pending entry, so the SAME pattern can be retried", async () => {
+      // THE HALF THAT MAKES A RETRY POSSIBLE. `subscribe` writes `pending` synchronously and its
+      // duplicate check reads `patternToId.has(p) || pending.has(p)`, so a rejection that left the
+      // entry behind would poison the pattern for the life of the client: every retry throwing
+      // `Already subscribed to pattern` rather than reaching the server.
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({
+        serverUrl: "http://localhost:9123",
+      });
+      await client.connect();
+
+      await expect(
+        (async () => {
+          const p = client.subscribe("system.run.>", { onEvent: () => {} });
+          mockWs.simulateMessage({
+            type: "error",
+            code: "INTERNAL_ERROR",
+            message: "PubSub not configured",
+          });
+          return p;
+        })(),
+      ).rejects.toThrow();
+
+      // The retry reaches the server rather than throwing locally, and succeeds.
+      const retry = client.subscribe("system.run.>", { onEvent: () => {} });
+      mockWs.simulateMessage({
+        type: "subscription_result",
+        results: [
+          {
+            pattern: "system.run.>",
+            status: "ok",
+            subscriptionId: "sub_after_retry",
+          },
+        ],
+      });
+      const sub = await retry;
+      expect(sub.id).toBe("sub_after_retry");
+
+      client.close();
+    });
+
     it("sends subscribe request with options", async () => {
       const { createSubscriptionClient } = await importModule();
       const client = createSubscriptionClient({

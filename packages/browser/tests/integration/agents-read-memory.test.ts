@@ -43,7 +43,7 @@ describe.skipIf(!INTEGRATION)("agents.readMemory — integration", () => {
       );
     }
 
-    const fnList = await fetch(`${SERVER_URL}/api/v1/functions`).then((r) =>
+    const fnList = await fetch(`${SERVER_URL}/ironflow.v1.IronflowService/ListFunctions`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"}).then((r) =>
       r.json()
     );
     const exists = (fnList.functions ?? []).some(

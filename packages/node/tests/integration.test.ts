@@ -45,7 +45,7 @@ describe.skipIf(!INTEGRATION_ENABLED)("Node SDK Integration", () => {
 
   describe("API operations", () => {
     it("should list functions", async () => {
-      const response = await fetch(`${SERVER_URL}/api/v1/functions`);
+      const response = await fetch(`${SERVER_URL}/ironflow.v1.IronflowService/ListFunctions`, {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
       expect(response.ok).toBe(true);
 
       const result = (await response.json()) as { functions: unknown };
@@ -53,7 +53,7 @@ describe.skipIf(!INTEGRATION_ENABLED)("Node SDK Integration", () => {
     });
 
     it("should list runs", async () => {
-      const response = await fetch(`${SERVER_URL}/api/v1/runs?limit=5`);
+      const response = await fetch(`${SERVER_URL}/ironflow.v1.IronflowService/ListRuns`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({limit:5})});
       expect(response.ok).toBe(true);
 
       const result = (await response.json()) as { runs: unknown };
@@ -61,18 +61,18 @@ describe.skipIf(!INTEGRATION_ENABLED)("Node SDK Integration", () => {
     });
 
     it("should emit test event", async () => {
-      const response = await fetch(`${SERVER_URL}/api/v1/events`, {
+      const response = await fetch(`${SERVER_URL}/ironflow.v1.IronflowService/Emit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "node.integration.test",
+          event: "node.integration.test",
           data: { timestamp: Date.now() },
         }),
       });
       expect(response.ok).toBe(true);
 
-      const result = (await response.json()) as { event_id: unknown };
-      expect(result.event_id).toBeDefined();
+      const result = (await response.json()) as { eventId: unknown };
+      expect(result.eventId).toBeDefined();
     });
   });
 });

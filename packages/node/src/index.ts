@@ -294,6 +294,7 @@ export {
   EnterpriseRequiredError,
   UnauthorizedError,
   ConflictError,
+  ContendedError,
   isRetryable,
   isIronflowError,
 } from "@ironflow/core";

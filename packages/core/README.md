@@ -307,6 +307,70 @@ const myWorkflow = createFunction({
 
 ---
 
+### RegisteredFunction
+
+The server-side view of a function, returned by `getFunction` / `listFunctions`.
+
+```typescript
+interface RegisteredFunction {
+  id: string;
+  name: string;
+  description: string;
+  triggers: Trigger[];
+  retry?: RetryConfig;
+  timeoutMs: number;
+  concurrency?: ConcurrencyConfig;
+  debounce?: DebounceConfig;
+  preferredMode?: ExecutionMode;
+  endpointUrl: string;
+  actorKey: string;
+  status: FunctionStatus;
+  version: number;
+  createdAt?: string;
+  updatedAt?: string;
+  recording: boolean;
+  recordingRetention: string;
+  metadata?: Record<string, unknown>;
+  cancelOn: CancelOnConfig[];
+}
+
+type FunctionStatus = "active" | "paused" | "archived" | "unspecified";
+```
+
+### Function History
+
+```typescript
+type FunctionChangeType =
+  | "created"
+  | "update"
+  | "status_change"
+  | "rollback"
+  | "delete";
+
+interface FunctionHistoryEntry {
+  eventId: string;
+  entityVersion: number;
+  functionId: string;
+  functionSnapshot?: RegisteredFunction;
+  actorId: string;
+  changeReason: string;
+  changeType: FunctionChangeType;
+  recordedAt?: string;
+}
+
+interface ListFunctionHistoryOptions {
+  limit?: number;
+  fromVersion?: number;
+}
+
+interface ListFunctionHistoryResult {
+  entries: FunctionHistoryEntry[];
+  hasMore: boolean;
+}
+```
+
+---
+
 ## Event Types
 
 ### IronflowEvent
@@ -398,6 +462,86 @@ interface EmitSyncResult {
   durationMs: number;
   /** The wait budget expired; the run is still going server-side */
   waitTimedOut: boolean;
+}
+```
+
+---
+
+### StoredEvent and Event Reads
+
+`StoredEvent` is an event as persisted by the server (distinct from
+`IronflowEvent`, the shape a handler receives).
+
+```typescript
+interface StoredEvent {
+  id: string;
+  name: string;
+  timestamp: string;
+  data: unknown;
+  source: string;
+  metadata?: unknown;
+  idempotencyKey?: string;
+  processed: boolean;
+  createdAt: string;
+  entityId?: string;
+  entityType?: string;
+  runId?: string;
+}
+
+interface ListEventsOptions {
+  name?: string;
+  names?: string[];
+  sources?: string[];
+  search?: string;
+  since?: string;
+  until?: string;
+  limit?: number;
+  cursor?: string;
+  before?: string;
+}
+
+interface ListEventsResult {
+  events: StoredEvent[];
+  count: number;
+  limit: number;
+  nextCursor?: string;
+  prevCursor?: string;
+  hasNext: boolean;
+  hasPrev: boolean;
+  approxTotal?: number;
+  approxTotalCapped: boolean;
+}
+
+interface ListEventNamesOptions {
+  sources?: string[];
+  since?: string;
+  until?: string;
+}
+
+interface ListEventNamesResult {
+  names: EventNameCount[];
+  scanned: number;
+  truncated: boolean;
+  scanCap: number;
+}
+
+interface EventNameCount {
+  name: string;
+  count: number;
+}
+```
+
+### TriggerBatchEvent
+
+One entry of a `triggerBatch()` call.
+
+```typescript
+interface TriggerBatchEvent {
+  event: string;
+  data: unknown;
+  version?: number;
+  idempotencyKey?: string;
+  metadata?: Record<string, unknown>;
 }
 ```
 
@@ -608,6 +752,48 @@ type InvokeSyncResult = Omit<EmitSyncResult, "waitTimedOut">;
 
 ---
 
+### RunStep, RunStepsResult and RunStreamsResult
+
+```typescript
+interface RunStep {
+  id: string;
+  runId: string;
+  stepId: string;
+  stepType: string;
+  sequence: number;
+  status: string;
+  input?: unknown;
+  output?: unknown;
+  originalOutput?: unknown;   // pre-patch value, when the step was patched
+  error?: unknown;
+  inputHash?: string;
+  attempt: number;
+  durationMs?: number;
+  startedAt?: string;
+  endedAt?: string;
+  sleepUntil?: string;
+  waitEventName?: string;
+  waitTimeout?: string;
+  patchedAt?: string;
+  patchedBy?: string;
+  compensationFor?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface RunStepsResult {
+  steps: RunStep[];
+  count: number;
+}
+
+/** Entity streams a run touched. */
+interface RunStreamsResult {
+  entityIds: string[];
+}
+```
+
+---
+
 ## Subscription Types
 
 ### SubscribeOptions
@@ -775,6 +961,26 @@ interface ConsumerGroup {
 }
 
 type ConsumerGroupStatus = "active" | "paused" | "deleted";
+```
+
+---
+
+### UpdateConsumerGroupInput
+
+Every field is optional; only the ones present are applied.
+
+```typescript
+interface UpdateConsumerGroupInput {
+  pattern?: string;
+  filterExpr?: string;
+  ackMode?: AckMode;
+  backpressure?: BackpressureMode;
+  maxInflight?: number;
+  maxRedeliveries?: number;
+  redeliverDelayMs?: number;
+  metadata?: Record<string, unknown>;
+  status?: Exclude<ConsumerGroupStatus, "deleted">;
+}
 ```
 
 ---
@@ -1242,6 +1448,12 @@ interface AuditTrailResult {
   totalCount: number;
   nextCursor?: string;
 }
+
+/** Environment-wide audit feed; narrows GetAuditTrailOptions by run or function. */
+interface ListAuditEventsOptions extends GetAuditTrailOptions {
+  runId?: string;
+  functionId?: string;
+}
 ```
 
 ---
@@ -1457,9 +1669,11 @@ interface QuerySQLProjectionOptions {
 interface SQLProjectionQueryResult {
   columns: string[];
   rows: string[][]; // each row is string values in column order
-  typedRows: Array<Array<string | number | boolean | null>>; // SQL types preserved
+  typedRows: SQLProjectionValue[][]; // SQL types preserved
   totalCount: number; // total matches before limit/offset
 }
+
+type SQLProjectionValue = string | number | boolean | null;
 ```
 
 `where` and `orderBy` are parsed into bound parameters, never concatenated into
@@ -1478,6 +1692,16 @@ interface RebuildJob {
   status: string;
   progress: number;
   startedAt: string;
+}
+
+interface ListProjectionPartitionsOptions {
+  query?: string;
+  limit?: number;
+}
+
+interface ListProjectionPartitionsResult {
+  partitions: string[];
+  returned: number;
 }
 
 /**
@@ -1546,7 +1770,7 @@ import {
   RunWaitTimeoutError, RunFailedError, RunCancelledError,
   AgentInvokeTimeoutError, MemoryCatchupTimeoutError,
   UnauthenticatedError, EnterpriseRequiredError, UnauthorizedError,
-  QueueFullError,
+  ConflictError, ContendedError, QueueFullError,
   isRetryable, isIronflowError, toError,
   AUTH_HELP, throwIfAuthError,
 } from '@ironflow/core';
@@ -1595,6 +1819,8 @@ class IronflowError extends Error {
 | `UnauthenticatedError` | `UNAUTHENTICATED` | false | No/invalid API key (HTTP 401) |
 | `EnterpriseRequiredError` | `ENTERPRISE_REQUIRED` | false | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility |
 | `UnauthorizedError` | `UNAUTHORIZED` | false | Insufficient permissions (HTTP 403) |
+| `ConflictError` | `CONFLICT` | false | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun`. Wait, do not retry |
+| `ContendedError` | `CONTENDED` | false | HTTP 409 from a lost CAS race (Connect `aborted`). Nothing was applied — re-read and reissue |
 | `QueueFullError` | `QUEUE_FULL` | false | `@ironflow/browser`'s offline write queue hit its 500-write / 5 MB cap |
 
 ### Utility Functions
@@ -1648,12 +1874,16 @@ const run = parseAndValidate(RunResponseSchema, jsonString, 'GetRun response');
 // Validate already-parsed data against schema
 // Throws SchemaValidationError on failure
 const run = validate(RunResponseSchema, parsedData, 'GetRun response');
+
+// Flatten Zod issues into "path: message" strings (used by both helpers above)
+formatZodIssues(issues: readonly z.core.$ZodIssue[]): string[]
 ```
 
 ### Available Schemas
 
 **Run & Status:**
 - `RunStatusSchema` -- `z.enum(["pending", "running", "completed", "failed", "cancelled", "paused", "waiting_for_capacity", "waiting"])`
+- `RunStatusWireSchema` -- the protobuf JSON spelling (`RUN_STATUS_RUNNING`, ...), transformed to the public status. `RUN_STATUS_UNSPECIFIED` and unknown values are rejected rather than mapped
 
 **Push Request (serve.ts):**
 - `PushRequestSchema` -- Full push mode request from engine to SDK
@@ -1668,6 +1898,7 @@ const run = validate(RunResponseSchema, parsedData, 'GetRun response');
 - `RunResponseSchema` -- Full run details
 - `ListRunsResponseSchema` -- `{ runs?, nextCursor?, totalCount? }`
 - `RegisterFunctionResponseSchema` -- `{ created? }`
+- `InvokeFunctionSyncResponseSchema` -- `{ result }`, one `TriggerSyncResultItemSchema`
 - `HealthResponseSchema` -- `{ status }`
 - `ErrorResponseSchema` -- `{ code?, message? }`
 - `EmptyResponseSchema` -- `{}`
@@ -1872,6 +2103,10 @@ import {
   storedEventFromWire,
   runStepFromWire,
   consumerGroupFromWire,
+  runStatusFromWire,                // protobuf JSON status -> public status
+  runStatusToWire,                  // public status -> protobuf JSON status;
+                                    // throws instead of minting a value the
+                                    // server would silently discard (#1919)
 } from '@ironflow/core';
 ```
 
@@ -2347,6 +2582,22 @@ interface ServerCapabilities {
 }
 ```
 
+Agent tools registered with the server, as returned by `listAgentTools`:
+
+```typescript
+interface VisibleAgentTool {
+  qualifiedName: string;
+  description: string;
+  inputSchemaJson: string;
+  requiredScopes: string[];
+}
+
+interface ListAgentToolsResult {
+  tools: VisibleAgentTool[];
+  nextCursor?: string;
+}
+```
+
 ---
 
 ## Secrets Management Types
@@ -2568,12 +2819,28 @@ interface UpdateUserInput {
   roles?: string[];
 }
 
+interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
 interface Tenant {
   id: string;
   name: string;
   envCount: number;
   keyCount: number;
   createdAt?: string;
+}
+
+interface ProvisionTenantInput {
+  orgName: string;
+  envName?: string;
+}
+
+interface ProvisionTenantResult {
+  org: { id: string; name: string };
+  environment: { id: string; name: string };
+  apiKey: { key: string; roles: string[] };
 }
 ```
 

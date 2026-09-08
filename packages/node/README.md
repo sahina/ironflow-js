@@ -417,9 +417,9 @@ const transferFunds = createFunction(
 );
 ```
 
-### step.publish(topic, data)
+### step.publish(topic, data, options?)
 
-Publish a message to a developer pub/sub topic. The publish is memoized like any other step.
+Publish a message to a developer pub/sub topic. The publish is memoized like any other step. `options` takes an `idempotencyKey` for server-side deduplication.
 
 ```typescript
 const orderProcessor = createFunction(
@@ -512,7 +512,7 @@ The `serve()` function creates a universal HTTP handler for serverless deploymen
 | `serverUrl` | `string` | Ironflow server URL (for emitting webhook events). |
 | `webhooks` | `IronflowWebhook[]` | Webhook sources to handle. |
 
-There is no `apiKey` field. Both authenticated hops out of `serve()` -- step callbacks such as `step.publish`, and the webhook `transform` result posted to `/api/v1/events` -- read the `IRONFLOW_API_KEY` env var, matching the Go SDK's serve handler. Neither route is public, so without that variable set they fail outside dev mode.
+There is no `apiKey` field. Both authenticated hops out of `serve()` -- step callbacks such as `step.publish`, and the webhook `transform` result posted to `/ironflow.v1.IronflowService/Emit` -- read the `IRONFLOW_API_KEY` env var, matching the Go SDK's serve handler. Neither route is public, so without that variable set they fail outside dev mode.
 
 ### Next.js App Router
 
@@ -582,6 +582,7 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `environment` | `string` | `IRONFLOW_ENV` or `"default"` | Target environment. |
 | `eventDefinitions` | `EventDefinitionRegistry` | -- | Registry for automatic event upcasting. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
+| `checkpointInterval` | `number` | `1000` | Debounce window in ms for checkpointing completed steps to the server while a job is still running; `0` disables. Without it a killed worker loses all in-flight progress and the reclaimed run re-executes every step. REST polling worker only -- `createStreamingWorker` ignores it. |
 | `transport` | `"polling" \| "streaming"` | `"polling"` | Inert -- `createWorker` always polls. Import `createStreamingWorker` from `@ironflow/node/worker-streaming` for streaming. |
 
 ### Worker interface
@@ -1793,6 +1794,8 @@ These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. C
 | `UnauthenticatedError` | Missing or invalid authentication (HTTP 401). |
 | `UnauthorizedError` | Insufficient permissions (HTTP 403). |
 | `EnterpriseRequiredError` | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility. |
+| `ConflictError` | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun()`. Wait, do not retry. |
+| `ContendedError` | HTTP 409 from a lost compare-and-set race; nothing was applied, so re-read and reissue. |
 
 ### Utility functions
 

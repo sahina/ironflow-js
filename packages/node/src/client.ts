@@ -1,3 +1,8 @@
+import { projectionStateFromWire, projectionStatusFromWire, rebuildJobFromWire } from "@ironflow/core";
+import { stepInspectionFromWire } from "@ironflow/core";
+import { functionListFromWire } from "@ironflow/core";
+import { schemaFromWire, type SchemaWire } from "@ironflow/core";
+import { connectHTTPError, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
  * Ironflow Node.js Client
  *
@@ -25,6 +30,7 @@ import {
   EnterpriseRequiredError,
   UnauthorizedError,
   ConflictError,
+  ContendedError,
   ValidationError,
   type EmitSyncResult,
   type InvokeSyncOptions,
@@ -78,7 +84,6 @@ import {
   type UpdatePolicyInput,
   type ProjectionStateResult,
   type GetProjectionOptions,
-  peelProjectionEnvelope,
   type ProjectionStatusInfo,
   type RebuildJob,
   type WaitResult,
@@ -1017,14 +1022,17 @@ export class IronflowClient {
 
   /** Get the durable steps recorded for a run. */
   async getRunSteps(runId: string): Promise<RunStepsResult> {
-    const response = await this.restRequest<{
-      steps?: Record<string, unknown>[];
-      count?: number;
-    }>("GET", `/api/v1/runs/${encodeURIComponent(runId)}/steps`, undefined, "getRunSteps");
-    return {
-      steps: (response.steps ?? []).map(runStepFromWire),
-      count: response.count ?? 0,
-    };
+    const response = await this.request<{ steps?: Record<string, unknown>[] }>(
+      "/ironflow.v1.IronflowService/GetRunSteps",
+      { runId },
+      "getRunSteps",
+      undefined,
+      true,
+    );
+    const steps = (response.steps ?? []).map((raw) =>
+      runStepFromWire(stepInspectionFromWire(raw)),
+    );
+    return { steps, count: steps.length };
   }
 
   /** Get the entity stream IDs touched by a run. */
@@ -1275,31 +1283,43 @@ export class IronflowClient {
      * List all entity streams.
      */
     listStreams: async (): Promise<StreamListEntry[]> => {
-      const response = await this.restRequest<{
+      const response = await this.request<{
         streams?: Array<Record<string, unknown>>;
-      }>("GET", "/api/v1/streams", undefined, "streams.listStreams");
+      }>(
+        "/ironflow.v1.EntityStreamService/ListStreams",
+        {},
+        "streams.listStreams",
+        undefined,
+        true,
+      );
       return (response.streams ?? []).map((stream) => ({
-        entityId: String(stream.entity_id ?? stream.entityId ?? ""),
-        entityType: String(stream.entity_type ?? stream.entityType ?? ""),
+        entityId: String(stream.entityId ?? ""),
+        entityType: String(stream.entityType ?? ""),
         version: Number(stream.version ?? 0),
-        eventCount: Number(stream.event_count ?? stream.eventCount ?? 0),
-        lastEventAt: String(
-          stream.last_event_at ?? stream.lastEventAt ?? stream.updated_at ?? ""
-        ),
+        eventCount: Number(stream.eventCount ?? 0),
+        lastEventAt: String(stream.updatedAt ?? ""),
       }));
     },
 
     /**
      * Get the full event history for an entity.
      */
-    getEntityHistory: async (entityId: string): Promise<EntityHistoryEntry[]> => {
-      const resp = await this.restRequest<{
+    getEntityHistory: async (
+      entityId: string,
+    ): Promise<EntityHistoryEntry[]> => {
+      const response = await this.request<{
         entries?: Array<Record<string, unknown>>;
-      }>("GET", `/api/v1/streams/${encodeURIComponent(entityId)}/history`, undefined, "streams.getEntityHistory");
-      return (resp.entries ?? []).map((entry) => ({
-        eventName: String(entry.event_name ?? ""),
-        data: entry.event_data,
-        version: Number(entry.entity_version ?? 0),
+      }>(
+        "/ironflow.v1.EntityStreamService/GetEntityHistory",
+        { entityId },
+        "streams.getEntityHistory",
+        undefined,
+        true,
+      );
+      return (response.entries ?? []).map((entry) => ({
+        eventName: String(entry.eventName ?? ""),
+        data: Object.hasOwn(entry, "eventDataValue") ? entry.eventDataValue : entry.eventData,
+        version: Number(entry.entityVersion ?? 0),
         timestamp: String(entry.timestamp ?? ""),
       }));
     },
@@ -1574,30 +1594,36 @@ export class IronflowClient {
      */
     get: async <TState = unknown>(
       name: string,
-      options?: GetProjectionOptions
+      options?: GetProjectionOptions,
     ): Promise<ProjectionStateResult<TState>> => {
-      // Normalize empty-string partition to undefined so the helper falls back
-      // to "__global__" instead of returning empty-string partition.
-      const partition = options?.partition ? options.partition : undefined;
-      const path = partition
-        ? `/api/v1/projections/${encodeURIComponent(name)}?partition=${encodeURIComponent(partition)}`
-        : `/api/v1/projections/${encodeURIComponent(name)}`;
-      const raw = await this.restRequest<unknown>(
-        "GET",
-        path,
+      const raw = await this.request<Record<string, unknown>>(
+        "/ironflow.v1.ProjectionService/GetProjection",
+        { name, partition: options?.partition },
+        "projections.get",
         undefined,
-        "projections.get"
+        true,
       );
-      return peelProjectionEnvelope<TState>(raw, partition);
+      return projectionStateFromWire<TState>(
+        raw,
+        options?.partition || undefined,
+      );
     },
     /** List all projection statuses */
     list: async (): Promise<ProjectionStatusInfo[]> => {
-      return this.restRequest<ProjectionStatusInfo[]>(
-        "GET",
-        "/api/v1/projections",
+      const raw = await this.request<{
+        projections?: Array<{
+          name?: string;
+          status?: string;
+          errorMessage?: string;
+        }>;
+      }>(
+        "/ironflow.v1.ProjectionService/ListProjections",
+        {},
+        "projections.list",
         undefined,
-        "projections.list"
+        true,
       );
+      return (raw.projections ?? []).map(projectionStatusFromWire);
     },
     /** List materialized partition keys for a projection. */
     listPartitions: async (
@@ -1617,29 +1643,38 @@ export class IronflowClient {
     },
     /** Get operational status for a projection */
     getStatus: async (name: string): Promise<ProjectionStatusInfo> => {
-      return this.restRequest<ProjectionStatusInfo>(
-        "GET",
-        `/api/v1/projections/${encodeURIComponent(name)}/status`,
+      const p = await this.request<Record<string, unknown>>(
+        "/ironflow.v1.ProjectionService/GetProjectionStatus",
+        { name },
+        "projections.getStatus",
         undefined,
-        "projections.getStatus"
+        true,
       );
+      const result = {...projectionStatusFromWire(p), last_event_seq:Number(p.lastEventSeq ?? 0), error_message:String(p.errorMessage ?? ""), updated_at:String(p.updatedAt ?? "")};
+      return result;
     },
     /** Trigger a full rebuild of a projection */
     rebuild: async (name: string): Promise<RebuildJob> => {
-      return this.restRequest<RebuildJob>(
-        "POST",
-        `/api/v1/projections/${encodeURIComponent(name)}/rebuild`,
-        undefined,
-        "projections.rebuild"
+      return rebuildJobFromWire(
+        await this.request<Record<string, unknown>>(
+          "/ironflow.v1.ProjectionService/RebuildProjection",
+          { name },
+          "projections.rebuild",
+          undefined,
+          true,
+        ),
       );
     },
     /** Get the status of an in-progress or completed rebuild job */
     getRebuildJob: async (name: string): Promise<RebuildJob> => {
-      return this.restRequest<RebuildJob>(
-        "GET",
-        `/api/v1/projections/${encodeURIComponent(name)}/rebuild`,
-        undefined,
-        "projections.getRebuildJob"
+      return rebuildJobFromWire(
+        await this.request<Record<string, unknown>>(
+          "/ironflow.v1.ProjectionService/GetRebuildJob",
+          { name },
+          "projections.getRebuildJob",
+          undefined,
+          true,
+        ),
       );
     },
     /** Delete a projection */
@@ -1653,29 +1688,32 @@ export class IronflowClient {
     },
     /** Pause a projection (stop consuming new events) */
     pause: async (name: string): Promise<void> => {
-      await this.restRequest<void>(
-        "POST",
-        `/api/v1/projections/${encodeURIComponent(name)}/pause`,
+      await this.request(
+        "/ironflow.v1.ProjectionService/PauseProjection",
+        { name },
+        "projections.pause",
         undefined,
-        "projections.pause"
+        true,
       );
     },
     /** Resume a paused projection */
     resume: async (name: string): Promise<void> => {
-      await this.restRequest<void>(
-        "POST",
-        `/api/v1/projections/${encodeURIComponent(name)}/resume`,
+      await this.request(
+        "/ironflow.v1.ProjectionService/ResumeProjection",
+        { name },
+        "projections.resume",
         undefined,
-        "projections.resume"
+        true,
       );
     },
     /** Cancel an in-progress rebuild */
     cancelRebuild: async (name: string): Promise<void> => {
-      await this.restRequest<void>(
-        "POST",
-        `/api/v1/projections/${encodeURIComponent(name)}/cancel`,
+      await this.request(
+        "/ironflow.v1.ProjectionService/CancelRebuild",
+        { name },
+        "projections.cancelRebuild",
         undefined,
-        "projections.cancelRebuild"
+        true,
       );
     },
     /**
@@ -1696,29 +1734,35 @@ export class IronflowClient {
      * });
      * ```
      *
-     * Errors: 404 (projection not found), 409 (paused/rebuilding/partition
-     * unsupported for external), 429 (wait capacity exceeded).
+     * Errors: 400 (partition rejected — external projection, or a managed
+     * projection that declares no partition key and has no state row under
+     * the requested partition), 404 (projection not found), 409
+     * (paused/rebuilding), 429 (wait capacity exceeded, or more than 64
+     * distinct partitions of this projection already have a live wait), 503
+     * (the shared poller stopped before this wait attached — retryable, a
+     * retry spawns a fresh one).
      *
      * Issue #473.
      */
     waitForCatchup: async (
       name: string,
-      opts: { minSeq: bigint | number; timeoutMs?: number; partition?: string }
+      opts: { minSeq: bigint | number; timeoutMs?: number; partition?: string },
     ): Promise<WaitResult> => {
-      const params = new URLSearchParams();
-      params.set("minSeq", String(opts.minSeq));
-      if (opts.timeoutMs !== undefined) {
-        params.set("timeout", String(opts.timeoutMs));
-      }
-      if (opts.partition) {
-        params.set("partition", opts.partition);
-      }
-      return this.restRequest<WaitResult>(
-        "GET",
-        `/api/v1/projections/${encodeURIComponent(name)}/catchup?${params.toString()}`,
+      const raw = await this.request<WaitWireResult>(
+        "/ironflow.v1.ProjectionService/WaitProjectionCatchup",
+        {
+          name,
+          minSeq: String(opts.minSeq),
+          partition: opts.partition,
+          ...(opts.timeoutMs !== undefined && opts.timeoutMs !== 0
+            ? { timeout: `${opts.timeoutMs / 1000}s` }
+            : {}),
+        },
+        "projections.waitForCatchup",
         undefined,
-        "projections.waitForCatchup"
+        true,
       );
+      return waitResultFromWire(raw);
     },
     /**
      * Wait on multiple projections in a single request. All items share
@@ -1730,8 +1774,12 @@ export class IronflowClient {
      * Max 16 items. Issue #473.
      */
     waitForCatchupBatch: async (
-      items: Array<{ name: string; minSeq: bigint | number; partition?: string }>,
-      opts: { timeoutMs?: number } = {}
+      items: Array<{
+        name: string;
+        minSeq: bigint | number;
+        partition?: string;
+      }>,
+      opts: { timeoutMs?: number } = {},
     ): Promise<Array<{ result?: WaitResult; error?: string }>> => {
       // Always send minSeq as a string. uint64 sequences can exceed JS's
       // safe-integer range (2^53-1); stringifying keeps the value exact
@@ -1743,15 +1791,23 @@ export class IronflowClient {
           minSeq: String(i.minSeq),
           ...(i.partition ? { partition: i.partition } : {}),
         })),
-        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+        ...(opts.timeoutMs !== undefined && opts.timeoutMs > 0
+          ? { timeout: `${opts.timeoutMs / 1000}s` }
+          : {}),
       };
-      const resp = await this.restRequest<{ results: Array<{ result?: WaitResult; error?: string }> }>(
-        "POST",
-        "/api/v1/projections/catchup/batch",
+      const resp = await this.request<{
+        results?: Array<{ result?: WaitWireResult; error?: string }>;
+      }>(
+        "/ironflow.v1.ProjectionService/WaitProjectionCatchupBatch",
         body,
-        "projections.waitForCatchupBatch"
+        "projections.waitForCatchupBatch",
+        undefined,
+        true,
       );
-      return resp.results ?? [];
+      return (resp.results ?? []).map((item) => ({
+        ...(item.result ? { result: waitResultFromWire(item.result) } : {}),
+        ...(item.error ? { error: item.error } : {}),
+      }));
     },
     /**
      * Wait for a specific event (identified by `eventId` from a
@@ -1772,15 +1828,15 @@ export class IronflowClient {
       const body = {
         eventId,
         projection,
-        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+        ...(opts.timeoutMs !== undefined && opts.timeoutMs > 0 ? { timeout: `${opts.timeoutMs / 1000}s` } : {}),
         ...(opts.partition ? { partition: opts.partition } : {}),
       };
-      return this.restRequest<WaitResult>(
-        "POST",
-        "/api/v1/projections/wait-for-event",
+      const result = await this.request<WaitWireResult>(
+        "/ironflow.v1.ProjectionService/WaitForEvent",
         body,
-        "projections.waitForEvent"
+        "projections.waitForEvent", undefined, true
       );
+      return waitResultFromWire(result);
     },
   };
 
@@ -1844,15 +1900,36 @@ export class IronflowClient {
   readonly projects = {
     /** List all projects */
     list: async (): Promise<Project[]> => {
-      return this.restRequest<Project[]>("GET", "/api/v1/projects", undefined, "projects.list");
+      return this.restRequest<Project[]>(
+        "GET",
+        "/api/v1/projects",
+        undefined,
+        "projects.list",
+      );
     },
     /** Create a new project */
-    create: async (input: { name: string; description?: string }): Promise<Project> => {
-      return this.restRequest<Project>("POST", "/api/v1/projects", input, "projects.create");
+    create: async (input: {
+      name: string;
+      description?: string;
+    }): Promise<Project> => {
+      return this.restRequest<Project>(
+        "POST",
+        "/api/v1/projects",
+        input,
+        "projects.create",
+      );
     },
     /** Update a project */
-    update: async (id: string, input: { name?: string; description?: string }): Promise<Project> => {
-      return this.restRequest<Project>("PUT", `/api/v1/projects/${encodeURIComponent(id)}`, input, "projects.update");
+    update: async (
+      id: string,
+      input: { name?: string; description?: string },
+    ): Promise<Project> => {
+      return this.restRequest<Project>(
+        "PUT",
+        `/api/v1/projects/${encodeURIComponent(id)}`,
+        input,
+        "projects.update",
+      );
     },
     /** Delete a project */
     delete: async (id: string): Promise<void> => {
@@ -1874,15 +1951,36 @@ export class IronflowClient {
   readonly environments = {
     /** List all environments */
     list: async (): Promise<Environment[]> => {
-      return this.restRequest<Environment[]>("GET", "/api/v1/environments", undefined, "environments.list");
+      return this.restRequest<Environment[]>(
+        "GET",
+        "/api/v1/environments",
+        undefined,
+        "environments.list",
+      );
     },
     /** Create a new environment */
-    create: async (input: { name: string; project_id: string }): Promise<Environment> => {
-      return this.restRequest<Environment>("POST", "/api/v1/environments", input, "environments.create");
+    create: async (input: {
+      name: string;
+      project_id: string;
+    }): Promise<Environment> => {
+      return this.restRequest<Environment>(
+        "POST",
+        "/api/v1/environments",
+        input,
+        "environments.create",
+      );
     },
     /** Update an environment */
-    update: async (id: string, input: { name?: string }): Promise<Environment> => {
-      return this.restRequest<Environment>("PUT", `/api/v1/environments/${encodeURIComponent(id)}`, input, "environments.update");
+    update: async (
+      id: string,
+      input: { name?: string },
+    ): Promise<Environment> => {
+      return this.restRequest<Environment>(
+        "PUT",
+        `/api/v1/environments/${encodeURIComponent(id)}`,
+        input,
+        "environments.update",
+      );
     },
     /** Delete an environment */
     delete: async (id: string): Promise<void> => {
@@ -1921,34 +2019,55 @@ export class IronflowClient {
    * ```
    */
   readonly schemas = {
-    /** Register a new event schema (or a new version of an existing schema) */
+    /** Register a new event schema or version. */
     register: async (input: RegisterSchemaInput): Promise<EventSchema> => {
-      return this.restRequest<EventSchema>("POST", "/api/v1/events/schemas", {
-        event_name: input.name,
-        version: input.version,
-        schema_json: JSON.stringify(input.schema),
-      }, "schemas.register");
+
+      const status = await this.request<{ status?: string }>("/ironflow.v1.EventSchemaService/RegisterSchema", { eventName: input.name, version: input.version, schemaJson: JSON.stringify(input.schema) }, "schemas.register", undefined, true);
+      return { ...status, event_name: input.name, version: input.version, schema: input.schema, created_at: "" };
     },
-    /** List all registered event schemas */
+    /** List registered schemas, including their documents. */
     list: async (): Promise<EventSchema[]> => {
-      const resp = await this.restRequest<{ schemas: EventSchema[] }>("GET", "/api/v1/events/schemas", undefined, "schemas.list");
-      return resp.schemas ?? [];
+
+      const result = await this.request<{ schemas?: SchemaWire[] }>("/ironflow.v1.EventSchemaService/ListSchemas", {}, "schemas.list", undefined, true);
+      return (result.schemas ?? []).map(schemaFromWire);
     },
-    /** Get the latest version of an event schema by name */
+    /** Get the latest version. */
     get: async (name: string): Promise<EventSchema> => {
-      return this.restRequest<EventSchema>("GET", `/api/v1/events/schemas/${encodeURIComponent(name)}`, undefined, "schemas.get");
+
+      return schemaFromWire(await this.request<SchemaWire>("/ironflow.v1.EventSchemaService/GetSchema", { eventName: name }, "schemas.get", undefined, true));
     },
-    /** Get a specific version of an event schema */
+    /** Get a specific positive version. */
     getVersion: async (name: string, version: number): Promise<EventSchema> => {
-      return this.restRequest<EventSchema>("GET", `/api/v1/events/schemas/${encodeURIComponent(name)}/${version}`, undefined, "schemas.getVersion");
+
+      if (!Number.isInteger(version) || version <= 0 || version > 2147483647) throw new IronflowError("version must be a positive int32", { code: "invalid_argument", retryable: false });
+      return schemaFromWire(await this.request<SchemaWire>("/ironflow.v1.EventSchemaService/GetSchema", { eventName: name, version }, "schemas.getVersion", undefined, true));
     },
-    /** Delete a specific version of an event schema */
+    /** Delete a specific version. */
     delete: async (name: string, version: number): Promise<void> => {
-      await this.restRequest<void>("DELETE", `/api/v1/events/schemas/${encodeURIComponent(name)}/${version}`, undefined, "schemas.delete");
+
+      await this.request<unknown>("/ironflow.v1.EventSchemaService/DeleteSchema", { eventName: name, version }, "schemas.delete", undefined, true);
     },
     /** Test an upcast transformation between two schema versions */
     testUpcast: async (input: TestUpcastInput): Promise<UpcastResult> => {
-      return this.restRequest<UpcastResult>("POST", "/api/v1/events/upcast", input, "schemas.testUpcast");
+      const { data, ...fields } = input;
+      const payload =
+        data !== null && typeof data === "object" && !Array.isArray(data)
+          ? { data }
+          : { dataValue: data };
+      const result = await this.request<{
+        data?: unknown;
+        dataValue?: unknown;
+      }>(
+        "/ironflow.v1.EventSchemaService/TestUpcast",
+        { ...fields, ...payload },
+        "schemas.testUpcast",
+        undefined,
+        true,
+      );
+      return {
+        success: true,
+        data: "dataValue" in result ? result.dataValue : result.data,
+      };
     },
   };
 
@@ -2421,40 +2540,7 @@ export class IronflowClient {
     output: Record<string, unknown>,
     reason?: string
   ): Promise<void> {
-    const endpoint = "/api/v1/steps/patch";
-    const url = `${this.serverUrl}${endpoint}`;
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
-    let status: number | undefined;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ step_id: stepId, output, reason: reason || "" }),
-        signal: controller.signal,
-      });
-
-      status = response.status;
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        throw new Error(errorBody || `Patch step failed: ${response.status}`);
-      }
-    } catch (error) {
-      await this.callOnError(error as Error, { method: "patchStep", endpoint, statusCode: status });
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    await this.request("/ironflow.v1.IronflowService/PatchStep", { stepId, output, reason: reason || "" }, "patchStep", undefined, true);
   }
 
   /**
@@ -2465,7 +2551,8 @@ export class IronflowClient {
    * second decode path (mapRestRunResponse, deleted) and a 409 that arrived as
    * an untyped Error. It now shares request()'s typed errors, so a
    * deduplicated resume throws ConflictError, and carries X-Ironflow-Run-ID
-   * when called from inside a run like every other RPC.
+   * when called from inside a run like every other RPC. A resume that loses a
+   * CAS race throws ContendedError instead — same 409, opposite advice (#2074).
    */
   async resumeRun(runId: string, fromStep?: string): Promise<Run> {
     const response = await this.request<RunWireResponse>(
@@ -2596,38 +2683,16 @@ export class IronflowClient {
    * List registered functions
    */
   async listFunctions(): Promise<unknown[]> {
-    const endpoint = "/api/v1/functions";
-    const url = `${this.serverUrl}${endpoint}`;
-
-    const headers: Record<string, string> = {};
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
-    }
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
-
-    let status: number | undefined;
-    try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers,
-        signal: controller.signal,
-      });
-
-      status = response.status;
-
-      if (!response.ok) {
-        throw new Error(`List functions failed: ${response.status}`);
-      }
-
-      const data = (await response.json()) as { functions: unknown[] };
-      return data.functions || [];
-    } catch (error) {
-      await this.callOnError(error as Error, { method: "listFunctions", endpoint, statusCode: status });
-      throw error;
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    const result = await this.request<{
+      functions?: Array<Record<string, unknown>>;
+    }>(
+      "/ironflow.v1.IronflowService/ListFunctions",
+      {},
+      "listFunctions",
+      undefined,
+      true,
+    );
+    return (result.functions ?? []).map(functionListFromWire);
   }
 
   /**
@@ -2682,7 +2747,8 @@ export class IronflowClient {
      * before the server's own wait budget expires. Deliberately not clamped to
      * `this.timeout`.
      */
-    timeoutMs?: number
+    timeoutMs?: number,
+    useSDKErrorTypes = false
   ): Promise<T> {
     const url = `${this.serverUrl}${endpoint}`;
 
@@ -2716,9 +2782,16 @@ export class IronflowClient {
       if (!response.ok) {
         const errorBody = await response.text();
         let errorMessage = `Request failed with status ${response.status}`;
+        // The Connect code, kept rather than discarded: two codes serialize to
+        // 409 with opposite retry advice and the status cannot tell them
+        // apart (#2074).
+        let connectCode: string | undefined;
         if (errorBody) {
           try {
             const errorJson = JSON.parse(errorBody);
+            if (typeof errorJson.code === "string") {
+              connectCode = errorJson.code;
+            }
             if (errorJson.message) {
               errorMessage = errorJson.message;
             } else if (errorJson.code) {
@@ -2731,7 +2804,16 @@ export class IronflowClient {
             errorMessage = errorBody;
           }
         }
-        this.throwTypedError(response.status, errorMessage);
+        if (useSDKErrorTypes) {
+          // reason splits the two meanings of `aborted` (#2093): a lost CAS
+          // race wrote nothing, an unverified injection wrote the step. Both
+          // arrive as aborted/409 and only this header tells them apart.
+          throw connectHTTPError(response.status, errorMessage, connectCode ?? (response.status === 409 ? "already_exists" : undefined), {
+            authHelp: AUTH_HELP,
+            reason: response.headers.get(ERROR_REASON_HEADER) ?? undefined,
+          });
+        }
+        this.throwTypedError(response.status, errorMessage, connectCode);
       }
 
       return response.json() as Promise<T>;
@@ -2746,9 +2828,12 @@ export class IronflowClient {
   }
 
   /**
-   * Throw a typed error based on HTTP status code.
+   * Throw a typed error based on the HTTP status, and — where the status is
+   * ambiguous — the Connect code the error body carries. Only 409 needs the
+   * second argument today (#2074); `connectCode` is undefined on the REST path,
+   * whose bodies carry no code.
    */
-  private throwTypedError(status: number, message: string): never {
+  private throwTypedError(status: number, message: string, connectCode?: string): never {
     switch (status) {
       case 401:
         throw new UnauthenticatedError(`${message} — ${AUTH_HELP}`);
@@ -2757,10 +2842,16 @@ export class IronflowClient {
       case 403:
         throw new UnauthorizedError(`${message} — ${AUTH_HELP}`);
       case 409:
-        // Conflicts with something already in flight — a deduplicated
-        // resumeRun, most notably (#1963). Without this case a 409 arrived as
-        // a bare IronflowError carrying no status, so the only way to tell
-        // "wait, do not retry" from a real failure was to match the message.
+        // Two Connect codes land on 409 and want opposite things (#2074).
+        // `aborted` is a lost CAS race: nothing was applied, retry. Anything
+        // else — `already_exists`, or a REST body carrying no code at all —
+        // is a deduplicated resumeRun (#1963): wait, do not retry. Without
+        // this case a 409 arrived as a bare IronflowError carrying no status,
+        // so the only way to tell either from a real failure was to match the
+        // message.
+        if (connectCode === "aborted") {
+          throw new ContendedError(message);
+        }
         throw new ConflictError(message);
       default:
         throw new IronflowError(message);
