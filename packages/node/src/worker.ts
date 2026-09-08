@@ -12,6 +12,7 @@ import type {
 } from "@ironflow/core";
 import {
   IronflowError,
+  calculateBackoff,
   UnauthenticatedError,
   UnauthorizedError,
   throwIfAuthError,
@@ -44,6 +45,10 @@ import { SDK_VERSION } from "./version.js";
 // Re-exported for back-compat: both live in internal/register-functions.ts,
 // which the streaming worker also uses (#2027).
 export { CODE_HASH_META_KEY, functionCodeHash };
+
+/** Job-poll retry ladder: 5s, 10s, 20s … capped, so an engine that is down is not a log firehose. */
+const POLL_RETRY_BASE_MS = 5000;
+const POLL_RETRY_MAX_MS = 60_000;
 
 /**
  * Worker lifecycle states
@@ -369,6 +374,10 @@ class IronflowWorker implements Worker {
    * Continuously poll the server for available jobs
    */
   private async pollForJobs(baseUrl: string): Promise<void> {
+    // Same defect the projection stream reconnect had: a flat delay against an engine that is
+    // DOWN logs a warning per attempt forever. Reset on any poll that reaches the server, so a
+    // single blip costs the next job 5s and nothing more.
+    let consecutiveFailures = 0;
     while (this.state === "connected") {
       // Check capacity
       if (this.activeJobs.size >= this.maxConcurrentJobs) {
@@ -389,6 +398,12 @@ class IronflowWorker implements Worker {
             signal: this.abortController?.signal,
           }
         );
+
+        // `response.ok` covers 204 too, so the ladder resets on the idle no-jobs path a mostly-idle
+        // worker spends its life in — but NOT on the 5xx below, which throws and must keep backing
+        // off. Resetting on "the server answered at all" would leave a 500-looping engine pinned
+        // at the first rung forever, which is the bug this whole change is about.
+        if (response.ok) consecutiveFailures = 0;
 
         if (response.status === 204) {
           // No jobs available
@@ -450,8 +465,14 @@ class IronflowWorker implements Worker {
           throw error;
         }
 
-        this.logger.warn("Job polling error", { error: String(error) });
-        await this.sleep(5000);
+        consecutiveFailures += 1;
+        this.logger.warn("Job polling error", {
+          error: String(error),
+          consecutiveFailures,
+        });
+        await this.sleep(
+          calculateBackoff(consecutiveFailures, POLL_RETRY_BASE_MS, POLL_RETRY_MAX_MS)
+        );
       }
     }
   }

@@ -1065,6 +1065,46 @@ describe("ProjectionRunner", () => {
     });
   });
 
+  // Reconnect CADENCE, which every other streaming test above is blind to by construction: they
+  // abort specifically to unblock the reconnect sleep, so its duration is never observed. A flat
+  // delay here is what let one workspace log 93,046 consecutive stream errors — two days of a 2s
+  // cadence against an engine that was simply down.
+  describe("reconnect backoff", () => {
+    it("doubles the reconnect delay and caps it, instead of retrying flat forever", async () => {
+      vi.useFakeTimers();
+      try {
+        // Every attempt at the stream fails, as it would against an engine that is not running.
+        // Register and GetProjection succeed so the loop is reached at all.
+        const attemptedAt: number[] = [];
+        mockFetch.mockImplementation(async (url: string) => {
+          if (String(url).includes("StreamProjectionEvents")) {
+            attemptedAt.push(Date.now());
+            throw new Error("fetch failed");
+          }
+          return { ok: true, status: 200, json: () => Promise.resolve({}) };
+        });
+
+        const ac = new AbortController();
+        const runner = createProjectionRunner(createRunnerConfig({ signal: ac.signal }));
+        const streaming = runner.startStreaming();
+        // Let register, GetProjection and the first attempt run, then walk the clock far enough
+        // for the ladder to reach its ceiling and stay there.
+        await vi.advanceTimersByTimeAsync(0);
+        await vi.advanceTimersByTimeAsync(120_000);
+        ac.abort();
+        await streaming.catch(() => {});
+
+        const gaps = attemptedAt.slice(1).map((at, i) => at - assertDefined(attemptedAt[i]));
+        // Literals, not a re-derivation of the code's formula: 2s base, doubling, ceiling 30s.
+        expect(gaps.slice(0, 6)).toEqual([2000, 4000, 8000, 16000, 30000, 30000]);
+        // 120s of a flat 2s cadence would be 60 attempts; the ladder makes it a handful.
+        expect(attemptedAt.length).toBeLessThan(10);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("error handling", () => {
     it("throws on save state failure", async () => {
       const events = [

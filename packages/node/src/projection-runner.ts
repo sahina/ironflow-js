@@ -24,6 +24,7 @@ import type {
   ExternalProjectionHandler,
 } from "@ironflow/core";
 import {
+  calculateBackoff,
   UnauthenticatedError,
   UnauthorizedError,
   throwIfAuthError,
@@ -56,6 +57,10 @@ interface PollResponse {
 
 /** Micro-batch flush configuration */
 const FLUSH_INTERVAL_MS = 100;
+
+/** Streaming reconnect ladder: 2s, 4s, 8s … capped, so a dead engine is not a log firehose. */
+const RECONNECT_BASE_MS = 2000;
+const RECONNECT_MAX_MS = 30_000;
 
 /** Reusable encoder — TextEncoder is stateless, no need to instantiate per call */
 const textEncoder = new TextEncoder();
@@ -296,7 +301,18 @@ export class ProjectionRunner {
         } else {
           logger.error(`Projection stream error for ${name} (${consecutiveFailures} consecutive failures): ${err}`);
         }
-        await this.sleep(2000); // Brief delay before reconnect
+        // Back off, capped. A flat delay here is a log-and-socket firehose against an engine
+        // that is DOWN: the reconnect can never succeed, so every projection emits an error line
+        // on every attempt, forever. One workspace reached 93,046 consecutive failures — two days
+        // of a 2s cadence — and the worker.log outgrew the repo it sat in.
+        //
+        // Derived from consecutiveFailures rather than kept as its own field, so it resets on the
+        // same successful read that resets the log escalation and a flaky-but-working link can
+        // never stick at the ceiling. Do NOT use this.backoffMs: that one belongs to the polling
+        // fallback and mutating it from here would corrupt its ladder.
+        await this.sleep(
+          calculateBackoff(consecutiveFailures, RECONNECT_BASE_MS, RECONNECT_MAX_MS)
+        );
       }
     }
   }
