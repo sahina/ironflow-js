@@ -32,22 +32,10 @@ describe("makeApprove()", () => {
     expect(result.approver).toBe("user@example.com");
     expect(result.payload).toEqual({ score: 0.9 });
     expect(captured?.event).toBe("agent.approve.ship");
-    expect(captured?.match).toBe('data.runId == "run-abc"');
+    expect(captured?.match).toBe("data.runId");
+    expect(captured).toHaveProperty("matchValue", "run-abc");
     expect(captured?.timeout).toBe("1h");
-  });
-
-  it("returns approved=false with reason='timeout' when waitForEvent yields null", async () => {
-    const step = {
-      async waitForEvent(): Promise<null> {
-        return null as unknown as never;
-      },
-    } as unknown as StepClient;
-
-    const approve = makeApprove(step, "run-abc");
-    const result = await approve("anything", { ttl: "5m" });
-
-    expect(result.approved).toBe(false);
-    expect(result.reason).toBe("timeout");
+    expect(captured).toHaveProperty("payload", { reason: "test" });
   });
 
   it("normalizes numeric ttl to ms-suffixed string", async () => {

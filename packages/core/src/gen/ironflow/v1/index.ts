@@ -10,6 +10,7 @@
 
 export * from "./agent_tools_pb.js";
 export * from "./audit_pb.js";
+export * from "./deployment_pb.js";
 export * from "./entity_stream_pb.js";
 export * from "./environment_pb.js";
 export * from "./event_schema_pb.js";

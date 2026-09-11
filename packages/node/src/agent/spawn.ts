@@ -20,10 +20,9 @@ import type { SpawnFn, SpawnOptions, SpawnResult } from "./types.js";
  */
 export function makeSpawn(step: StepClient): SpawnFn {
   return async function spawn<TInput = unknown, TOutput = unknown>(
-    name: string,
+    _name: string,
     options: SpawnOptions<TInput>
   ): Promise<SpawnResult<TOutput>> {
-    const stepName = `spawn.${name}`;
     const shouldAwait = options.await !== false;
 
     if (shouldAwait) {
@@ -31,9 +30,9 @@ export function makeSpawn(step: StepClient): SpawnFn {
       return { output };
     }
 
-    const handle = await step.run(stepName, () =>
-      step.invokeAsync(options.functionId, options.input)
-    );
+    // invokeAsync is already durable. A memoized wrapper skips its call on
+    // replay, desynchronizing invocation counters and dropping children (#2190).
+    const handle = await step.invokeAsync(options.functionId, options.input);
     return { runId: handle.runId };
   };
 }

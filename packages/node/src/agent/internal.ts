@@ -18,14 +18,3 @@ export function normalizeDuration(value: Duration | undefined): string | undefin
   if (value === undefined) return undefined;
   return typeof value === "number" ? `${value}ms` : value;
 }
-
-/**
- * Escape a value for safe interpolation into a CEL-style match expression
- * (`data.field == "<value>"`). Replaces `\` and `"` with escaped forms.
- *
- * Internal IDs are unlikely to contain quotes, but defending against it
- * prevents broken filters if upstream ever loosens the format.
- */
-export function escapeMatchValue(value: string): string {
-  return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}

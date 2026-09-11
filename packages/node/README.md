@@ -108,8 +108,9 @@ All fields on the config object:
 | `schema` | `ZodType` | Zod schema for event data validation and type inference. |
 | `secrets` | `string[]` | Secret names this function requires (resolved by the engine). |
 | `stepTimeout` | `string` | Default timeout for all `step.run()` calls (e.g., `"30s"`, `"5m"`). |
-| `recording` | `boolean` | Enable audit recording for this function. |
-| `recordingRetention` | `string` | Retention period for audit events (`"7d"`, `"30d"`, `"90d"`, `"forever"`). |
+| `recording` | `boolean` | Legacy audit toggle. `true` is equivalent to `recordingProfile: "all"`. |
+| `recordingProfile` | `"all" \| "run_lifecycle" \| "steps"` | Workflow audit families to capture. A profile enables recording by itself. |
+| `recordingRetention` | `string` | Audit retention metadata (`"7d"`, `"30d"`, `"90d"`, `"forever"`); informational only today. Global audit pruning still applies. |
 | `metadata` | `Record<string, unknown>` | Arbitrary metadata attached to the function definition. |
 | `cancelOn` | `CancelOnConfig[]` | Auto-cancel in-flight runs when a matching event arrives. Each spec is `{ event: string; match: string }`; OR semantics across specs. |
 
@@ -157,7 +158,7 @@ const processOrder = createFunction(
     schema: OrderSchema,
     secrets: ['STRIPE_SECRET_KEY', 'SENDGRID_API_KEY'],
     stepTimeout: '30s',
-    recording: true,
+    recordingProfile: 'steps',
     recordingRetention: '30d',
   },
   async ({ event, step, secrets }) => {
@@ -312,6 +313,19 @@ const orchestrator = createFunction(
 ### step.invokeAsync(functionId, input?)
 
 Fire-and-forget: trigger another function without waiting for its result. Returns the child run ID.
+
+`invokeAsync` is already durable. Call it directly, outside `step.run`, including
+when invoking children in a loop. A completed `step.run` skips its callback on
+replay, so the inner invocation counter stops advancing. Later iterations can
+reuse an earlier child's run ID without starting a new child. The same rule
+applies to `spawn({ await: false })`: call `spawn` outside `step.run`.
+
+If upgrading from a version where `spawn({ await: false })` used a `step.run`
+wrapper, finish or stop affected parent runs with the old worker before switching
+versions. Invocation IDs still use the same function counter, but removing the
+wrapper changes which calls advance that counter on replay. Existing partial
+fan-outs are not repaired automatically; reconcile their child runs before
+retrying work.
 
 ```typescript
 const orderPipeline = createFunction(
@@ -826,7 +840,7 @@ const { entityIds } = await client.getRunStreams('run_abc123');
 
 ### Time-travel debugging
 
-Requires `recording: true` on the function. Reconstructs historical run state
+Requires `recordingProfile: "all"` (or legacy `recording: true`) on the function. Reconstructs historical run state
 from the audit record.
 
 ```typescript
@@ -1826,6 +1840,7 @@ throw new NonRetryableError('Payment declined - do not retry');
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `IRONFLOW_URL` | Ironflow server URL, checked before `IRONFLOW_SERVER_URL` by `serve()`'s emit path and by the agent primitives (`agent()`, `exposeMcp()`, `memory`) | -- |
 | `IRONFLOW_SERVER_URL` | Ironflow server URL | `http://localhost:9123` |
 | `IRONFLOW_SIGNING_KEY` | HMAC-SHA256 signing key for push mode verification | -- |
 | `IRONFLOW_API_KEY` | API key for authentication (worker and client) | -- |
@@ -1904,6 +1919,39 @@ const supportAgent = agent(
 );
 ```
 
+### Approval request payloads
+
+`approve(name, { ttl, payload })` stores the request payload in the waiting step's
+`input`. Read it with `client.getRunSteps(runId)` or expand the step in the
+dashboard to view its Input. The returned decision's `payload` comes from the
+approver's event and is separate from this request.
+
+### Approval deadlines
+
+`approve()` returns a decision only when an approval or rejection event arrives.
+If its `ttl` expires, the engine fails the run with `waitForEvent timed out` on
+step `approve.{name}`. The handler does not resume, so it cannot catch the timeout
+or receive `{ approved: false, reason: "timeout" }`.
+
+If the handler needs to escalate or take another action at a deadline, arrange
+for an external process to emit `agent.approve.{name}` with the matching `runId`,
+`approved: false`, and an application-defined `reason` before the TTL expires.
+The returned `reason` comes from that event.
+
+### Logical turns and provider limits
+
+`maxTurns` limits logical `llm.complete` calls in a handler, with a default of 20. The counter advances even when a completion is returned from memoization during replay. It is not a count of provider requests, a token limit, or a cost budget. Provider retries can make several requests for one logical turn.
+
+Set provider options such as `max_tokens` in the actual application/provider SDK call inside `call`. The wrapper invokes that closure; it does not forward `messages`, `model`, or other request hints to a provider on your behalf. Keep reasoning, prompts, and provider configuration in your application or chosen agent framework. Token and cost budgets are not shipped agent controls. Returned usage metadata is accounting information, not hard spending enforcement: provider calls and retries can incur charges before a result is persisted.
+
+### Audit recording and durable results
+
+`recording: false` disables optional function audit events. It does not disable durable step-result persistence. `llm.complete` memoizes the completion returned by the provider closure, including any returned `metadata`. Return only the data needed for replay; omit unnecessary raw responses and sensitive content before returning from `call`.
+
+Execution audit describes what happened during a run. Durable step results supply replay values. Case state represents application-owned business facts, such as a support ticket's status. Projection-backed memory reads derived state from explicitly appended events; curated knowledge requires application decisions about what to retain and reuse. Raw audit logs are not automatically appropriate or authorized model context, and projections do not automatically curate, redact, or authorize data.
+
+Per-function `recordingRetention` is metadata-only today. The global audit pruner applies uniformly by age, even to functions marked `forever`. Audit retention does not control all execution data or durable step results. See [audit recording and data boundaries](https://docs.ironflow.run/how-to-guides/audit-logging/#audit-and-agent-data-boundaries).
+
 ### Errors
 
 | Error | When |
@@ -1912,7 +1960,7 @@ const supportAgent = agent(
 | `ToolValidationError` | Tool input failed its Zod schema. |
 | `DuplicateToolError` | Two tools registered with the same `name`. |
 | `LLMError` | Base LLM failure; `LLMInvalidJSONError`, `LLMMaxTokensError`, `LLMRefusalError` are subclasses. |
-| `MaxTurnsExceededError` | Agent exceeded `maxTurns` budget. |
+| `MaxTurnsExceededError` | Agent exceeded its logical `maxTurns` limit. |
 | `MemoryProjectionRequiredError` | `memory.entityStream(streamId, projectionName)` called with an empty projection name. |
 
 ### Expose tools over MCP

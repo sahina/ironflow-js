@@ -96,6 +96,7 @@ export async function registerFunctions(opts: {
     }
     if (fn.config.actorKey) body.actorKey = fn.config.actorKey;
     if (fn.config.recording != null) body.recording = fn.config.recording;
+    if (fn.config.recordingProfile != null) body.recordingProfile = fn.config.recordingProfile;
     if (fn.config.recordingRetention != null) body.recordingRetention = fn.config.recordingRetention;
     // Stamp a hash of the handler source so a code edit changes the registered
     // config → the engine bumps the version → the reload barrier fires (#1280).

@@ -417,8 +417,10 @@ Used with `step.waitForEvent()`.
 interface EventFilter {
   /** Event name to wait for */
   event: string;
-  /** JSON path for matching (e.g., "data.orderId") */
+  /** JSON path for matching (e.g., "data.orderId"), not an expression. */
   match?: string;
+  /** Non-empty literal compared at match; omitted/empty snapshots the triggering event. */
+  matchValue?: string;
   /** Timeout duration (default: "7d") */
   timeout?: Duration;
 }
@@ -1770,7 +1772,7 @@ import {
   RunWaitTimeoutError, RunFailedError, RunCancelledError,
   AgentInvokeTimeoutError, MemoryCatchupTimeoutError,
   UnauthenticatedError, EnterpriseRequiredError, UnauthorizedError,
-  ConflictError, ContendedError, QueueFullError,
+  ConflictError, ContendedError, InjectionUnverifiedError, QueueFullError,
   isRetryable, isIronflowError, toError,
   AUTH_HELP, throwIfAuthError,
 } from '@ironflow/core';
@@ -1821,6 +1823,7 @@ class IronflowError extends Error {
 | `UnauthorizedError` | `UNAUTHORIZED` | false | Insufficient permissions (HTTP 403) |
 | `ConflictError` | `CONFLICT` | false | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun`. Wait, do not retry |
 | `ContendedError` | `CONTENDED` | false | HTTP 409 from a lost CAS race (Connect `aborted`). Nothing was applied — re-read and reissue |
+| `InjectionUnverifiedError` | `INJECTION_UNVERIFIED` | false | Connect `aborted` + `Ironflow-Error-Reason: injection_unverified`. `injectStepOutput` wrote the step but could not confirm the run stood still. Unlike `ContendedError` the write **did** land — read the step and decide, do not reissue |
 | `QueueFullError` | `QUEUE_FULL` | false | `@ironflow/browser`'s offline write queue hit its 500-write / 5 MB cap |
 
 ### Utility Functions

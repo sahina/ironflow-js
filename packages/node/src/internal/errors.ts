@@ -23,8 +23,10 @@ export interface WaitEventYieldInfo {
   step_id: string;
   type: "wait_for_event";
   event_filter: {
+    payload?: unknown;
     event: string;
     match?: string;
+    match_value?: string;
     timeout?: string;
   };
 }

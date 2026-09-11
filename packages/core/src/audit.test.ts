@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { AuditEventSchema } from "./schemas.js";
+import { registeredFunctionFromWire } from "./types.js";
 import type { FunctionConfig } from "./types.js";
 
 describe("AuditEvent", () => {
@@ -72,10 +73,18 @@ describe("FunctionConfig recording", () => {
       id: "test-fn",
       triggers: [{ event: "test.event" }],
       recording: true,
+      recordingProfile: "steps",
       recordingRetention: "90d",
     };
     expect(config.recording).toBe(true);
     expect(config.recordingRetention).toBe("90d");
+    expect(config.recordingProfile).toBe("steps");
+  });
+
+  it("normalizes legacy recording responses to the all profile", () => {
+    const fn = registeredFunctionFromWire({ id: "fn-legacy", recording: true });
+    expect(fn.recording).toBe(true);
+    expect(fn.recordingProfile).toBe("all");
   });
 
   it("recording fields are optional", () => {

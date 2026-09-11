@@ -388,7 +388,8 @@ async function executeWaitForEvent<T = unknown>(
     // The resume data contains the event that matched
     const resumeData = ctx.getResumeData<IronflowEvent<T>>();
     if (resumeData) {
-      return resumeData;
+      // Resume data is a wire event; restore the Date promised by IronflowEvent.
+      return { ...resumeData, timestamp: new Date(resumeData.timestamp) };
     }
   }
 
@@ -397,7 +398,8 @@ async function executeWaitForEvent<T = unknown>(
     ctx.logger.debug(`WaitForEvent memoized: ${name}`, { stepId });
     const output = ctx.getMemoizedOutput<IronflowEvent<T>>(stepId);
     if (output) {
-      return output;
+      // Completed steps cross JSON even when the original event held a Date.
+      return { ...output, timestamp: new Date(output.timestamp) };
     }
   }
 
@@ -448,7 +450,9 @@ async function executeWaitForEvent<T = unknown>(
     type: "wait_for_event",
     event_filter: {
       event: eventName,
+      payload: filter.payload,
       match: filter.match,
+      match_value: filter.matchValue,
       timeout,
     },
   };

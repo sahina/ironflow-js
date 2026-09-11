@@ -32,6 +32,7 @@ export type {
   ConcurrencyConfig,
   DebounceConfig,
   ExecutionMode,
+  RecordingProfile,
   FunctionStatus,
   RegisteredFunction,
   FunctionChangeType,

@@ -2,9 +2,9 @@
  * approve() — durable human-approval gate.
  *
  * Wraps step.waitForEvent on a deterministic event name derived from the
- * agent run + approval name. The default behavior on TTL elapse is to
- * resolve with approved=false, reason="timeout" — explicit rejection vs
- * timeout is observable to the caller via the returned reason field.
+ * agent run + approval name. TTL expiry fails the run with
+ * "waitForEvent timed out" on step "approve.{name}". The engine does not
+ * resume the handler, so approve() does not return a timeout result.
  *
  * Approval events follow the convention:
  *   name:      "agent.approve.{name}"
@@ -14,7 +14,7 @@
  */
 
 import type { StepClient } from "@ironflow/core";
-import { escapeMatchValue, normalizeDuration } from "./internal.js";
+import { normalizeDuration } from "./internal.js";
 import type { ApproveFn, ApproveOptions, ApproveResult } from "./types.js";
 
 const APPROVE_EVENT_PREFIX = "agent.approve.";
@@ -35,14 +35,12 @@ export function makeApprove(step: StepClient, runId: string): ApproveFn {
       `approve.${name}`,
       {
         event: eventName,
+        payload: options.payload,
         timeout: normalizeDuration(options.ttl),
-        match: `data.runId == "${escapeMatchValue(runId)}"`,
+        match: "data.runId",
+        matchValue: runId,
       }
     );
-
-    if (event === null || event === undefined) {
-      return { approved: false, reason: "timeout" };
-    }
 
     const data = event.data;
     return {

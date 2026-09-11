@@ -40,8 +40,8 @@ Runtime dependencies (pulled in automatically):
 
 | Package | Version |
 |---|---|
-| `@ironflow/core` | `0.35.0` |
-| `@ironflow/node` | `0.35.0` |
+| `@ironflow/core` | same release as `@ironflow/langgraph` |
+| `@ironflow/node` | same release as `@ironflow/langgraph` |
 
 ## Quick Start
 

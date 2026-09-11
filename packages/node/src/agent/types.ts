@@ -148,17 +148,17 @@ export interface LLMClient {
  * Options for approve().
  */
 export interface ApproveOptions<TPayload = unknown> {
-  /** Time to wait for the approval event before timing out. */
+  /** Time to wait for the approval event. Expiry fails the run without resuming the handler. */
   ttl: Duration;
-  /** Payload to attach to the pending approval (visible to approvers). */
+  /** Request payload stored as the waiting step input, visible via getRunSteps and the dashboard. */
   payload?: TPayload;
 }
 
 /**
  * Result of approve().
  *
- * approved=false on timeout. The handler can distinguish timeout vs
- * explicit rejection by inspecting the reason field.
+ * Returned when an approval or rejection event arrives. TTL expiry fails
+ * the run without resuming the handler; it does not produce a result.
  */
 export interface ApproveResult<TPayload = unknown> {
   /** Whether the request was approved. */
@@ -167,12 +167,15 @@ export interface ApproveResult<TPayload = unknown> {
   approver?: string;
   /** Payload echoed back from the approval event. */
   payload?: TPayload;
-  /** Optional reason supplied by the approver, or "timeout". */
+  /** Optional reason supplied by the approver. */
   reason?: string;
 }
 
 /**
- * Approval helper.
+ * Approval helper. TTL expiry fails the run with "waitForEvent timed out"
+ * on step "approve.{name}"; the handler cannot catch it or branch on a result.
+ * To handle a deadline in the handler, arrange for an explicit rejection
+ * event to arrive before the TTL expires.
  */
 export type ApproveFn = <TPayload = unknown, TResult = unknown>(
   name: string,

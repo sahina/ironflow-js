@@ -146,7 +146,9 @@ export interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   stepTimeout?: string;
   /** Enable audit recording for this function */
   recording?: boolean;
-  /** Retention period for audit events ("7d", "30d", "90d", "forever") */
+  /** Select the workflow audit event families captured for this function */
+  recordingProfile?: RecordingProfile;
+  /** @deprecated Metadata only. IRONFLOW_AUDIT_RETENTION_DAYS controls all audit pruning; forever does not exempt rows. */
   recordingRetention?: string;
   /** Custom metadata (e.g., service, team, owner) */
   metadata?: Record<string, unknown>;
@@ -256,6 +258,9 @@ export interface CancelOnConfig {
  */
 export type ExecutionMode = "push" | "pull";
 
+/** Workflow audit event families captured for a function. */
+export type RecordingProfile = "all" | "run_lifecycle" | "steps";
+
 /** Lifecycle status of a registered workflow function. */
 export type FunctionStatus = "active" | "paused" | "archived" | "unspecified";
 
@@ -277,6 +282,7 @@ export interface RegisteredFunction {
   createdAt?: string;
   updatedAt?: string;
   recording: boolean;
+  recordingProfile?: RecordingProfile;
   recordingRetention: string;
   metadata?: Record<string, unknown>;
   cancelOn: CancelOnConfig[];
@@ -574,6 +580,8 @@ export interface StepClient {
   /**
    * Call another Ironflow function without waiting for the result (fire-and-forget).
    * Returns the child run ID immediately.
+   * Already durable: call directly, outside step.run(). A memoized wrapper
+   * skips invocation counters on replay and can silently drop later children.
    * @param functionId ID of the function to invoke
    * @param input Data to pass to the function
    */
@@ -631,10 +639,14 @@ export type Duration = string | number;
  * Event filter for waitForEvent
  */
 export interface EventFilter {
+  /** Request payload stored as the waiting step input, visible via getRunSteps and the dashboard. */
+  payload?: unknown;
   /** Event name to wait for */
   event: string;
-  /** JSON path for matching (e.g., "data.orderId") */
+  /** JSON path for matching (e.g., "data.orderId"), not an expression. */
   match?: string;
+  /** Non-empty literal compared at match; omitted/empty snapshots the triggering event. Requires match. */
+  matchValue?: string;
   /** Timeout duration (default: "7d") */
   timeout?: Duration;
 }
@@ -2333,6 +2345,15 @@ export function registeredFunctionFromWire(
   const retry = r.retry as Record<string, unknown> | undefined;
   const concurrency = r.concurrency as Record<string, unknown> | undefined;
   const debounce = r.debounce as Record<string, unknown> | undefined;
+  const rawRecordingProfile = String(r.recordingProfile ?? "");
+  const recordingProfile: RecordingProfile | undefined =
+    rawRecordingProfile === "all" ||
+    rawRecordingProfile === "run_lifecycle" ||
+    rawRecordingProfile === "steps"
+      ? rawRecordingProfile
+      : Boolean(r.recording)
+        ? "all"
+        : undefined;
 
   return {
     id: String(r.id ?? ""),
@@ -2374,7 +2395,8 @@ export function registeredFunctionFromWire(
     version: wireNumber(r.version),
     createdAt: r.createdAt ? String(r.createdAt) : undefined,
     updatedAt: r.updatedAt ? String(r.updatedAt) : undefined,
-    recording: Boolean(r.recording),
+    recording: Boolean(r.recording) || recordingProfile !== undefined,
+    recordingProfile,
     recordingRetention: String(r.recordingRetention ?? ""),
     metadata: r.metadata as Record<string, unknown> | undefined,
     cancelOn: (r.cancelOn as CancelOnConfig[] | undefined) ?? [],

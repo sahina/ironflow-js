@@ -1324,7 +1324,9 @@ describe("createStepClient (real implementation)", () => {
       try {
         await step.waitForEvent("wait-approval", {
           event: "order.approved",
-          match: "data.orderId == '999'",
+          match: "data.orderId",
+          matchValue: "999",
+          payload: { draft: "Please confirm the amount" },
           timeout: "12h",
         });
         expect.fail("Should have thrown");
@@ -1334,9 +1336,9 @@ describe("createStepClient (real implementation)", () => {
         expect(signal.yieldInfo.type).toBe("wait_for_event");
         if (signal.yieldInfo.type === "wait_for_event") {
           expect(signal.yieldInfo.event_filter.event).toBe("order.approved");
-          expect(signal.yieldInfo.event_filter.match).toBe(
-            "data.orderId == '999'"
-          );
+          expect(signal.yieldInfo.event_filter.match).toBe("data.orderId");
+          expect(signal.yieldInfo.event_filter.match_value).toBe("999");
+          expect(signal.yieldInfo.event_filter).toHaveProperty("payload", { draft: "Please confirm the amount" });
           expect(signal.yieldInfo.event_filter.timeout).toBe("12h");
         }
       }
