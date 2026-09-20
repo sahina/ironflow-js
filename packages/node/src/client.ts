@@ -1540,7 +1540,7 @@ export class IronflowClient {
    *   name: "deny-prod-emit",
    *   effect: "deny",
    *   actions: "emit:*",
-   *   resources: "irn:*:prod:*",
+   *   resources: "irn:ironflow:*:*:*:env_prod:*",
    *   condition: 'request.environment == "production"',
    *   org_id: orgId,
    * });

@@ -2520,7 +2520,7 @@ class IronflowClient {
    *   name: "deny-prod-delete",
    *   effect: "deny",
    *   actions: "delete",
-   *   resources: "irn:*:prod:*",
+   *   resources: "irn:ironflow:*:*:*:env_prod:*",
    *   condition: 'request.environment == "production"',
    *   org_id: "org-1",
    * });

@@ -90,6 +90,11 @@ export interface Policy {
   condition?: string;
   created_at: string;
   updated_at: string;
+  /**
+   * #2284: false when `resources` has the wrong IRN arity and can never match
+   * a real resource. Absent means the server did not say — treat as valid.
+   */
+  resources_valid?: boolean;
 }
 
 export interface CreatePolicyInput {

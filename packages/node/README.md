@@ -284,7 +284,9 @@ const approvalWorkflow = createFunction(
 |-------|------|---------|-------------|
 | `event` | `string` | -- | Event name to wait for. |
 | `match` | `string` | -- | JSON path for correlating events. |
+| `matchValue` | `string` | -- | Non-empty literal compared at match time. Omitted or empty snapshots the triggering event. Requires `match`. |
 | `timeout` | `Duration` | `"7d"` | How long to wait before timing out. |
+| `payload` | `unknown` | -- | Stored as the waiting step's `input`, visible via `getRunSteps` and the dashboard. Does not affect matching. |
 
 ### step.invoke(functionId, input?, options?)
 
@@ -370,6 +372,7 @@ const enrichUser = createFunction(
 |-------|------|---------|-------------|
 | `concurrency` | `number` | unlimited | Maximum concurrent branches. |
 | `onError` | `"failFast" \| "allSettled"` | `"failFast"` | `"failFast"`: first failure cancels pending branches. `"allSettled"`: all branches complete, errors in results. |
+| `expectScopedClient` | `boolean` | `true` | Set `false` for a fan-out that deliberately has nothing to memoize, to silence the "no branch used the scoped step client" warning. Suppresses the diagnostic only; durability is unchanged. |
 
 ```typescript
 // With concurrency limit and allSettled error handling

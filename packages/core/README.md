@@ -141,7 +141,9 @@ interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   stepTimeout?: string;
   /** Enable audit recording for this function */
   recording?: boolean;
-  /** Retention period for audit events ("7d", "30d", "90d", "forever") */
+  /** Select the workflow audit event families captured for this function */
+  recordingProfile?: RecordingProfile;
+  /** @deprecated Metadata only. IRONFLOW_AUDIT_RETENTION_DAYS controls all audit pruning; "forever" does not exempt rows. */
   recordingRetention?: string;
   /** Cancel-on-event specs (OR semantic). Auto-cancels run with cause "cancel-on-event". */
   cancelOn?: CancelOnConfig[];
@@ -251,6 +253,14 @@ type ExecutionMode = "push" | "pull";
 
 - `"push"` -- HTTP POST to serverless functions (Next.js, Lambda). For tasks under 10 seconds.
 - `"pull"` -- gRPC/HTTP polling for long-running workers. No timeout limits.
+
+### RecordingProfile
+
+```typescript
+type RecordingProfile = "all" | "run_lifecycle" | "steps";
+```
+
+Which workflow audit event families a function captures. Setting a profile enables recording on its own -- `recording: true` is equivalent to `recordingProfile: "all"`.
 
 ### FunctionContext
 
@@ -608,6 +618,14 @@ interface StepClient {
     options?: ParallelOptions
   ): Promise<R[]>;
 
+  /** allSettled overload -- results contain R | Error */
+  map<T, R>(
+    name: string,
+    items: T[],
+    fn: (item: T, step: StepClient, index: number) => Promise<R>,
+    options: ParallelOptions & { onError: "allSettled" }
+  ): Promise<(R | Error)[]>;
+
   /**
    * Register a compensation handler (Saga pattern).
    * On failure, compensations run in reverse order.
@@ -633,7 +651,11 @@ interface StepClient {
    * Publish to a developer pub/sub topic (durable, memoized).
    * Does NOT trigger workflow functions -- use emit for that.
    */
-  publish(topic: string, data: unknown): Promise<PublishResult>;
+  publish(
+    topic: string,
+    data: unknown,
+    options?: PublishOptions
+  ): Promise<PublishResult>;
 }
 ```
 
@@ -2106,6 +2128,16 @@ import {
   storedEventFromWire,
   runStepFromWire,
   consumerGroupFromWire,
+  functionListFromWire,
+  runInspectionFromWire,
+  stepInspectionFromWire,
+  projectionRegistryFromWire,
+  projectionInspectionFromWire,
+  projectionStateFromWire,
+  projectionStatusFromWire,
+  rebuildJobFromWire,
+  schemaFromWire,
+  waitResultFromWire,
   runStatusFromWire,                // protobuf JSON status -> public status
   runStatusToWire,                  // public status -> protobuf JSON status;
                                     // throws instead of minting a value the
