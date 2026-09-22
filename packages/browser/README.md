@@ -53,7 +53,7 @@ ironflow.configure({
   },
   reconnect: {
     enabled: true,                      // Default: true
-    maxAttempts: 10,                    // Default: 10. Use -1 for infinite.
+    maxAttempts: 10,                    // Accepted but not enforced — reconnects are unbounded.
     backoff: {
       initial: 1000,                    // Default: 1000ms
       max: 30000,                       // Default: 30000ms
@@ -712,7 +712,8 @@ for (const event of timeline) {
 ```typescript
 const output = await ironflow.getStepOutputAt('run_abc123', 'step-id', new Date('2026-03-05T10:00:00Z'));
 console.log(output.output);
-console.log(output.patched);  // Whether output was injected
+console.log(output.patched);  // Whether output was patched
+console.log(output.injected); // Whether output was injected
 ```
 
 ## Agents (`ironflow.agents.*`)
@@ -1323,7 +1324,8 @@ const source = await ironflow.webhooks.create({
 const sources = await ironflow.webhooks.listSources();
 const current = await ironflow.webhooks.getSource(source.id);
 
-// Full-replace, not patch: omitted fields are cleared server-side.
+// name and metadata are full-replace (omitting metadata clears it);
+// verifyHeader / verifyAlgorithm / verifyConfig are preserve-on-omit.
 await ironflow.webhooks.updateSource({
   id: current.id,
   name: 'Stripe production (EU)',
@@ -1415,7 +1417,7 @@ function OrderFeed() {
   return (
     <ul>
       {orders.map((o, i) => (
-        <li key={i}>{o.name}: {JSON.stringify(o.data)}</li>
+        <li key={i}>{o.topic}: {JSON.stringify(o.data)}</li>
       ))}
     </ul>
   );
@@ -1502,7 +1504,7 @@ function Dashboard() {
     <div>
       <span>{connected ? 'Connected' : 'Disconnected'}</span>
       {events.map((e, i) => (
-        <div key={i}>{e.name}</div>
+        <div key={i}>{e.topic}</div>
       ))}
     </div>
   );
@@ -1672,7 +1674,6 @@ Common error codes returned by the client:
 | `TIMEOUT` | Request exceeded the configured timeout |
 | `RUN_WAIT_TIMEOUT` | `invoke()` stopped waiting; the durable run continues. `emitSync()` sets `waitTimedOut` per result instead of throwing |
 | `REQUEST_FAILED` | Network or fetch failure |
-| `PATCH_FAILED` | Step patch operation failed |
 | `NOT_CONFIGURED` | Client used before `configure()` |
 
 ## Browser Compatibility

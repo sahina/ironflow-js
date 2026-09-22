@@ -423,6 +423,8 @@ export {
   safeJsonParse,
   isObject,
   deepMerge,
+  isRedacted,
+  REDACTED_MARKER_KEY,
   type Deferred,
 } from "./utils.js";
 

@@ -1,3 +1,5 @@
+import { isRedacted } from "./utils.js";
+
 /**
  * Type for upcaster functions that transform event data from one version to the next.
  */
@@ -24,6 +26,19 @@ export class UpcasterRegistry {
 
   upcast(eventName: string, data: unknown, fromVersion: number, toVersion: number): unknown {
     if (fromVersion >= toVersion) {
+      return data;
+    }
+
+    // A redacted payload has no fields left to migrate, and the placeholder's
+    // shape does not depend on the schema version. Running the chain over it
+    // ranges from useless to destructive: an upcaster that rebuilds the object
+    // (`(d) => ({amount: d.amount})`) drops the `$redacted` marker, so every
+    // downstream `isRedacted` guard goes blind and the handler folds in
+    // `undefined` as if the producer had sent it. One that reaches through a
+    // nested field throws a TypeError out of the ExecutionContext constructor,
+    // which serve() reports as a 500 the engine then retries to exhaustion.
+    // Pass it through untouched and let the reducer or handler see the marker.
+    if (isRedacted(data)) {
       return data;
     }
 

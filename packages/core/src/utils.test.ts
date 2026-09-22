@@ -8,6 +8,7 @@ import {
   deepMerge,
   createDeferred,
   sleep,
+  isRedacted,
 } from "./utils.js";
 
 describe("parseDuration", () => {
@@ -156,5 +157,20 @@ describe("sleep", () => {
   it("resolves with undefined", async () => {
     const result = await sleep(0);
     expect(result).toBeUndefined();
+  });
+});
+
+describe("isRedacted", () => {
+  it.each([
+    [{ $redacted: true, sha256: "ab", redactedAt: "x" }, true],
+    [{ email: "a@b.c" }, false],
+    [{ $redacted: false }, false],
+    [{ $redacted: "yes" }, false],
+    [null, false],
+    [undefined, false],
+    [[1, 2], false],
+    ["$redacted", false],
+  ])("isRedacted(%j) === %s", (payload, want) => {
+    expect(isRedacted(payload)).toBe(want);
   });
 });

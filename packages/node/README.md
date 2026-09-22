@@ -826,6 +826,32 @@ await client.resumeRun('run_abc123');
 await client.resumeRun('run_abc123', 'charge-card');
 ```
 
+### deleteRun(runId) / deleteRuns(filter)
+
+Permanently delete terminal runs and their steps. Irreversible; requires the `runs:delete` action (admin by default). A run still in flight is refused with `failed_precondition` — cancel it first.
+
+```typescript
+await client.deleteRun('run_abc123');
+
+// Bulk delete; at least one filter field is required. The server stops at
+// 10,000 per call — re-issue the same filter until it returns 0.
+const deleted = await client.deleteRuns({
+  functionId: 'process-order',
+  status: 'completed',
+  until: new Date('2026-01-01'),
+});
+```
+
+### redactEvent(eventId) / redactStep(stepId) / redactRun(runId)
+
+Irreversibly replace a stored payload with a `{"$redacted": true, ...}` placeholder, keeping the row's id, ordering and version. Requires `events:redact` (admin by default). `redactStep` and `redactRun` need a terminal run; `stepId` is the step's row id, not its name. Use `isRedacted(data)` (re-exported from `@ironflow/core`) in reducers before trusting a payload.
+
+```typescript
+await client.redactEvent('evt_abc123');
+await client.redactStep('step_xyz');
+await client.redactRun('run_abc123');
+```
+
 ### patchStep(stepId, output, reason?)
 
 Hot-patch a step's output. Useful for debugging or correcting bad data.
@@ -1229,6 +1255,7 @@ try {
 | `expectedVersion` | `number` | Optimistic concurrency check. |
 | `idempotencyKey` | `string` | Prevent duplicate appends. |
 | `version` | `number` | Event schema version (default: 1). |
+| `metadata` | `Record<string, unknown>` | Additional metadata stored with the event. |
 
 List all streams or read an entity's unified history:
 
@@ -1293,6 +1320,15 @@ const old  = await client.streams.getSnapshot('order-123', { beforeVersion: 500 
 ```typescript
 const streams = await client.streams.listStreams();
 const events  = await client.streams.getEntityHistory('order-123');
+```
+
+### streams.delete(entityId, options?)
+
+Delete an entity stream: appends a `$stream.deleted` tombstone and drops its snapshots; later appends fail with `failed_precondition`. `{ purge: true }` also deletes every event below the tombstone. Irreversible; requires `streams:delete` (admin by default). Returns the tombstone's version.
+
+```typescript
+const { entityVersion } = await client.streams.delete('order-123');
+await client.streams.delete('order-123', { purge: true });
 ```
 
 ---
@@ -1363,6 +1399,10 @@ await bucket.purge('user-123');
 // List keys with optional wildcard filter
 const keys = await bucket.listKeys('user-*');
 const allKeys = await bucket.listKeys();
+
+// Watch for changes over WebSocket (optionally a single key); stop() closes it
+const watcher = bucket.watch({ onUpdate: (e) => console.log(e.key, e.revision) }, { key: 'user-123' });
+watcher.stop();
 ```
 
 ---
@@ -1394,6 +1434,10 @@ for (const entry of all) {
 
 // Delete a config (idempotent)
 await config.delete('app-settings');
+
+// Watch a config over WebSocket; stop() closes the connection
+const watcher = config.watch('app-settings', { onUpdate: (e) => console.log(e.data, e.revision) });
+watcher.stop();
 ```
 
 ---

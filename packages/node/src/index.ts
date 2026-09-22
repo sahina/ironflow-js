@@ -307,6 +307,8 @@ export {
   generateId,
   createLogger,
   createNoopLogger,
+  isRedacted,
+  REDACTED_MARKER_KEY,
   type LogLevel,
   type LoggerConfig,
 } from "@ironflow/core";

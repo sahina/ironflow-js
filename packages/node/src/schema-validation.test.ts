@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { z } from "zod";
-import type { IronflowFunction } from "@ironflow/core";
+import { isRedacted, type IronflowFunction } from "@ironflow/core";
 import { createFunction } from "./function.js";
 import { serve } from "./serve.js";
 import { createWorker } from "./worker.js";
@@ -16,6 +16,13 @@ import { createTestClient } from "./test/index.js";
 const schema = z.object({ orderId: z.string(), qty: z.number().default(1) });
 
 const CRON_TICK = { type: "cron", expression: "* * * * *" };
+
+/** What a redaction leaves in events.data. */
+const REDACTED = {
+  $redacted: true,
+  sha256: "ab".repeat(32),
+  redactedAt: "2026-09-21T00:00:00.000Z",
+};
 
 function pushBody(data: unknown, functionId: string, source?: string) {
   return {
@@ -191,6 +198,24 @@ describe("validateEventData", () => {
     const err = await validateEventData(fn(s), ev({ items: Array(50).fill("x") })).catch((e) => e);
     expect(err.validationErrors).toHaveLength(11);
     expect(err.message).toContain("…and 40 more");
+  });
+
+  // A redacted event reaches a declared schema because the engine reads
+  // events.data live at dispatch, and RedactEvent has no terminal-run guard —
+  // so a queued, retrying or resuming run picks up the placeholder.
+  it("fails a redacted payload non-retryably and names the redaction", async () => {
+    const err = await validateEventData(fn(schema), ev(REDACTED)).catch((e) => e);
+    expect(err.name).toBe("SchemaValidationError");
+    expect(err.retryable).toBe(false);
+    expect(err.message).toContain("was redacted");
+    // Not a field-by-field Zod diff — that reads as a producer bug.
+    expect(err.message).not.toContain("orderId");
+  });
+
+  it("still hands the placeholder to a function with no schema", async () => {
+    const e = ev(REDACTED);
+    expect(await validateEventData(fn(), e)).toBe(e);
+    expect(isRedacted(e.data)).toBe(true);
   });
 });
 

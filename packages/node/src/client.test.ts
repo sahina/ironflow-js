@@ -10,6 +10,11 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       GET_RUN: "/ironflow.v1.IronflowService/GetRun",
       LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
       CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
+      DELETE_RUN: "/ironflow.v1.IronflowService/DeleteRun",
+      DELETE_RUNS: "/ironflow.v1.IronflowService/DeleteRuns",
+      REDACT_EVENT: "/ironflow.v1.IronflowService/RedactEvent",
+      REDACT_STEP: "/ironflow.v1.IronflowService/RedactStep",
+      REDACT_RUN: "/ironflow.v1.IronflowService/RedactRun",
       RESUME_RUN: "/ironflow.v1.IronflowService/ResumeRun",
       REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
       HEALTH: "/ironflow.v1.IronflowService/Health",
@@ -641,6 +646,91 @@ describe("IronflowClient", () => {
       const result = await client.cancelRun("run_123", "User requested");
 
       expect(result.status).toBe("cancelled");
+    });
+  });
+
+  describe("redaction", () => {
+    // A wrong body field fails silently at runtime: the server reads a
+    // missing id and answers InvalidArgument, which reads like a caller bug.
+    it.each([
+      [
+        "redactEvent",
+        "RedactEvent",
+        "eventId",
+        (c: ReturnType<typeof createClient>) => c.redactEvent("x1"),
+      ],
+      [
+        "redactStep",
+        "RedactStep",
+        "stepId",
+        (c: ReturnType<typeof createClient>) => c.redactStep("x1"),
+      ],
+      [
+        "redactRun",
+        "RedactRun",
+        "runId",
+        (c: ReturnType<typeof createClient>) => c.redactRun("x1"),
+      ],
+    ] as const)("%s posts the id to %s", async (_name, rpc, field, call) => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      await call(client);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        `http://localhost:9123/ironflow.v1.IronflowService/${rpc}`,
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ [field]: "x1" }),
+        })
+      );
+    });
+  });
+
+  describe("deleteRun", () => {
+    it("should make POST request to DeleteRun endpoint", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({}),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      await client.deleteRun("r1");
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.IronflowService/DeleteRun",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ id: "r1" }),
+        })
+      );
+    });
+  });
+
+  describe("deleteRuns", () => {
+    it("should make POST request to DeleteRuns endpoint and return deleted count", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ deleted: "3" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const client = createClient({ serverUrl: "http://localhost:9123" });
+      const result = await client.deleteRuns({ functionId: "fn" });
+
+      expect(result).toBe(3);
+      expect(mockFetch).toHaveBeenCalledWith(
+        "http://localhost:9123/ironflow.v1.IronflowService/DeleteRuns",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({ functionId: "fn" }),
+        })
+      );
     });
   });
 
@@ -1567,6 +1657,35 @@ describe("IronflowClient", () => {
         await expect(client.streams.getInfo("order-123")).rejects.toThrow(
           "route not found"
         );
+      });
+    });
+
+    describe("delete", () => {
+      it("should make POST request to DeleteStream endpoint", async () => {
+        const mockFetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ entityVersion: "3" }),
+        });
+        vi.stubGlobal("fetch", mockFetch);
+
+        const client = createClient({
+          serverUrl: "http://localhost:9123",
+        });
+
+        const result = await client.streams.delete("order-1", { purge: true });
+
+        expect(result.entityVersion).toBe(3);
+        expect(mockFetch).toHaveBeenCalledWith(
+          "http://localhost:9123/ironflow.v1.EntityStreamService/DeleteStream",
+          expect.objectContaining({
+            method: "POST",
+          })
+        );
+
+        const call = assertDefined(mockFetch.mock.calls[0]);
+        const body = JSON.parse(call[1]?.body as string);
+        expect(body.entity_id).toBe("order-1");
+        expect(body.purge).toBe(true);
       });
     });
   });

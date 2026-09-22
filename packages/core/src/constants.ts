@@ -251,6 +251,16 @@ export const API_ENDPOINTS = {
   LIST_RUNS: "/ironflow.v1.IronflowService/ListRuns",
   /** Cancel a run */
   CANCEL_RUN: "/ironflow.v1.IronflowService/CancelRun",
+  /** Delete a terminal run */
+  DELETE_RUN: "/ironflow.v1.IronflowService/DeleteRun",
+  /** Delete terminal runs matching a filter (server caps one call at 10k) */
+  DELETE_RUNS: "/ironflow.v1.IronflowService/DeleteRuns",
+  /** Irreversibly replace an event's data with a placeholder */
+  REDACT_EVENT: "/ironflow.v1.IronflowService/RedactEvent",
+  /** Irreversibly replace a step's output and original output */
+  REDACT_STEP: "/ironflow.v1.IronflowService/RedactStep",
+  /** Irreversibly replace a run's input and output */
+  REDACT_RUN: "/ironflow.v1.IronflowService/RedactRun",
   /** Resume a paused or failed run */
   RESUME_RUN: "/ironflow.v1.IronflowService/ResumeRun",
   /** Register a function */

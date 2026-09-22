@@ -339,6 +339,7 @@ interface RegisteredFunction {
   createdAt?: string;
   updatedAt?: string;
   recording: boolean;
+  recordingProfile?: RecordingProfile;
   recordingRetention: string;
   metadata?: Record<string, unknown>;
   cancelOn: CancelOnConfig[];
@@ -827,7 +828,7 @@ interface SubscribeOptions {
   /** Number of historical events to replay (0 = no replay) */
   replay?: number;
   /** Resume after this stream sequence; 0 means from the beginning */
-  startAfterSequence?: number;
+  startAfterSequence?: number | bigint;
   /** Include event metadata (timestamp, sequence) */
   includeMetadata?: boolean;
   /** CEL expression for content-based filtering */
@@ -876,8 +877,9 @@ interface SubscriptionEvent<T = unknown> {
 
 ```typescript
 interface EventMetadata {
-  timestamp: string;   // ISO 8601
-  sequence?: number;   // Stream sequence number
+  timestamp: string;       // ISO 8601
+  sequence?: number;       // Stream sequence number
+  sequenceExact?: string;  // Same sequence as a decimal string; survives past Number.MAX_SAFE_INTEGER
 }
 ```
 
@@ -1805,11 +1807,13 @@ import {
 ```typescript
 class IronflowError extends Error {
   readonly code: string;
+  readonly status?: number;   // HTTP status when the failure came from a response
   readonly retryable: boolean;
   readonly details?: Record<string, unknown>;
 
   constructor(message: string, options?: {
     code?: string;       // default: "UNKNOWN_ERROR"
+    status?: number;
     retryable?: boolean; // default: false
     details?: Record<string, unknown>;
     cause?: Error;
@@ -2046,7 +2050,8 @@ interface WSSubscribeRequest {
   subscription: {
     pattern: string;
     options?: {
-      replay?: number; includeMetadata?: boolean; filter?: string;
+      replay?: number; startAfterSequence?: number | bigint;
+      includeMetadata?: boolean; filter?: string;
       consumerGroup?: string; ackMode?: AckMode;
       backpressure?: BackpressureMode; namespace?: string;
     };
@@ -2158,7 +2163,8 @@ import {
   DEFAULT_ENVIRONMENT,   // "default"
 
   DEFAULT_TIMEOUTS,
-  // { CLIENT: 30_000, FUNCTION: 600_000, TRIGGER_SYNC: 30_000 }
+  // { CLIENT: 30_000, FUNCTION: 600_000, TRIGGER_SYNC: 30_000,
+  //   INVOKE_FUNCTION_SYNC: 30_000, SYNC_TRANSPORT_HEADROOM: 5_000 }
 
   DEFAULT_RETRY,
   // { MAX_ATTEMPTS: 3, INITIAL_DELAY_MS: 1000, BACKOFF_FACTOR: 2.0, MAX_DELAY_MS: 300_000 }
@@ -2168,7 +2174,8 @@ import {
   //   MAX_DELAY_MS: 10_000, CONNECTION_RETRY_DELAY_MS: 2_000 }
 
   DEFAULT_WORKER,
-  // { MAX_CONCURRENT_JOBS: 10, HEARTBEAT_INTERVAL_MS: 30_000, RECONNECT_DELAY_MS: 5_000 }
+  // { MAX_CONCURRENT_JOBS: 10, HEARTBEAT_INTERVAL_MS: 30_000, RECONNECT_DELAY_MS: 5_000,
+  //   CHECKPOINT_INTERVAL_MS: 1_000, MAX_CHECKPOINT_STEPS: 500, MAX_CHECKPOINT_BACKOFF_MS: 30_000 }
 
   DEFAULT_RECONNECT,
   // { ENABLED: true, MAX_ATTEMPTS: 10, INITIAL_DELAY_MS: 1_000,
@@ -2190,8 +2197,9 @@ import {
   //   WAITING_FOR_CAPACITY: "waiting_for_capacity", WAITING: "waiting" }
 
   API_ENDPOINTS,
-  // ConnectRPC paths: TRIGGER, TRIGGER_SYNC, GET_RUN, LIST_RUNS, CANCEL_RUN,
-  // REGISTER_FUNCTION, HEALTH, EMIT, CREATE_CONSUMER_GROUP,
+  // ConnectRPC paths: TRIGGER, TRIGGER_SYNC, INVOKE_FUNCTION_SYNC, GET_RUN, LIST_RUNS,
+  // CANCEL_RUN, DELETE_RUN, DELETE_RUNS, REDACT_EVENT, REDACT_STEP, REDACT_RUN,
+  // RESUME_RUN, REGISTER_FUNCTION, HEALTH, EMIT, CREATE_CONSUMER_GROUP,
   // GET_CONSUMER_GROUP, LIST_CONSUMER_GROUPS, DELETE_CONSUMER_GROUP
 
   TIMING,
@@ -2241,6 +2249,7 @@ import {
 import {
   parseDuration, calculateBackoff, sleep, createDeferred,
   generateId, safeJsonParse, isObject, deepMerge,
+  isRedacted, REDACTED_MARKER_KEY,
 } from '@ironflow/core';
 ```
 
@@ -2333,6 +2342,17 @@ Recursively merge two objects. Source values overwrite target values; nested obj
 ```typescript
 deepMerge({ a: 1, b: { c: 2 } }, { b: { d: 3 } });
 // { a: 1, b: { c: 2, d: 3 } }
+```
+
+### isRedacted
+
+True when a payload is the `{ $redacted: true, sha256, redactedAt }` placeholder a
+redaction (`redactEvent` / `redactStep` / `redactRun`) leaves in place of the original
+bytes. `REDACTED_MARKER_KEY` is `"$redacted"`. `UpcasterRegistry` checks it too and
+returns a redacted payload untouched.
+
+```typescript
+if (isRedacted(event.data)) { /* original bytes are gone; only the sha256 remains */ }
 ```
 
 ### Pattern Helpers
@@ -2614,6 +2634,8 @@ interface ServerCapabilities {
   features: string[];
   /** Server version */
   version: string;
+  /** Whether the server requires a credential */
+  authRequired?: boolean;
 }
 ```
 
@@ -2782,8 +2804,9 @@ interface CreateWebhookSourceInput {
   verifyConfig?: WebhookVerifyConfig; // signature descriptor (ADR 0049)
 }
 
-// Full-replace, not patch: an omitted field is cleared server-side.
-// verifyConfig is the exception — omitting it PRESERVES the stored descriptor.
+// name and metadata are full-replace: omitting metadata clears it server-side.
+// verifyHeader, verifyAlgorithm and verifyConfig are preserve-on-omit — leaving
+// one out keeps the stored value rather than clearing it.
 interface UpdateWebhookSourceInput {
   id: string;
   name: string;

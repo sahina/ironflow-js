@@ -1084,6 +1084,94 @@ export class IronflowClient {
   }
 
   /**
+   * Permanently delete a terminal run and its steps.
+   */
+  async deleteRun(runId: string): Promise<void> {
+    await this.request<Record<string, never>>(
+      API_ENDPOINTS.DELETE_RUN,
+      { id: runId },
+      "deleteRun"
+    );
+  }
+
+  /**
+   * Delete terminal runs matching the filter and return how many THIS call
+   * removed. At least one field is required. The server stops at 10,000 per
+   * call, so re-issue the same filter until it returns 0. A count below
+   * 10,000 does NOT mean drained: a page comes back short whenever another
+   * transaction holds some matching rows.
+   */
+  async deleteRuns(filter: {
+    functionId?: string;
+    status?: RunStatus;
+    until?: Date;
+  }): Promise<number> {
+    const body: Record<string, unknown> = {};
+    if (filter.functionId) body.functionId = filter.functionId;
+    // Protobuf enum field: only the canonical RUN_STATUS_* name survives.
+    if (filter.status) body.status = runStatusToWire(filter.status);
+    if (filter.until) body.until = filter.until.toISOString();
+
+    const response = await this.request<{ deleted?: string | number }>(
+      API_ENDPOINTS.DELETE_RUNS,
+      body,
+      "deleteRuns"
+    );
+    return Number(response.deleted ?? 0);
+  }
+
+  /**
+   * Irreversibly replace an event's data with a placeholder.
+   *
+   * The row keeps its id, name, sequence and entity version, so replay
+   * ordering and optimistic concurrency are unaffected and reducers receive
+   * the placeholder. Use `isRedacted` to recognize it. Upcaster chains skip a
+   * redacted payload rather than migrate it, so the marker survives.
+   * Idempotent.
+   *
+   * This does NOT reach the runs the event triggered: their input holds a
+   * copy of the same payload. Call `redactRun` for those.
+   */
+  async redactEvent(eventId: string): Promise<void> {
+    await this.request<Record<string, never>>(
+      API_ENDPOINTS.REDACT_EVENT,
+      { eventId },
+      "redactEvent"
+    );
+  }
+
+  /**
+   * Irreversibly replace a step's output AND original output, plus the
+   * payload of every audit row for that step.
+   *
+   * `stepId` is the step's row id, not its name. The run must be terminal:
+   * a memoized resume reads the output, so redacting under a live run would
+   * change results instead of surfacing a placeholder. Idempotent.
+   */
+  async redactStep(stepId: string): Promise<void> {
+    await this.request<Record<string, never>>(
+      API_ENDPOINTS.REDACT_STEP,
+      { stepId },
+      "redactStep"
+    );
+  }
+
+  /**
+   * Irreversibly replace a run's input and output, plus the payload of every
+   * audit row for that run and its steps.
+   *
+   * The step columns themselves are left alone — call `redactStep` for those.
+   * The run must be terminal. Idempotent.
+   */
+  async redactRun(runId: string): Promise<void> {
+    await this.request<Record<string, never>>(
+      API_ENDPOINTS.REDACT_RUN,
+      { runId },
+      "redactRun"
+    );
+  }
+
+  /**
    * Health check
    */
   async health(): Promise<string> {
@@ -1322,6 +1410,23 @@ export class IronflowClient {
         version: Number(entry.entityVersion ?? 0),
         timestamp: String(entry.timestamp ?? ""),
       }));
+    },
+
+    /**
+     * Delete an entity stream: appends the `$stream.deleted` tombstone and drops
+     * snapshots; later appends fail. `purge` also deletes every event below the
+     * tombstone. Irreversible. Requires `streams:delete` (admin by default).
+     */
+    delete: async (
+      entityId: string,
+      options?: { purge?: boolean }
+    ): Promise<{ entityVersion: number }> => {
+      const response = await this.request<{ entityVersion?: string | number }>(
+        "/ironflow.v1.EntityStreamService/DeleteStream",
+        { entity_id: entityId, purge: options?.purge ?? false },
+        "streams.delete"
+      );
+      return { entityVersion: Number(response.entityVersion ?? 0) };
     },
   };
 

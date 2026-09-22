@@ -2,6 +2,7 @@ import {
   EventSource,
   SchemaValidationError,
   formatZodIssues,
+  isRedacted,
   type IronflowEvent,
   type IronflowFunction,
 } from "@ironflow/core";
@@ -24,6 +25,14 @@ const MAX_ISSUES = 10;
  * Cron ticks are exempt: the engine fabricates their payload
  * (`{type:"cron", expression, scheduled}`), so a schema describing the emitted
  * event can never match it and a mixed-trigger function would fail every tick.
+ *
+ * A redacted payload is NOT exempt. Unlike a cron tick, the function cannot do
+ * its job — the bytes its schema describes are gone. It fails here, once,
+ * non-retryably, and says so in as many words: reporting the placeholder as a
+ * field-by-field Zod diff ("amount: expected number, received undefined")
+ * would send whoever reads the run looking for a producer bug. A function with
+ * no declared schema still receives the placeholder, as the redaction contract
+ * promises; guard it with `isRedacted`.
  */
 export async function validateEventData(
   fn: IronflowFunction,
@@ -31,6 +40,14 @@ export async function validateEventData(
 ): Promise<IronflowEvent> {
   const schema = fn.config.schema;
   if (!schema || event.source === EventSource.CRON) return event;
+  if (isRedacted(event.data)) {
+    throw new SchemaValidationError(
+      `Event "${event.name}" for function "${fn.config.id}" was redacted: its payload has been ` +
+        `irreversibly replaced with a placeholder and cannot satisfy the declared schema. ` +
+        `Drop config.schema and guard with isRedacted() if this function must still run.`,
+      { validationErrors: ["event data was redacted"] }
+    );
+  }
   const result = await schema.safeParseAsync(event.data);
   if (result.success) return { ...event, data: result.data };
 

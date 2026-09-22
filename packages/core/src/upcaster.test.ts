@@ -1,5 +1,6 @@
 import { describe, test, expect } from "vitest";
 import { createUpcasterRegistry } from "./upcaster.js";
+import { isRedacted } from "./utils.js";
 
 describe("UpcasterRegistry", () => {
   test("registers and applies single upcaster", () => {
@@ -156,5 +157,89 @@ describe("UpcasterRegistry", () => {
     // Verify they didn't leak into each other
     expect((orderResult as any).userField).toBeUndefined();
     expect((userResult as any).orderField).toBeUndefined();
+  });
+});
+
+describe("UpcasterRegistry with a redacted payload", () => {
+  const REDACTED = {
+    $redacted: true,
+    sha256: "ab".repeat(32),
+    redactedAt: "2026-09-21T00:00:00.000Z",
+  };
+
+  test("skips the chain entirely and returns the placeholder untouched", () => {
+    const registry = createUpcasterRegistry();
+    let invoked = false;
+    registry.register("order.placed", 1, 2, (data: any) => {
+      invoked = true;
+      return { ...data, currency: "USD" };
+    });
+
+    const result = registry.upcast("order.placed", REDACTED, 1, 2);
+
+    // The never-invoked flag is the assertion that matters: it is the one that
+    // fails if the guard is ever moved below the loop.
+    expect(invoked).toBe(false);
+    expect(result).toEqual(REDACTED);
+    expect(isRedacted(result)).toBe(true);
+  });
+
+  test("an upcaster that rebuilds the object cannot drop the marker", () => {
+    // Before the guard this returned {currency:"USD"} — isRedacted went false
+    // and the handler folded in `undefined` as if the producer had sent it.
+    const registry = createUpcasterRegistry();
+    registry.register("order.placed", 1, 2, (data: any) => ({
+      amount: data.amount,
+      currency: "USD",
+    }));
+
+    expect(isRedacted(registry.upcast("order.placed", REDACTED, 1, 2))).toBe(true);
+  });
+
+  test("an upcaster that reaches through a nested field no longer throws", () => {
+    // Before the guard this threw a TypeError out of the ExecutionContext
+    // constructor, which serve() reported as a 500 and the engine retried to
+    // exhaustion.
+    const registry = createUpcasterRegistry();
+    registry.register("order.placed", 1, 2, (data: any) => ({
+      email: data.customer.email,
+    }));
+
+    expect(() => registry.upcast("order.placed", REDACTED, 1, 2)).not.toThrow();
+  });
+
+  test("skips a multi-step chain, not just the first hop", () => {
+    const registry = createUpcasterRegistry();
+    const invoked: number[] = [];
+    registry.register("order.placed", 1, 2, (d: any) => (invoked.push(1), d));
+    registry.register("order.placed", 2, 3, (d: any) => (invoked.push(2), d));
+
+    expect(registry.upcast("order.placed", REDACTED, 1, 3)).toEqual(REDACTED);
+    expect(invoked).toEqual([]);
+  });
+
+  test("an incomplete chain no longer errors on a redacted payload", () => {
+    // The placeholder needs no migration, so a gap in the chain is not a
+    // problem it can hit. Real payloads still throw — asserted above.
+    const registry = createUpcasterRegistry();
+    registry.register("order.placed", 1, 2, (d: any) => d);
+
+    expect(registry.upcast("order.placed", REDACTED, 1, 3)).toEqual(REDACTED);
+    expect(() => registry.upcast("order.placed", { id: "o1" }, 1, 3)).toThrow(
+      /Incomplete upcaster chain/
+    );
+  });
+
+  test("real payloads still run the chain", () => {
+    const registry = createUpcasterRegistry();
+    registry.register("order.placed", 1, 2, (data: any) => ({
+      ...data,
+      currency: "USD",
+    }));
+
+    expect(registry.upcast("order.placed", { amount: 10 }, 1, 2)).toEqual({
+      amount: 10,
+      currency: "USD",
+    });
   });
 });

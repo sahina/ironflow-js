@@ -141,3 +141,28 @@ export function deepMerge<T extends Record<string, unknown>>(
 
   return result;
 }
+
+/**
+ * The JSON key a redacted payload carries. Matches `store.RedactedMarkerKey`
+ * on the server.
+ */
+export const REDACTED_MARKER_KEY = "$redacted";
+
+/**
+ * Report whether a payload — an event's data, a step's output, a run's output
+ * — is the placeholder a redaction left behind rather than real content.
+ *
+ * A redaction keeps the row, its id, its ordering and its version and replaces
+ * only the bytes, so a reducer still receives a value at the right position in
+ * the stream. Call this before trusting it. `UpcasterRegistry` checks it too,
+ * and returns a redacted payload untouched rather than running the chain.
+ *
+ * The placeholder is `{ $redacted: true, sha256, redactedAt }`. The sha256 is
+ * of the original bytes; nothing can recover them from it.
+ */
+export function isRedacted(payload: unknown): boolean {
+  return (
+    isObject(payload) &&
+    (payload as Record<string, unknown>)[REDACTED_MARKER_KEY] === true
+  );
+}
