@@ -1084,6 +1084,7 @@ describe("SubscriptionClient", () => {
 
       expect(ackMsg).toBeDefined();
       expect(ackMsg.eventId).toBe("evt_1");
+      expect(ackMsg.subscriptionId).toBe("sub_ack_1");
 
       // Test nak
       await ackSub.nak("evt_2", 5000);
@@ -1095,6 +1096,7 @@ describe("SubscriptionClient", () => {
       expect(nakMsg).toBeDefined();
       expect(nakMsg.eventId).toBe("evt_2");
       expect(nakMsg.redeliverDelay).toBe(5000);
+      expect(nakMsg.subscriptionId).toBe("sub_ack_1");
 
       // Test term
       await ackSub.term("evt_3");
@@ -1105,6 +1107,7 @@ describe("SubscriptionClient", () => {
 
       expect(termMsg).toBeDefined();
       expect(termMsg.eventId).toBe("evt_3");
+      expect(termMsg.subscriptionId).toBe("sub_ack_1");
 
       client.close();
     });

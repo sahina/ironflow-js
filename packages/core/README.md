@@ -207,7 +207,7 @@ interface RetryConfig {
 interface ConcurrencyConfig {
   /** Maximum concurrent executions */
   limit: number;
-  /** JSON path for grouping (e.g., "event.data.customerId") */
+  /** Path into the event data payload for grouping (e.g., "customerId") */
   key?: string;
 }
 ```
@@ -303,7 +303,7 @@ const myWorkflow = createFunction({
   id: 'process-order',
   triggers: [{ event: 'order.placed' }],
   retry: { maxAttempts: 5 },
-  concurrency: { limit: 10, key: 'event.data.customerId' },
+  concurrency: { limit: 10, key: 'customerId' }, // path into event.data
   mode: 'pull',
   secrets: ['STRIPE_KEY'],
   stepTimeout: '30s',
@@ -1868,6 +1868,12 @@ toError(error: unknown): Error
 // AUTH_HELP appended; returns silently on any other status. AUTH_HELP is the
 // shared "set IRONFLOW_API_KEY / see the startup banner" guidance string (#1673).
 throwIfAuthError(status: number, context: string): void
+
+// Map a Connect JSON error to the matching IronflowError subclass. The
+// `aborted` code is refined by the ERROR_REASON_HEADER ("Ironflow-Error-Reason")
+// response header: ERROR_REASON.injectionUnverified -> InjectionUnverifiedError,
+// anything else -> ContendedError.
+connectHTTPError(status: number, message: string, code?: string, options?: { retryable?: boolean; authHelp?: string; reason?: string }): IronflowError
 ```
 
 Usage:
@@ -2639,7 +2645,7 @@ interface ServerCapabilities {
 }
 ```
 
-Agent tools registered with the server, as returned by `listAgentTools`:
+Agent tools registered with the server, as returned by `client.agentTools.list()` in `@ironflow/node`:
 
 ```typescript
 interface VisibleAgentTool {

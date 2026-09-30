@@ -280,7 +280,7 @@ group.unsubscribeAll();
 
 ### Consumer Groups
 
-Join a consumer group for load-balanced event processing across multiple browser tabs or clients. Consumer group subscriptions always use manual acknowledgment:
+Join a consumer group for load-balanced event processing across multiple browser tabs or clients. Consumer group subscriptions always use manual acknowledgment, which needs the WebSocket transport — configure `transport: 'websocket'` first; the default ConnectRPC transport rejects manual acknowledgment:
 
 ```typescript
 const sub = await ironflow.joinConsumerGroup(
@@ -1355,7 +1355,7 @@ const workers = await ironflow.listWorkers();
 
 // Health check
 const health = await ironflow.health();
-console.log(health.status);     // 'ok'
+console.log(health.status);     // 'healthy'
 console.log(health.timestamp);  // ISO 8601
 console.log(health.version);    // Server version
 

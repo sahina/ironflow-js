@@ -1067,7 +1067,7 @@ describe("SubscriptionManager (real module)", () => {
       const sub = (await p) as AckableSubscription;
 
       await sub.ack("evt-100");
-      expect(transport.ack).toHaveBeenCalledWith("evt-100", "ack");
+      expect(transport.ack).toHaveBeenCalledWith("evt-100", "ack", undefined, "sub-ack2");
     });
 
     it("should delegate nak with optional delay to transport.ack", async () => {
@@ -1079,7 +1079,7 @@ describe("SubscriptionManager (real module)", () => {
       const sub = (await p) as AckableSubscription;
 
       await sub.nak("evt-200", 3000);
-      expect(transport.ack).toHaveBeenCalledWith("evt-200", "nak", 3000);
+      expect(transport.ack).toHaveBeenCalledWith("evt-200", "nak", 3000, "sub-nak");
     });
 
     it("should delegate term to transport.ack", async () => {
@@ -1091,7 +1091,7 @@ describe("SubscriptionManager (real module)", () => {
       const sub = (await p) as AckableSubscription;
 
       await sub.term("evt-300");
-      expect(transport.ack).toHaveBeenCalledWith("evt-300", "term");
+      expect(transport.ack).toHaveBeenCalledWith("evt-300", "term", undefined, "sub-term");
     });
 
     it("should not include ack methods for auto mode (default)", async () => {

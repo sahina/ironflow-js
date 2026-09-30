@@ -280,6 +280,8 @@ export interface WSAckRequest {
   type: "ack";
   eventId: string;
   ackType: AckType;
+  /** Subscription that received the event. Omit to try every group the connection joined. */
+  subscriptionId?: string;
   /** Delay in milliseconds before redelivery (for NAK) */
   redeliverDelay?: number;
 }

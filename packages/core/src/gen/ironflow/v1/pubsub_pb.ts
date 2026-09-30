@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/pubsub.proto.
  */
 export const file_ironflow_v1_pubsub: GenFile = /*@__PURE__*/
-  fileDesc("Chhpcm9uZmxvdy92MS9wdWJzdWIucHJvdG8SC2lyb25mbG93LnYxItcBCgtFbWl0UmVxdWVzdBINCgVldmVudBgBIAEoCRIlCgRkYXRhGAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIqCgpkYXRhX3ZhbHVlGAcgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIpCghtZXRhZGF0YRgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSEQoJbmFtZXNwYWNlGAUgASgJEg8KB3ZlcnNpb24YBiABKAUiMQoMRW1pdFJlc3BvbnNlEg8KB3J1bl9pZHMYASADKAkSEAoIZXZlbnRfaWQYAiABKAkiUwoQU3Vic2NyaWJlUmVxdWVzdBIPCgdwYXR0ZXJuGAEgASgJEi4KB29wdGlvbnMYAiABKAsyHS5pcm9uZmxvdy52MS5TdWJzY3JpYmVPcHRpb25zIpACChBTdWJzY3JpYmVPcHRpb25zEg4KBnJlcGxheRgBIAEoBRIYChBpbmNsdWRlX21ldGFkYXRhGAIgASgIEg4KBmZpbHRlchgDIAEoCRIRCgluYW1lc3BhY2UYBCABKAkSFgoOY29uc3VtZXJfZ3JvdXAYBSABKAkSJgoIYWNrX21vZGUYBiABKA4yFC5pcm9uZmxvdy52MS5BY2tNb2RlEjMKDGJhY2twcmVzc3VyZRgHIAEoDjIdLmlyb25mbG93LnYxLkJhY2twcmVzc3VyZU1vZGUSIQoUc3RhcnRfYWZ0ZXJfc2VxdWVuY2UYCCABKARIAIgBAUIXChVfc3RhcnRfYWZ0ZXJfc2VxdWVuY2Ui+gEKEVN1YnNjcmlwdGlvbkV2ZW50EhcKD3N1YnNjcmlwdGlvbl9pZBgBIAEoCRIQCghldmVudF9pZBgCIAEoCRINCgV0b3BpYxgDIAEoCRIlCgRkYXRhGAQgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIqCgpkYXRhX3ZhbHVlGAggASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEiwKCG1ldGFkYXRhGAUgASgLMhouaXJvbmZsb3cudjEuRXZlbnRNZXRhZGF0YRIQCghzZXF1ZW5jZRgGIAEoBBIYChBkZWxpdmVyeV9hdHRlbXB0GAcgASgFIooBCg1FdmVudE1ldGFkYXRhEi0KCXRpbWVzdGFtcBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGc291cmNlGAIgASgJEhEKCW5hbWVzcGFjZRgDIAEoCRInCgZjdXN0b20YBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0ImcKD1N1YnNjcmlwdGlvbkFjaxIQCghldmVudF9pZBgBIAEoCRImCghhY2tfdHlwZRgCIAEoDjIULmlyb25mbG93LnYxLkFja1R5cGUSGgoScmVkZWxpdmVyX2RlbGF5X21zGAMgASgFIt4DCg1Db25zdW1lckdyb3VwEgoKAmlkGAEgASgJEhEKCW5hbWVzcGFjZRgCIAEoCRIMCgRuYW1lGAMgASgJEg8KB3BhdHRlcm4YBCABKAkSEwoLZmlsdGVyX2V4cHIYBSABKAkSJgoIYWNrX21vZGUYBiABKA4yFC5pcm9uZmxvdy52MS5BY2tNb2RlEjMKDGJhY2twcmVzc3VyZRgHIAEoDjIdLmlyb25mbG93LnYxLkJhY2twcmVzc3VyZU1vZGUSFAoMbWF4X2luZmxpZ2h0GAggASgFEhgKEG1heF9yZWRlbGl2ZXJpZXMYCSABKAUSGgoScmVkZWxpdmVyX2RlbGF5X21zGAogASgFEikKCG1ldGFkYXRhGAsgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIwCgZzdGF0dXMYDCABKA4yIC5pcm9uZmxvdy52MS5Db25zdW1lckdyb3VwU3RhdHVzEhQKDG1lbWJlcl9jb3VudBgNIAEoBRIuCgpjcmVhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK3AgoaQ3JlYXRlQ29uc3VtZXJHcm91cFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgwKBG5hbWUYAiABKAkSDwoHcGF0dGVybhgDIAEoCRITCgtmaWx0ZXJfZXhwchgEIAEoCRImCghhY2tfbW9kZRgFIAEoDjIULmlyb25mbG93LnYxLkFja01vZGUSMwoMYmFja3ByZXNzdXJlGAYgASgOMh0uaXJvbmZsb3cudjEuQmFja3ByZXNzdXJlTW9kZRIUCgxtYXhfaW5mbGlnaHQYByABKAUSGAoQbWF4X3JlZGVsaXZlcmllcxgIIAEoBRIaChJyZWRlbGl2ZXJfZGVsYXlfbXMYCSABKAUSKQoIbWV0YWRhdGEYCiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IjoKF0dldENvbnN1bWVyR3JvdXBSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRIMCgRuYW1lGAIgASgJIn8KGUxpc3RDb25zdW1lckdyb3Vwc1JlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEjAKBnN0YXR1cxgCIAEoDjIgLmlyb25mbG93LnYxLkNvbnN1bWVyR3JvdXBTdGF0dXMSDQoFbGltaXQYAyABKAUSDgoGY3Vyc29yGAQgASgJInIKGkxpc3RDb25zdW1lckdyb3Vwc1Jlc3BvbnNlEioKBmdyb3VwcxgBIAMoCzIaLmlyb25mbG93LnYxLkNvbnN1bWVyR3JvdXASEwoLbmV4dF9jdXJzb3IYAiABKAkSEwoLdG90YWxfY291bnQYAyABKAUieAoaVXBkYXRlQ29uc3VtZXJHcm91cFJlcXVlc3QSKQoFZ3JvdXAYASABKAsyGi5pcm9uZmxvdy52MS5Db25zdW1lckdyb3VwEi8KC3VwZGF0ZV9tYXNrGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLkZpZWxkTWFzayI9ChpEZWxldGVDb25zdW1lckdyb3VwUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSDAoEbmFtZRgCIAEoCSJpChhKb2luQ29uc3VtZXJHcm91cFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhIKCmdyb3VwX25hbWUYAiABKAkSEwoLY29uc3VtZXJfaWQYAyABKAkSEQoJY2xpZW50X2lkGAQgASgJIksKElNlcnZlckNhcGFiaWxpdGllcxISCgp0cmFuc3BvcnRzGAEgAygJEhAKCGZlYXR1cmVzGAIgAygJEg8KB3ZlcnNpb24YAyABKAkiiwEKDlB1Ymxpc2hSZXF1ZXN0Eg0KBXRvcGljGAEgASgJEiUKBGRhdGEYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EioKCmRhdGFfdmFsdWUYBCABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIjUKD1B1Ymxpc2hSZXNwb25zZRIQCghldmVudF9pZBgBIAEoCRIQCghzZXF1ZW5jZRgCIAEoBCITChFMaXN0VG9waWNzUmVxdWVzdCI8ChJMaXN0VG9waWNzUmVzcG9uc2USJgoGdG9waWNzGAEgAygLMhYuaXJvbmZsb3cudjEuVG9waWNJbmZvIrMBCglUb3BpY0luZm8SDAoEbmFtZRgBIAEoCRIVCg1tZXNzYWdlX2NvdW50GAIgASgDEhYKDmNvbnN1bWVyX2NvdW50GAMgASgFEjQKEGZpcnN0X21lc3NhZ2VfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2xhc3RfbWVzc2FnZV9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiJQoUR2V0VG9waWNTdGF0c1JlcXVlc3QSDQoFdG9waWMYASABKAkihgEKFUdldFRvcGljU3RhdHNSZXNwb25zZRIMCgRuYW1lGAEgASgJEhUKDW1lc3NhZ2VfY291bnQYAiABKAMSFgoOY29uc3VtZXJfY291bnQYAyABKAUSCwoDbGFnGAQgASgDEhEKCWZpcnN0X3NlcRgFIAEoBBIQCghsYXN0X3NlcRgGIAEoBCpLCgdBY2tNb2RlEhgKFEFDS19NT0RFX1VOU1BFQ0lGSUVEEAASEQoNQUNLX01PREVfQVVUTxABEhMKD0FDS19NT0RFX01BTlVBTBACKowBChBCYWNrcHJlc3N1cmVNb2RlEiEKHUJBQ0tQUkVTU1VSRV9NT0RFX1VOU1BFQ0lGSUVEEAASGgoWQkFDS1BSRVNTVVJFX01PREVfRFJPUBABEhsKF0JBQ0tQUkVTU1VSRV9NT0RFX0JMT0NLEAISHAoYQkFDS1BSRVNTVVJFX01PREVfQlVGRkVSEAMqowEKE0NvbnN1bWVyR3JvdXBTdGF0dXMSJQohQ09OU1VNRVJfR1JPVVBfU1RBVFVTX1VOU1BFQ0lGSUVEEAASIAocQ09OU1VNRVJfR1JPVVBfU1RBVFVTX0FDVElWRRABEiAKHENPTlNVTUVSX0dST1VQX1NUQVRVU19QQVVTRUQQAhIhCh1DT05TVU1FUl9HUk9VUF9TVEFUVVNfREVMRVRFRBADKloKB0Fja1R5cGUSGAoUQUNLX1RZUEVfVU5TUEVDSUZJRUQQABIQCgxBQ0tfVFlQRV9BQ0sQARIQCgxBQ0tfVFlQRV9OQUsQAhIRCg1BQ0tfVFlQRV9URVJNEAMyoggKDVB1YlN1YlNlcnZpY2USOwoERW1pdBIYLmlyb25mbG93LnYxLkVtaXRSZXF1ZXN0GhkuaXJvbmZsb3cudjEuRW1pdFJlc3BvbnNlEkwKCVN1YnNjcmliZRIdLmlyb25mbG93LnYxLlN1YnNjcmliZVJlcXVlc3QaHi5pcm9uZmxvdy52MS5TdWJzY3JpcHRpb25FdmVudDABEloKFlN1YnNjcmliZUJpZGlyZWN0aW9uYWwSHC5pcm9uZmxvdy52MS5TdWJzY3JpcHRpb25BY2saHi5pcm9uZmxvdy52MS5TdWJzY3JpcHRpb25FdmVudCgBMAESWgoTQ3JlYXRlQ29uc3VtZXJHcm91cBInLmlyb25mbG93LnYxLkNyZWF0ZUNvbnN1bWVyR3JvdXBSZXF1ZXN0GhouaXJvbmZsb3cudjEuQ29uc3VtZXJHcm91cBJZChBHZXRDb25zdW1lckdyb3VwEiQuaXJvbmZsb3cudjEuR2V0Q29uc3VtZXJHcm91cFJlcXVlc3QaGi5pcm9uZmxvdy52MS5Db25zdW1lckdyb3VwIgOQAgESagoSTGlzdENvbnN1bWVyR3JvdXBzEiYuaXJvbmZsb3cudjEuTGlzdENvbnN1bWVyR3JvdXBzUmVxdWVzdBonLmlyb25mbG93LnYxLkxpc3RDb25zdW1lckdyb3Vwc1Jlc3BvbnNlIgOQAgESWgoTVXBkYXRlQ29uc3VtZXJHcm91cBInLmlyb25mbG93LnYxLlVwZGF0ZUNvbnN1bWVyR3JvdXBSZXF1ZXN0GhouaXJvbmZsb3cudjEuQ29uc3VtZXJHcm91cBJWChNEZWxldGVDb25zdW1lckdyb3VwEicuaXJvbmZsb3cudjEuRGVsZXRlQ29uc3VtZXJHcm91cFJlcXVlc3QaFi5nb29nbGUucHJvdG9idWYuRW1wdHkSXAoRSm9pbkNvbnN1bWVyR3JvdXASJS5pcm9uZmxvdy52MS5Kb2luQ29uc3VtZXJHcm91cFJlcXVlc3QaHi5pcm9uZmxvdy52MS5TdWJzY3JpcHRpb25FdmVudDABEkQKB1B1Ymxpc2gSGy5pcm9uZmxvdy52MS5QdWJsaXNoUmVxdWVzdBocLmlyb25mbG93LnYxLlB1Ymxpc2hSZXNwb25zZRJSCgpMaXN0VG9waWNzEh4uaXJvbmZsb3cudjEuTGlzdFRvcGljc1JlcXVlc3QaHy5pcm9uZmxvdy52MS5MaXN0VG9waWNzUmVzcG9uc2UiA5ACARJbCg1HZXRUb3BpY1N0YXRzEiEuaXJvbmZsb3cudjEuR2V0VG9waWNTdGF0c1JlcXVlc3QaIi5pcm9uZmxvdy52MS5HZXRUb3BpY1N0YXRzUmVzcG9uc2UiA5ACAUI6WjhnaXRodWIuY29tL3NhaGluYS9pcm9uZmxvdy9hcGkvZ28vaXJvbmZsb3cvdjE7aXJvbmZsb3d2MWIGcHJvdG8z", [file_google_protobuf_empty, file_google_protobuf_field_mask, file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("Chhpcm9uZmxvdy92MS9wdWJzdWIucHJvdG8SC2lyb25mbG93LnYxItcBCgtFbWl0UmVxdWVzdBINCgVldmVudBgBIAEoCRIlCgRkYXRhGAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIqCgpkYXRhX3ZhbHVlGAcgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEhcKD2lkZW1wb3RlbmN5X2tleRgDIAEoCRIpCghtZXRhZGF0YRgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSEQoJbmFtZXNwYWNlGAUgASgJEg8KB3ZlcnNpb24YBiABKAUiMQoMRW1pdFJlc3BvbnNlEg8KB3J1bl9pZHMYASADKAkSEAoIZXZlbnRfaWQYAiABKAkiUwoQU3Vic2NyaWJlUmVxdWVzdBIPCgdwYXR0ZXJuGAEgASgJEi4KB29wdGlvbnMYAiABKAsyHS5pcm9uZmxvdy52MS5TdWJzY3JpYmVPcHRpb25zIpACChBTdWJzY3JpYmVPcHRpb25zEg4KBnJlcGxheRgBIAEoBRIYChBpbmNsdWRlX21ldGFkYXRhGAIgASgIEg4KBmZpbHRlchgDIAEoCRIRCgluYW1lc3BhY2UYBCABKAkSFgoOY29uc3VtZXJfZ3JvdXAYBSABKAkSJgoIYWNrX21vZGUYBiABKA4yFC5pcm9uZmxvdy52MS5BY2tNb2RlEjMKDGJhY2twcmVzc3VyZRgHIAEoDjIdLmlyb25mbG93LnYxLkJhY2twcmVzc3VyZU1vZGUSIQoUc3RhcnRfYWZ0ZXJfc2VxdWVuY2UYCCABKARIAIgBAUIXChVfc3RhcnRfYWZ0ZXJfc2VxdWVuY2Ui+gEKEVN1YnNjcmlwdGlvbkV2ZW50EhcKD3N1YnNjcmlwdGlvbl9pZBgBIAEoCRIQCghldmVudF9pZBgCIAEoCRINCgV0b3BpYxgDIAEoCRIlCgRkYXRhGAQgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIqCgpkYXRhX3ZhbHVlGAggASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEiwKCG1ldGFkYXRhGAUgASgLMhouaXJvbmZsb3cudjEuRXZlbnRNZXRhZGF0YRIQCghzZXF1ZW5jZRgGIAEoBBIYChBkZWxpdmVyeV9hdHRlbXB0GAcgASgFIooBCg1FdmVudE1ldGFkYXRhEi0KCXRpbWVzdGFtcBgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDgoGc291cmNlGAIgASgJEhEKCW5hbWVzcGFjZRgDIAEoCRInCgZjdXN0b20YBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0ImcKD1N1YnNjcmlwdGlvbkFjaxIQCghldmVudF9pZBgBIAEoCRImCghhY2tfdHlwZRgCIAEoDjIULmlyb25mbG93LnYxLkFja1R5cGUSGgoScmVkZWxpdmVyX2RlbGF5X21zGAMgASgFIqMBCg9BY2tFdmVudFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhIKCmdyb3VwX25hbWUYAiABKAkSEwoLY29uc3VtZXJfaWQYAyABKAkSEAoIZXZlbnRfaWQYBCABKAkSJgoIYWNrX3R5cGUYBSABKA4yFC5pcm9uZmxvdy52MS5BY2tUeXBlEhoKEnJlZGVsaXZlcl9kZWxheV9tcxgGIAEoBSISChBBY2tFdmVudFJlc3BvbnNlIt4DCg1Db25zdW1lckdyb3VwEgoKAmlkGAEgASgJEhEKCW5hbWVzcGFjZRgCIAEoCRIMCgRuYW1lGAMgASgJEg8KB3BhdHRlcm4YBCABKAkSEwoLZmlsdGVyX2V4cHIYBSABKAkSJgoIYWNrX21vZGUYBiABKA4yFC5pcm9uZmxvdy52MS5BY2tNb2RlEjMKDGJhY2twcmVzc3VyZRgHIAEoDjIdLmlyb25mbG93LnYxLkJhY2twcmVzc3VyZU1vZGUSFAoMbWF4X2luZmxpZ2h0GAggASgFEhgKEG1heF9yZWRlbGl2ZXJpZXMYCSABKAUSGgoScmVkZWxpdmVyX2RlbGF5X21zGAogASgFEikKCG1ldGFkYXRhGAsgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIwCgZzdGF0dXMYDCABKA4yIC5pcm9uZmxvdy52MS5Db25zdW1lckdyb3VwU3RhdHVzEhQKDG1lbWJlcl9jb3VudBgNIAEoBRIuCgpjcmVhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GA8gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCK3AgoaQ3JlYXRlQ29uc3VtZXJHcm91cFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEgwKBG5hbWUYAiABKAkSDwoHcGF0dGVybhgDIAEoCRITCgtmaWx0ZXJfZXhwchgEIAEoCRImCghhY2tfbW9kZRgFIAEoDjIULmlyb25mbG93LnYxLkFja01vZGUSMwoMYmFja3ByZXNzdXJlGAYgASgOMh0uaXJvbmZsb3cudjEuQmFja3ByZXNzdXJlTW9kZRIUCgxtYXhfaW5mbGlnaHQYByABKAUSGAoQbWF4X3JlZGVsaXZlcmllcxgIIAEoBRIaChJyZWRlbGl2ZXJfZGVsYXlfbXMYCSABKAUSKQoIbWV0YWRhdGEYCiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IjoKF0dldENvbnN1bWVyR3JvdXBSZXF1ZXN0EhEKCW5hbWVzcGFjZRgBIAEoCRIMCgRuYW1lGAIgASgJIn8KGUxpc3RDb25zdW1lckdyb3Vwc1JlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEjAKBnN0YXR1cxgCIAEoDjIgLmlyb25mbG93LnYxLkNvbnN1bWVyR3JvdXBTdGF0dXMSDQoFbGltaXQYAyABKAUSDgoGY3Vyc29yGAQgASgJInIKGkxpc3RDb25zdW1lckdyb3Vwc1Jlc3BvbnNlEioKBmdyb3VwcxgBIAMoCzIaLmlyb25mbG93LnYxLkNvbnN1bWVyR3JvdXASEwoLbmV4dF9jdXJzb3IYAiABKAkSEwoLdG90YWxfY291bnQYAyABKAUieAoaVXBkYXRlQ29uc3VtZXJHcm91cFJlcXVlc3QSKQoFZ3JvdXAYASABKAsyGi5pcm9uZmxvdy52MS5Db25zdW1lckdyb3VwEi8KC3VwZGF0ZV9tYXNrGAIgASgLMhouZ29vZ2xlLnByb3RvYnVmLkZpZWxkTWFzayI9ChpEZWxldGVDb25zdW1lckdyb3VwUmVxdWVzdBIRCgluYW1lc3BhY2UYASABKAkSDAoEbmFtZRgCIAEoCSJpChhKb2luQ29uc3VtZXJHcm91cFJlcXVlc3QSEQoJbmFtZXNwYWNlGAEgASgJEhIKCmdyb3VwX25hbWUYAiABKAkSEwoLY29uc3VtZXJfaWQYAyABKAkSEQoJY2xpZW50X2lkGAQgASgJIksKElNlcnZlckNhcGFiaWxpdGllcxISCgp0cmFuc3BvcnRzGAEgAygJEhAKCGZlYXR1cmVzGAIgAygJEg8KB3ZlcnNpb24YAyABKAkiiwEKDlB1Ymxpc2hSZXF1ZXN0Eg0KBXRvcGljGAEgASgJEiUKBGRhdGEYAiABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EioKCmRhdGFfdmFsdWUYBCABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSFwoPaWRlbXBvdGVuY3lfa2V5GAMgASgJIjUKD1B1Ymxpc2hSZXNwb25zZRIQCghldmVudF9pZBgBIAEoCRIQCghzZXF1ZW5jZRgCIAEoBCITChFMaXN0VG9waWNzUmVxdWVzdCI8ChJMaXN0VG9waWNzUmVzcG9uc2USJgoGdG9waWNzGAEgAygLMhYuaXJvbmZsb3cudjEuVG9waWNJbmZvIrMBCglUb3BpY0luZm8SDAoEbmFtZRgBIAEoCRIVCg1tZXNzYWdlX2NvdW50GAIgASgDEhYKDmNvbnN1bWVyX2NvdW50GAMgASgFEjQKEGZpcnN0X21lc3NhZ2VfYXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjMKD2xhc3RfbWVzc2FnZV9hdBgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiJQoUR2V0VG9waWNTdGF0c1JlcXVlc3QSDQoFdG9waWMYASABKAkihgEKFUdldFRvcGljU3RhdHNSZXNwb25zZRIMCgRuYW1lGAEgASgJEhUKDW1lc3NhZ2VfY291bnQYAiABKAMSFgoOY29uc3VtZXJfY291bnQYAyABKAUSCwoDbGFnGAQgASgDEhEKCWZpcnN0X3NlcRgFIAEoBBIQCghsYXN0X3NlcRgGIAEoBCpLCgdBY2tNb2RlEhgKFEFDS19NT0RFX1VOU1BFQ0lGSUVEEAASEQoNQUNLX01PREVfQVVUTxABEhMKD0FDS19NT0RFX01BTlVBTBACKowBChBCYWNrcHJlc3N1cmVNb2RlEiEKHUJBQ0tQUkVTU1VSRV9NT0RFX1VOU1BFQ0lGSUVEEAASGgoWQkFDS1BSRVNTVVJFX01PREVfRFJPUBABEhsKF0JBQ0tQUkVTU1VSRV9NT0RFX0JMT0NLEAISHAoYQkFDS1BSRVNTVVJFX01PREVfQlVGRkVSEAMqowEKE0NvbnN1bWVyR3JvdXBTdGF0dXMSJQohQ09OU1VNRVJfR1JPVVBfU1RBVFVTX1VOU1BFQ0lGSUVEEAASIAocQ09OU1VNRVJfR1JPVVBfU1RBVFVTX0FDVElWRRABEiAKHENPTlNVTUVSX0dST1VQX1NUQVRVU19QQVVTRUQQAhIhCh1DT05TVU1FUl9HUk9VUF9TVEFUVVNfREVMRVRFRBADKloKB0Fja1R5cGUSGAoUQUNLX1RZUEVfVU5TUEVDSUZJRUQQABIQCgxBQ0tfVFlQRV9BQ0sQARIQCgxBQ0tfVFlQRV9OQUsQAhIRCg1BQ0tfVFlQRV9URVJNEAMy6wgKDVB1YlN1YlNlcnZpY2USOwoERW1pdBIYLmlyb25mbG93LnYxLkVtaXRSZXF1ZXN0GhkuaXJvbmZsb3cudjEuRW1pdFJlc3BvbnNlEkwKCVN1YnNjcmliZRIdLmlyb25mbG93LnYxLlN1YnNjcmliZVJlcXVlc3QaHi5pcm9uZmxvdy52MS5TdWJzY3JpcHRpb25FdmVudDABEloKFlN1YnNjcmliZUJpZGlyZWN0aW9uYWwSHC5pcm9uZmxvdy52MS5TdWJzY3JpcHRpb25BY2saHi5pcm9uZmxvdy52MS5TdWJzY3JpcHRpb25FdmVudCgBMAESRwoIQWNrRXZlbnQSHC5pcm9uZmxvdy52MS5BY2tFdmVudFJlcXVlc3QaHS5pcm9uZmxvdy52MS5BY2tFdmVudFJlc3BvbnNlEloKE0NyZWF0ZUNvbnN1bWVyR3JvdXASJy5pcm9uZmxvdy52MS5DcmVhdGVDb25zdW1lckdyb3VwUmVxdWVzdBoaLmlyb25mbG93LnYxLkNvbnN1bWVyR3JvdXASWQoQR2V0Q29uc3VtZXJHcm91cBIkLmlyb25mbG93LnYxLkdldENvbnN1bWVyR3JvdXBSZXF1ZXN0GhouaXJvbmZsb3cudjEuQ29uc3VtZXJHcm91cCIDkAIBEmoKEkxpc3RDb25zdW1lckdyb3VwcxImLmlyb25mbG93LnYxLkxpc3RDb25zdW1lckdyb3Vwc1JlcXVlc3QaJy5pcm9uZmxvdy52MS5MaXN0Q29uc3VtZXJHcm91cHNSZXNwb25zZSIDkAIBEloKE1VwZGF0ZUNvbnN1bWVyR3JvdXASJy5pcm9uZmxvdy52MS5VcGRhdGVDb25zdW1lckdyb3VwUmVxdWVzdBoaLmlyb25mbG93LnYxLkNvbnN1bWVyR3JvdXASVgoTRGVsZXRlQ29uc3VtZXJHcm91cBInLmlyb25mbG93LnYxLkRlbGV0ZUNvbnN1bWVyR3JvdXBSZXF1ZXN0GhYuZ29vZ2xlLnByb3RvYnVmLkVtcHR5ElwKEUpvaW5Db25zdW1lckdyb3VwEiUuaXJvbmZsb3cudjEuSm9pbkNvbnN1bWVyR3JvdXBSZXF1ZXN0Gh4uaXJvbmZsb3cudjEuU3Vic2NyaXB0aW9uRXZlbnQwARJECgdQdWJsaXNoEhsuaXJvbmZsb3cudjEuUHVibGlzaFJlcXVlc3QaHC5pcm9uZmxvdy52MS5QdWJsaXNoUmVzcG9uc2USUgoKTGlzdFRvcGljcxIeLmlyb25mbG93LnYxLkxpc3RUb3BpY3NSZXF1ZXN0Gh8uaXJvbmZsb3cudjEuTGlzdFRvcGljc1Jlc3BvbnNlIgOQAgESWwoNR2V0VG9waWNTdGF0cxIhLmlyb25mbG93LnYxLkdldFRvcGljU3RhdHNSZXF1ZXN0GiIuaXJvbmZsb3cudjEuR2V0VG9waWNTdGF0c1Jlc3BvbnNlIgOQAgFCOlo4Z2l0aHViLmNvbS9zYWhpbmEvaXJvbmZsb3cvYXBpL2dvL2lyb25mbG93L3YxO2lyb25mbG93djFiBnByb3RvMw", [file_google_protobuf_empty, file_google_protobuf_field_mask, file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message ironflow.v1.EmitRequest
@@ -222,7 +222,9 @@ export const SubscribeOptionsSchema: GenMessage<SubscribeOptions> = /*@__PURE__*
  */
 export type SubscriptionEvent = Message<"ironflow.v1.SubscriptionEvent"> & {
   /**
-   * Subscription ID (if applicable)
+   * For consumer-group events (JoinConsumerGroup, and Subscribe with a consumer
+   * group), the consumer ID of the receiving member. A client sends it back as
+   * AckEventRequest.consumer_id.
    *
    * @generated from field: string subscription_id = 1;
    */
@@ -362,6 +364,75 @@ export const SubscriptionAckSchema: GenMessage<SubscriptionAck> = /*@__PURE__*/
   messageDesc(file_ironflow_v1_pubsub, 6);
 
 /**
+ * @generated from message ironflow.v1.AckEventRequest
+ */
+export type AckEventRequest = Message<"ironflow.v1.AckEventRequest"> & {
+  /**
+   * Namespace (default: "default"). Accepted for symmetry with
+   * JoinConsumerGroupRequest; the engine ignores it.
+   *
+   * @generated from field: string namespace = 1;
+   */
+  namespace: string;
+
+  /**
+   * Consumer group name.
+   *
+   * @generated from field: string group_name = 2;
+   */
+  groupName: string;
+
+  /**
+   * The subscription_id of the event being acknowledged. The server minted it
+   * for the member that received the event; no other value settles the event.
+   *
+   * @generated from field: string consumer_id = 3;
+   */
+  consumerId: string;
+
+  /**
+   * Event ID being acknowledged.
+   *
+   * @generated from field: string event_id = 4;
+   */
+  eventId: string;
+
+  /**
+   * Type of acknowledgment. ACK_TYPE_UNSPECIFIED is rejected.
+   *
+   * @generated from field: ironflow.v1.AckType ack_type = 5;
+   */
+  ackType: AckType;
+
+  /**
+   * Delay before redelivery, in milliseconds. NAK only.
+   *
+   * @generated from field: int32 redeliver_delay_ms = 6;
+   */
+  redeliverDelayMs: number;
+};
+
+/**
+ * Describes the message ironflow.v1.AckEventRequest.
+ * Use `create(AckEventRequestSchema)` to create a new message.
+ */
+export const AckEventRequestSchema: GenMessage<AckEventRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_pubsub, 7);
+
+/**
+ * @generated from message ironflow.v1.AckEventResponse
+ */
+export type AckEventResponse = Message<"ironflow.v1.AckEventResponse"> & {
+};
+
+/**
+ * Describes the message ironflow.v1.AckEventResponse.
+ * Use `create(AckEventResponseSchema)` to create a new message.
+ */
+export const AckEventResponseSchema: GenMessage<AckEventResponse> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_pubsub, 8);
+
+/**
  * @generated from message ironflow.v1.ConsumerGroup
  */
 export type ConsumerGroup = Message<"ironflow.v1.ConsumerGroup"> & {
@@ -476,7 +547,7 @@ export type ConsumerGroup = Message<"ironflow.v1.ConsumerGroup"> & {
  * Use `create(ConsumerGroupSchema)` to create a new message.
  */
 export const ConsumerGroupSchema: GenMessage<ConsumerGroup> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 7);
+  messageDesc(file_ironflow_v1_pubsub, 9);
 
 /**
  * @generated from message ironflow.v1.CreateConsumerGroupRequest
@@ -558,7 +629,7 @@ export type CreateConsumerGroupRequest = Message<"ironflow.v1.CreateConsumerGrou
  * Use `create(CreateConsumerGroupRequestSchema)` to create a new message.
  */
 export const CreateConsumerGroupRequestSchema: GenMessage<CreateConsumerGroupRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 8);
+  messageDesc(file_ironflow_v1_pubsub, 10);
 
 /**
  * @generated from message ironflow.v1.GetConsumerGroupRequest
@@ -584,7 +655,7 @@ export type GetConsumerGroupRequest = Message<"ironflow.v1.GetConsumerGroupReque
  * Use `create(GetConsumerGroupRequestSchema)` to create a new message.
  */
 export const GetConsumerGroupRequestSchema: GenMessage<GetConsumerGroupRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 9);
+  messageDesc(file_ironflow_v1_pubsub, 11);
 
 /**
  * @generated from message ironflow.v1.ListConsumerGroupsRequest
@@ -624,7 +695,7 @@ export type ListConsumerGroupsRequest = Message<"ironflow.v1.ListConsumerGroupsR
  * Use `create(ListConsumerGroupsRequestSchema)` to create a new message.
  */
 export const ListConsumerGroupsRequestSchema: GenMessage<ListConsumerGroupsRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 10);
+  messageDesc(file_ironflow_v1_pubsub, 12);
 
 /**
  * @generated from message ironflow.v1.ListConsumerGroupsResponse
@@ -657,7 +728,7 @@ export type ListConsumerGroupsResponse = Message<"ironflow.v1.ListConsumerGroups
  * Use `create(ListConsumerGroupsResponseSchema)` to create a new message.
  */
 export const ListConsumerGroupsResponseSchema: GenMessage<ListConsumerGroupsResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 11);
+  messageDesc(file_ironflow_v1_pubsub, 13);
 
 /**
  * @generated from message ironflow.v1.UpdateConsumerGroupRequest
@@ -686,7 +757,7 @@ export type UpdateConsumerGroupRequest = Message<"ironflow.v1.UpdateConsumerGrou
  * Use `create(UpdateConsumerGroupRequestSchema)` to create a new message.
  */
 export const UpdateConsumerGroupRequestSchema: GenMessage<UpdateConsumerGroupRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 12);
+  messageDesc(file_ironflow_v1_pubsub, 14);
 
 /**
  * @generated from message ironflow.v1.DeleteConsumerGroupRequest
@@ -712,7 +783,7 @@ export type DeleteConsumerGroupRequest = Message<"ironflow.v1.DeleteConsumerGrou
  * Use `create(DeleteConsumerGroupRequestSchema)` to create a new message.
  */
 export const DeleteConsumerGroupRequestSchema: GenMessage<DeleteConsumerGroupRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 13);
+  messageDesc(file_ironflow_v1_pubsub, 15);
 
 /**
  * @generated from message ironflow.v1.JoinConsumerGroupRequest
@@ -733,7 +804,9 @@ export type JoinConsumerGroupRequest = Message<"ironflow.v1.JoinConsumerGroupReq
   groupName: string;
 
   /**
-   * Optional consumer ID (auto-generated if empty)
+   * Optional label for the member, recorded as its client ID when client_id
+   * is empty. It is not the ack identity: the server mints that and reports
+   * it as subscription_id on every event.
    *
    * @generated from field: string consumer_id = 3;
    */
@@ -752,7 +825,7 @@ export type JoinConsumerGroupRequest = Message<"ironflow.v1.JoinConsumerGroupReq
  * Use `create(JoinConsumerGroupRequestSchema)` to create a new message.
  */
 export const JoinConsumerGroupRequestSchema: GenMessage<JoinConsumerGroupRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 14);
+  messageDesc(file_ironflow_v1_pubsub, 16);
 
 /**
  * @generated from message ironflow.v1.ServerCapabilities
@@ -785,7 +858,7 @@ export type ServerCapabilities = Message<"ironflow.v1.ServerCapabilities"> & {
  * Use `create(ServerCapabilitiesSchema)` to create a new message.
  */
 export const ServerCapabilitiesSchema: GenMessage<ServerCapabilities> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 15);
+  messageDesc(file_ironflow_v1_pubsub, 17);
 
 /**
  * @generated from message ironflow.v1.PublishRequest
@@ -828,7 +901,7 @@ export type PublishRequest = Message<"ironflow.v1.PublishRequest"> & {
  * Use `create(PublishRequestSchema)` to create a new message.
  */
 export const PublishRequestSchema: GenMessage<PublishRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 16);
+  messageDesc(file_ironflow_v1_pubsub, 18);
 
 /**
  * @generated from message ironflow.v1.PublishResponse
@@ -854,7 +927,7 @@ export type PublishResponse = Message<"ironflow.v1.PublishResponse"> & {
  * Use `create(PublishResponseSchema)` to create a new message.
  */
 export const PublishResponseSchema: GenMessage<PublishResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 17);
+  messageDesc(file_ironflow_v1_pubsub, 19);
 
 /**
  * @generated from message ironflow.v1.ListTopicsRequest
@@ -867,7 +940,7 @@ export type ListTopicsRequest = Message<"ironflow.v1.ListTopicsRequest"> & {
  * Use `create(ListTopicsRequestSchema)` to create a new message.
  */
 export const ListTopicsRequestSchema: GenMessage<ListTopicsRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 18);
+  messageDesc(file_ironflow_v1_pubsub, 20);
 
 /**
  * @generated from message ironflow.v1.ListTopicsResponse
@@ -884,7 +957,7 @@ export type ListTopicsResponse = Message<"ironflow.v1.ListTopicsResponse"> & {
  * Use `create(ListTopicsResponseSchema)` to create a new message.
  */
 export const ListTopicsResponseSchema: GenMessage<ListTopicsResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 19);
+  messageDesc(file_ironflow_v1_pubsub, 21);
 
 /**
  * @generated from message ironflow.v1.TopicInfo
@@ -931,7 +1004,7 @@ export type TopicInfo = Message<"ironflow.v1.TopicInfo"> & {
  * Use `create(TopicInfoSchema)` to create a new message.
  */
 export const TopicInfoSchema: GenMessage<TopicInfo> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 20);
+  messageDesc(file_ironflow_v1_pubsub, 22);
 
 /**
  * @generated from message ironflow.v1.GetTopicStatsRequest
@@ -950,7 +1023,7 @@ export type GetTopicStatsRequest = Message<"ironflow.v1.GetTopicStatsRequest"> &
  * Use `create(GetTopicStatsRequestSchema)` to create a new message.
  */
 export const GetTopicStatsRequestSchema: GenMessage<GetTopicStatsRequest> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 21);
+  messageDesc(file_ironflow_v1_pubsub, 23);
 
 /**
  * @generated from message ironflow.v1.GetTopicStatsResponse
@@ -1004,7 +1077,7 @@ export type GetTopicStatsResponse = Message<"ironflow.v1.GetTopicStatsResponse">
  * Use `create(GetTopicStatsResponseSchema)` to create a new message.
  */
 export const GetTopicStatsResponseSchema: GenMessage<GetTopicStatsResponse> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_pubsub, 22);
+  messageDesc(file_ironflow_v1_pubsub, 24);
 
 /**
  * @generated from enum ironflow.v1.AckMode
@@ -1168,6 +1241,19 @@ export const PubSubService: GenService<{
     methodKind: "bidi_streaming";
     input: typeof SubscriptionAckSchema;
     output: typeof SubscriptionEventSchema;
+  },
+  /**
+   * AckEvent acknowledges, rejects for redelivery, or terminates one event that
+   * a MANUAL consumer group delivered. Only consumer groups hold events for
+   * acknowledgment. Acking an event that is not in flight succeeds, so a retry
+   * is safe.
+   *
+   * @generated from rpc ironflow.v1.PubSubService.AckEvent
+   */
+  ackEvent: {
+    methodKind: "unary";
+    input: typeof AckEventRequestSchema;
+    output: typeof AckEventResponseSchema;
   },
   /**
    * Consumer Group Management

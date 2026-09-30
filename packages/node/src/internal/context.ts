@@ -96,6 +96,11 @@ export class ExecutionContext {
    * steps that only ever lived in the terminal update body. Unset in push mode.
    */
   onStepRecorded?: () => void;
+  /**
+   * Called with each recorded step. The streaming worker uses it to write step
+   * rows as they finish (#2413). Unset elsewhere.
+   */
+  onStepResult?: (step: StepResult) => void;
 
   constructor(request: PushRequest, logger?: Logger, eventDefinitions?: EventDefinitionRegistry, stepTimeout?: string, serverUrl?: string, apiKey?: string) {
     this.runId = request.run_id;
@@ -282,6 +287,7 @@ export class ExecutionContext {
   recordStep(step: StepResult): void {
     this.executedSteps.push(step);
     this.onStepRecorded?.();
+    this.onStepResult?.(step);
   }
 
   /**

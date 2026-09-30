@@ -49,6 +49,7 @@ export { CODE_HASH_META_KEY, functionCodeHash };
 /** Job-poll retry ladder: 5s, 10s, 20s … capped, so an engine that is down is not a log firehose. */
 const POLL_RETRY_BASE_MS = 5000;
 const POLL_RETRY_MAX_MS = 60_000;
+const DRAIN_TIMEOUT_MS = 30_000;
 
 /**
  * Worker lifecycle states
@@ -110,6 +111,15 @@ class IronflowWorker implements Worker {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private abortController?: AbortController;
   private projectionRunners: ProjectionRunner[] = [];
+  private drainPromise?: Promise<void>;
+  private readonly handleSignal = (signal: NodeJS.Signals): void => {
+    void this.drain().then(() => {
+      // Our listener replaced Node's default exit-on-signal. A handler cancelled
+      // at the drain deadline cannot be killed and keeps the event loop alive,
+      // so exit here as Go's Run does — unless the app listens too and owns shutdown.
+      if (process.listenerCount(signal) === 0) process.exit();
+    });
+  };
 
   constructor(config: WorkerConfig) {
     this.config = {
@@ -160,6 +170,8 @@ class IronflowWorker implements Worker {
 
     this.state = "connecting";
     this.abortController = new AbortController();
+    process.once("SIGINT", this.handleSignal);
+    process.once("SIGTERM", this.handleSignal);
 
     this.logger.info(
       `Starting worker ${this.workerId} with ${this.functionMap.size} functions`
@@ -167,7 +179,7 @@ class IronflowWorker implements Worker {
 
     // Connect loop with auto-reconnect
     // Use explicit type annotation to allow state changes from other methods
-    while ((this.state as WorkerState) !== "stopped") {
+    while ((this.state as WorkerState) !== "stopped" && (this.state as WorkerState) !== "draining") {
       try {
         await this.connect();
       } catch (error) {
@@ -193,29 +205,35 @@ class IronflowWorker implements Worker {
       }
     }
 
+    await this.drainPromise;
+
     this.logger.info("Worker stopped");
   }
 
   /**
    * Gracefully drain and stop
    */
-  async drain(): Promise<void> {
+  drain(): Promise<void> {
     if (this.state === "stopped" || this.state === "idle") {
-      return;
+      return Promise.resolve();
     }
+    if (this.drainPromise) return this.drainPromise;
 
     this.logger.info("Draining worker...");
     this.state = "draining";
 
-    // Wait for active jobs to complete
-    while (this.activeJobs.size > 0) {
-      this.logger.info(
-        `Waiting for ${this.activeJobs.size} jobs to complete...`
-      );
-      await this.sleep(1000);
-    }
-
-    this.stop();
+    this.drainPromise = (async () => {
+      const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+      while (this.activeJobs.size > 0 && Date.now() < deadline) {
+        this.logger.info(`Waiting for ${this.activeJobs.size} jobs to complete...`);
+        await this.sleep(Math.min(1000, deadline - Date.now()));
+      }
+      if (this.activeJobs.size > 0) {
+        this.logger.warn(`Drain deadline reached; cancelling ${this.activeJobs.size} active jobs`);
+      }
+      this.stop();
+    })();
+    return this.drainPromise;
   }
 
   /**
@@ -223,6 +241,8 @@ class IronflowWorker implements Worker {
    */
   stop(): void {
     this.state = "stopped";
+    process.removeListener("SIGINT", this.handleSignal);
+    process.removeListener("SIGTERM", this.handleSignal);
     this.abortController?.abort();
 
     if (this.heartbeatTimer) {
@@ -254,6 +274,7 @@ class IronflowWorker implements Worker {
    * Establish connection to the Ironflow server
    */
   private async connect(): Promise<void> {
+    if (this.state === "draining" || this.state === "stopped") return;
     this.state = "connecting";
 
     // Clean up from previous connection (e.g. after server restart)
@@ -276,9 +297,11 @@ class IronflowWorker implements Worker {
       logger: this.logger,
       signal: this.abortController?.signal,
     });
+    if (this.state !== "connecting") return;
 
     // Register worker
     await this.registerWorker(baseUrl);
+    if (this.state !== "connecting") return;
 
     this.state = "connected";
     this.logger.info(`Connected to server at ${this.config.serverUrl}`);
@@ -437,6 +460,9 @@ class IronflowWorker implements Worker {
 
         let processedAny = false;
         for (const rawJob of rawJobs) {
+          // Unstarted assignments are dropped; their leases expire and the
+          // server reclaims them, delaying those runs by one lease timeout.
+          if (this.state !== "connected") break;
           const result = JobAssignmentSchema.safeParse(rawJob);
           if (!result.success) {
             const issues = result.error.issues
@@ -549,8 +575,10 @@ class IronflowWorker implements Worker {
       steps: job.completed_steps.map((s) => ({
         id: s.step_id,
         name: s.name,
-        status: "completed" as const,
+        status: s.status ?? ("completed" as const),
         output: s.output,
+        // CompletedStep.error is a string; getFailedStep parses it back.
+        error: s.error === undefined ? undefined : JSON.stringify(s.error),
       })),
       resume: undefined,
     }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
@@ -562,6 +590,7 @@ class IronflowWorker implements Worker {
     // record and step event.
     const checkpointer = this.startCheckpointer(baseUrl, job, ctx, fence);
     ctx.onStepRecorded = checkpointer.schedule;
+    signal.addEventListener("abort", checkpointer.cancel, { once: true });
 
     const step = createStepClient(ctx);
 
@@ -596,11 +625,8 @@ class IronflowWorker implements Worker {
       }
 
       if (isYieldSignal(error)) {
-        // Flush before pausing: the yield update carries no steps at all, so a
-        // buffered step would be lost across the pause and re-executed on resume.
-        await checkpointer.flush();
-        await checkpointer.finish();
-        await this.sendStepYielded(baseUrl, job.job_id, error.yieldInfo, fence);
+        const tail = await checkpointer.finish();
+        await this.sendStepYielded(baseUrl, job.job_id, error.yieldInfo, tail.steps, fence, tail.offset);
         return;
       }
 
@@ -622,6 +648,11 @@ class IronflowWorker implements Worker {
       return;
     }
 
+    if (signal.aborted) {
+      await checkpointer.finish();
+      return;
+    }
+
     // Handler succeeded — send completion with the steps not already checkpointed.
     const tail = await checkpointer.finish();
     await this.sendJobCompleted(
@@ -638,9 +669,8 @@ class IronflowWorker implements Worker {
    * Start a debounced step checkpointer for one job (#1670).
    *
    * A pull worker otherwise reports step results only in the terminal update
-   * body, so `kill -9` (and, since nothing wires `drain()` to a signal, Ctrl-C
-   * too) discards every completed step and the reclaimed run re-executes all of
-   * them. Each flush PUTs `status: "progress"`, which the engine persists
+   * body, so `kill -9` (or a drain that hits its deadline) discards every
+   * completed step and the reclaimed run re-executes all of them. Each flush PUTs `status: "progress"`, which the engine persists
    * without transitioning the run or releasing the capacity lease — it doubles
    * as a lease heartbeat.
    *
@@ -656,6 +686,7 @@ class IronflowWorker implements Worker {
   ): {
     schedule: () => void;
     flush: () => Promise<void>;
+    cancel: () => void;
     finish: () => Promise<{ steps: StepResult[]; offset: number }>;
   } {
     const intervalMs = this.config.checkpointInterval ?? DEFAULT_WORKER.CHECKPOINT_INTERVAL_MS;
@@ -751,6 +782,12 @@ class IronflowWorker implements Worker {
         timer.unref?.();
       },
       flush,
+      cancel: () => {
+        if (timer) clearTimeout(timer);
+        timer = undefined;
+        stopped = true;
+        ctx.onStepRecorded = undefined;
+      },
       finish: async () => {
         if (timer) {
           clearTimeout(timer);
@@ -888,11 +925,15 @@ class IronflowWorker implements Worker {
     baseUrl: string,
     jobId: string,
     yieldInfo: YieldInfo,
-    fence?: { executionSeq?: number; leaseToken?: string }
+    steps: StepResult[],
+    fence?: { executionSeq?: number; leaseToken?: string },
+    stepOffset = 0
   ): Promise<void> {
     const body: Record<string, unknown> = {
       status: "yielded",
       yield: yieldInfo,
+      steps,
+      step_offset: stepOffset,
     };
     this.stampFence(body, fence);
     await this.putJobUpdate(baseUrl, jobId, body);

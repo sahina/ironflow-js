@@ -1063,6 +1063,98 @@ describe("ProjectionRunner", () => {
       const headers = streamCall![1].headers;
       expect(headers["Accept"]).toBeUndefined();
     });
+
+    it(
+      "reconnects and replays exactly once after a failed flush (#2404)",
+      async () => {
+        const events = [
+          { id: "evt-1", name: "order.created", data: {}, seq: 1, timestamp: "2025-01-01T00:00:00Z" },
+          { id: "evt-2", name: "order.created", data: {}, seq: 2, timestamp: "2025-01-01T00:00:01Z" },
+          { id: "evt-3", name: "order.created", data: {}, seq: 3, timestamp: "2025-01-01T00:00:02Z" },
+        ];
+
+        /** A stream that delivers the three events, then holds the read pending until aborted. */
+        function makeHoldOpenStream(signal: AbortSignal): ReadableStream<Uint8Array> {
+          return new ReadableStream({
+            start(controller) {
+              for (const e of events) {
+                controller.enqueue(buildEnvelope(JSON.stringify(e)));
+              }
+              signal.addEventListener(
+                "abort",
+                () => {
+                  try {
+                    controller.error(new DOMException("Aborted", "AbortError"));
+                  } catch {
+                    /* already closed/errored */
+                  }
+                },
+                { once: true }
+              );
+            },
+          });
+        }
+
+        let streamCallCount = 0;
+        let saveCallCount = 0;
+        mockFetch.mockImplementation(async (url: string, opts: any) => {
+          const u = String(url);
+          if (u.includes("RegisterProjection")) {
+            return { ok: true, status: 200 };
+          }
+          if (u.includes("GetProjection")) {
+            return { ok: true, status: 200, json: () => Promise.resolve({}) };
+          }
+          if (u.includes("StreamProjectionEvents")) {
+            streamCallCount++;
+            if (streamCallCount === 1) {
+              return { ok: true, status: 200, body: makeHoldOpenStream(opts.signal) };
+            }
+            return {
+              ok: true,
+              status: 200,
+              body: makeStream(
+                buildEnvelope(JSON.stringify(events[0])),
+                buildEnvelope(JSON.stringify(events[1])),
+                buildEnvelope(JSON.stringify(events[2])),
+                emptyTrailer,
+              ),
+            };
+          }
+          if (u.includes("SaveProjectionState")) {
+            saveCallCount++;
+            if (saveCallCount === 1) {
+              return { ok: false, status: 500, text: () => Promise.resolve("boom") };
+            }
+            return { ok: true, status: 200 };
+          }
+          throw new Error(`unexpected fetch: ${u}`);
+        });
+
+        const ac = new AbortController();
+        const projection = createManagedProjection({
+          batchSize: 3,
+          handler: (s: any) => ({ count: (s.count ?? 0) + 1 }),
+          initialState: () => ({}),
+        });
+        const config = createRunnerConfig({ signal: ac.signal, projection });
+        const runner = createProjectionRunner(config);
+
+        const p = runner.startStreaming();
+        await vi.waitFor(() => expect(saveCallCount).toBeGreaterThanOrEqual(2), { timeout: 5000 });
+        ac.abort();
+        await p.catch(() => {});
+
+        // Reconnected: the stream endpoint was fetched twice.
+        expect(mockFetch.mock.calls.filter((c) => String(c[0]).includes("StreamProjectionEvents")).length).toBe(2);
+        // The successful save carries count 3 (not 6): failed-batch state was discarded.
+        const saves = mockFetch.mock.calls.filter((c) => String(c[0]).includes("SaveProjectionState"));
+        const lastBody = JSON.parse(assertDefined(saves[saves.length - 1])[1].body);
+        expect(lastBody.state).toEqual({ count: 3 });
+        expect(lastBody.lastEventSeq).toBe(3);
+      },
+      8000
+    );
   });
 
   // Reconnect CADENCE, which every other streaming test above is blind to by construction: they

@@ -307,6 +307,10 @@ export const JobCompletedStepSchema = z.object({
   step_id: z.string(),
   name: z.string(),
   output: z.unknown(),
+  // Set only on a failed invoke row, so a resumed worker raises the child's
+  // error instead of invoking it again (#2385).
+  status: z.enum(["completed", "failed"]).optional(),
+  error: z.unknown().optional(),
 });
 
 export const JobEventSchema = z.object({

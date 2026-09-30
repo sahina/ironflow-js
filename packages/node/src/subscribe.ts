@@ -465,7 +465,12 @@ export class SubscriptionClient {
     this.ws.send(JSON.stringify(request));
   }
 
-  private sendAck(eventId: string, ackType: AckType, delay?: number): void {
+  private sendAck(
+    eventId: string,
+    ackType: AckType,
+    delay?: number,
+    subscriptionId?: string,
+  ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error("Not connected");
     }
@@ -474,6 +479,7 @@ export class SubscriptionClient {
       type: "ack",
       eventId,
       ackType,
+      ...(subscriptionId !== undefined ? { subscriptionId } : {}),
     };
 
     if (delay !== undefined && ackType === "nak") {
@@ -648,15 +654,15 @@ export class SubscriptionClient {
         connectionState: this._connectionState,
         unsubscribe: () => this.unsubscribeByPattern(pattern),
         ack: (eventId: string) => {
-          this.sendAck(eventId, "ack");
+          this.sendAck(eventId, "ack", undefined, currentSubscriptionId());
           return Promise.resolve();
         },
         nak: (eventId: string, delay?: number) => {
-          this.sendAck(eventId, "nak", delay);
+          this.sendAck(eventId, "nak", delay, currentSubscriptionId());
           return Promise.resolve();
         },
         term: (eventId: string) => {
-          this.sendAck(eventId, "term");
+          this.sendAck(eventId, "term", undefined, currentSubscriptionId());
           return Promise.resolve();
         },
       };

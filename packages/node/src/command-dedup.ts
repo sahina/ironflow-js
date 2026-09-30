@@ -1,8 +1,12 @@
 import { IronflowError } from "@ironflow/core";
+import type { KVEntry } from "@ironflow/core";
 import type { KVClient } from "./kv.js";
 
 /** Default TTL for command dedup entries: 7 days. Pass to CommandDedupOptions.ttlSeconds. */
 export const DEFAULT_COMMAND_DEDUP_TTL_SECONDS = 604800;
+
+/** Bound on create-write / read-back rounds when the winner keeps releasing between them. */
+const CLAIM_ATTEMPTS = 3;
 
 export interface CommandDedupOptions {
   /** TTL in seconds. Default: 604800 (7 days). Pass 0 for no expiry. */
@@ -83,29 +87,49 @@ export class CommandDedup<T> {
    * (proceed to run the handler). Returns the prior T if another caller
    * already claimed this commandId (return it as the deduplicated response).
    *
+   * If the winner releases between the create and the read-back (404), the claim is
+   * tried again, up to 3 times. After 3 lost rounds this throws an IronflowError with
+   * code `COMMAND_DEDUP_RACE`.
+   *
+   * If the create fails with an error other than 412, the claim state is unknown: the
+   * write may have committed, and it is not retried. Pass `isOwner` so a later retry
+   * can recognize its own orphaned claim: put a token that stays the same across
+   * retries in the claim and compare it. `isOwner` runs only on a prior entry. It must
+   * return false for a finalized result (keep the token out of the result, or check a
+   * status field), or a finished command replays. Run one retry lineage at a time: two
+   * concurrent callers sharing a token both win.
+   *
    * The returned T may be the initial claim if the winner has not yet called
    * finalize(). Design T with optional fields for data only available after
    * finalize (e.g. `entityVersion?: number`).
    */
-  async tryClaim(commandId: string, claim: T): Promise<T | null> {
+  async tryClaim(commandId: string, claim: T, isOwner?: (prior: T) => boolean): Promise<T | null> {
     await this.ensureBucket();
     const key = encodeKey(commandId);
     const bucket = this.kvClient.bucket(this.bucketName);
-    try {
-      await bucket.create(key, encodeValue(claim));
-      return null; // winner
-    } catch (e) {
-      if (!isHTTPCode(e, "HTTP_412")) throw e;
-      // loser — read winner's entry
+    for (let attempt = 0; attempt < CLAIM_ATTEMPTS; attempt++) {
       try {
-        const entry = await bucket.get(key);
-        if (entry?.value == null) return null;
-        return decodeKVValue<T>(entry.value as string);
+        await bucket.create(key, encodeValue(claim));
+        return null; // winner
+      } catch (e) {
+        if (!isHTTPCode(e, "HTTP_412")) throw e;
+      }
+      // loser — read winner's entry
+      let entry: KVEntry;
+      try {
+        entry = await bucket.get(key);
       } catch (readErr) {
-        if (isHTTPCode(readErr, "HTTP_404")) return null; // concurrent delete race
+        if (isHTTPCode(readErr, "HTTP_404")) continue; // winner released between our write and read: claim again
         throw readErr;
       }
+      if (entry.value == null) continue;
+      const prior = decodeKVValue<T>(entry.value as string);
+      return isOwner?.(prior) ? null : prior;
     }
+    throw new IronflowError(
+      `command dedup: claim for "${commandId}" lost the race ${CLAIM_ATTEMPTS} times`,
+      { code: "COMMAND_DEDUP_RACE" },
+    );
   }
 
   /**

@@ -11,7 +11,7 @@ vi.stubGlobal("fetch", mockFetch);
 
 const noopLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-type Update = { status: string; steps?: Array<{ id: string }>; step_offset?: number };
+type Update = { status: string; steps?: Array<{ id: string; name: string; output: unknown }>; step_offset?: number };
 
 /**
  * Drive the real REST worker through one fenced assignment whose handler runs
@@ -26,6 +26,12 @@ async function runOneJob(opts: {
   sequenceBase?: number;
   /** Make the handler throw after the second step. */
   throwAfterTwo?: boolean;
+  yieldAfterSteps?: boolean;
+  stepCount?: number;
+  completedSteps?: Array<{ step_id: string; name: string; output: unknown; status?: string; error?: unknown }>;
+  onStepBody?: () => void;
+  /** Replaces the default three-step handler. */
+  handler?: (ctx: FunctionContext) => Promise<unknown>;
 }): Promise<Update[]> {
   const updates: Update[] = [];
   let served = false;
@@ -51,7 +57,7 @@ async function runOneJob(opts: {
               {
                 job_id: "run-1", run_id: "run-1", function_id: "fn", attempt: 1,
                 event: { id: "e1", name: "e", data: {}, timestamp: new Date().toISOString() },
-                completed_steps: Array.from({ length: opts.memoized ?? 0 }, (_, i) => ({
+                completed_steps: opts.completedSteps ?? Array.from({ length: opts.memoized ?? 0 }, (_, i) => ({
                   step_id: `memo-${i}`, name: `memo-${i}`, output: {},
                 })),
                 step_sequence_base: opts.sequenceBase,
@@ -80,19 +86,23 @@ async function runOneJob(opts: {
 
   const fn = {
     config: { id: "fn" },
-    handler: async (ctx: FunctionContext) => {
+    handler: opts.handler ?? (async (ctx: FunctionContext) => {
       let done = 0;
-      for (const name of ["one", "two", "three"]) {
-        await ctx.step.run(name, async () => ({ name }));
+      for (const name of Array.from({ length: opts.stepCount ?? 3 }, (_, i) => `step-${i}`)) {
+        await ctx.step.run(name, async () => {
+          opts.onStepBody?.();
+          return { name };
+        });
         done++;
         // Yield long enough for the debounce timer to fire between steps.
-        await new Promise((r) => setTimeout(r, 30));
+        if (opts.stepCount === undefined) await new Promise((r) => setTimeout(r, 30));
         if (opts.throwAfterTwo && done === 2) {
           throw new Error("boom");
         }
       }
+      if (opts.yieldAfterSteps) await ctx.step.sleep("pause", "1h");
       return { ok: true };
-    },
+    }),
   } as unknown as Parameters<typeof createWorker>[0]["functions"][number];
 
   const worker = createWorker({
@@ -241,5 +251,63 @@ describe("checkpoint offsets and failure handling (#1670)", () => {
     expect(updates.filter((u) => u.status === "progress").length).toBeGreaterThan(1);
     const terminal = updates.filter((u) => u.status !== "progress");
     expect(terminal[0]!.steps).toHaveLength(3);
+  });
+});
+
+describe("yield checkpoint tails (#2380)", () => {
+  beforeEach(() => mockFetch.mockReset());
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends rejected checkpoint steps on yield and skips their bodies on replay", async () => {
+    let bodyRuns = 0;
+    const first = await runOneJob({
+      checkpointInterval: 5, progressStatus: 500, sequenceBase: 7,
+      yieldAfterSteps: true, onStepBody: () => bodyRuns++,
+    });
+    const yielded = first.find((u) => u.status === "yielded");
+    expect(first.some((u) => u.status === "progress")).toBe(true);
+    expect(yielded?.steps).toHaveLength(3);
+    expect(yielded?.step_offset).toBe(7);
+
+    const replay = await runOneJob({
+      checkpointInterval: 0, yieldAfterSteps: true, onStepBody: () => bodyRuns++,
+      completedSteps: yielded!.steps!.map((s) => ({ step_id: s.id, name: s.name, output: s.output })),
+    });
+    expect(replay.find((u) => u.status === "yielded")?.steps).toEqual([]);
+    expect(bodyRuns).toBe(3);
+  });
+
+  it("sends the full tail above the 500-step checkpoint limit on yield", async () => {
+    let bodyRuns = 0;
+    const updates = await runOneJob({
+      checkpointInterval: 0, stepCount: 501, yieldAfterSteps: true, sequenceBase: 9,
+      onStepBody: () => bodyRuns++,
+    });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.status).toBe("yielded");
+    expect(updates[0]!.steps).toHaveLength(501);
+    expect(updates[0]!.step_offset).toBe(9);
+
+    await runOneJob({
+      checkpointInterval: 0, stepCount: 501, yieldAfterSteps: true,
+      onStepBody: () => bodyRuns++,
+      completedSteps: updates[0]!.steps!.map((s) => ({ step_id: s.id, name: s.name, output: s.output })),
+    });
+    expect(bodyRuns).toBe(501);
+  });
+});
+
+// A failed invoke row in completed_steps makes step.invoke raise the child's
+// error; yielding the invoke again would start a second child (#2385).
+describe("failed invoke from poll", () => {
+  it("fails the job instead of re-yielding the invoke", async () => {
+    const updates = await runOneJob({
+      completedSteps: [{
+        step_id: "run-1:child:0", name: "run-1:child:0", output: null,
+        status: "failed", error: { cause: "child boom", child_run_id: "r2" },
+      }],
+      handler: async (ctx) => ctx.step.invoke("child", {}),
+    });
+    expect(updates.at(-1)?.status).toBe("failed");
   });
 });

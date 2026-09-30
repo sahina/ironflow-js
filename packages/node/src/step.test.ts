@@ -1234,6 +1234,80 @@ function createTestContext(overrides?: Partial<PushRequest>, options?: { serverU
 }
 
 describe("createStepClient (real implementation)", () => {
+  describe("step.parallel", () => {
+    it("throws the lowest-index error after active branches fail out of order", async () => {
+      const step = createRealStepClient(createTestContext());
+      let startBranch0!: () => void;
+      const branch0Started = new Promise<void>((resolve) => {
+        startBranch0 = resolve;
+      });
+
+      await expect(
+        step.parallel("ordered-errors", [
+          async () => {
+            startBranch0();
+            await new Promise((resolve) => setTimeout(resolve, 20));
+            throw new Error("branch 0");
+          },
+          async () => {
+            await branch0Started;
+            throw new Error("branch 1");
+          },
+        ])
+      ).rejects.toThrow("branch 0");
+    });
+
+    it("throws the lowest-index yield after branches yield out of order", async () => {
+      const step = createRealStepClient(createTestContext());
+      let yieldBranch1!: () => void;
+      const branch1Yielded = new Promise<void>((resolve) => {
+        yieldBranch1 = resolve;
+      });
+
+      try {
+        await step.parallel("ordered-yields", [
+          async (branchStep) => {
+            await branch1Yielded;
+            await branchStep.sleep("wait", "1h");
+            return 0;
+          },
+          async (branchStep) => {
+            try {
+              await branchStep.sleep("wait", "1h");
+            } finally {
+              setTimeout(yieldBranch1, 0);
+            }
+            return 1;
+          },
+        ]);
+        expect.fail("Should have thrown");
+      } catch (error) {
+        expect(realIsYieldSignal(error)).toBe(true);
+        expect((error as RealYieldSignal).yieldInfo.step_id).toBe(
+          "run_test_123:ordered-yields:0:wait:0"
+        );
+      }
+    });
+
+    it("keeps branch step IDs tied to input indexes when completion order changes", async () => {
+      const ctx = createTestContext();
+      const step = createRealStepClient(ctx);
+
+      await step.parallel("stable-ids", [
+        async (branchStep) => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return branchStep.run("work", async () => 0);
+        },
+        async (branchStep) => branchStep.run("work", async () => 1),
+      ]);
+
+      expect(ctx.getExecutedSteps().map(({ id }) => id).sort()).toEqual([
+        "run_test_123:stable-ids:0:work:0",
+        "run_test_123:stable-ids:1:work:0",
+      ]);
+    });
+  });
+
   describe("step.run", () => {
     it("should execute and return result", async () => {
       const ctx = createTestContext();

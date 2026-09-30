@@ -53,8 +53,8 @@ export interface Transport {
   /** Unsubscribe from a subscription */
   unsubscribe(subscriptionId: string): void;
 
-  /** Send acknowledgment for an event */
-  ack(eventId: string, type: AckType, delay?: number): Promise<void>;
+  /** Send acknowledgment for an event. `subscriptionId` names the group subscription that received it. */
+  ack(eventId: string, type: AckType, delay?: number, subscriptionId?: string): Promise<void>;
 
   /** Set callbacks */
   setCallbacks(callbacks: TransportCallbacks): void;

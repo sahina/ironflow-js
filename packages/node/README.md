@@ -136,7 +136,7 @@ All fields on the config object:
 | Field | Type | Description |
 |-------|------|-------------|
 | `limit` | `number` | Maximum concurrent executions. |
-| `key` | `string` | JSON path for grouping (e.g., `"event.data.customerId"`). |
+| `key` | `string` | Path into the event `data` payload for grouping (e.g., `"customerId"`). |
 
 ### Full config example
 
@@ -152,7 +152,7 @@ const processOrder = createFunction(
     ],
     retry: { maxAttempts: 5, initialDelayMs: 2000, backoffFactor: 3 },
     timeout: 300000,
-    concurrency: { limit: 10, key: 'event.data.customerId' },
+    concurrency: { limit: 10, key: 'customerId' }, // path into event.data
     mode: 'pull',
     actorKey: 'event.data.customerId',
     schema: OrderSchema,
@@ -607,7 +607,7 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | Method | Description |
 |--------|-------------|
 | `start()` | Start the worker. Blocks until stopped. Auto-reconnects on failure. |
-| `drain()` | Gracefully drain: stop accepting new jobs, wait for active jobs to complete, then stop. |
+| `drain()` | Stop polling, wait up to 30 seconds for active jobs, then cancel the remainder. Pull workers also drain on SIGINT and SIGTERM, then exit the process unless your app also listens for that signal. |
 | `stop()` | Force stop immediately. Cancels all active jobs. |
 
 ```typescript
@@ -624,12 +624,7 @@ const worker = createWorker({
   apiKey: process.env.IRONFLOW_API_KEY,
 });
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  await worker.drain();
-  process.exit(0);
-});
-
+// The pull worker drains automatically on SIGINT and SIGTERM, then exits.
 await worker.start();
 ```
 
@@ -964,7 +959,7 @@ Server health check. Returns the status string.
 
 ```typescript
 const status = await client.health();
-console.log(status); // "ok"
+console.log(status); // "healthy"
 ```
 
 ### publish(topic, data, options?)
@@ -1207,6 +1202,20 @@ try {
   throw err;
 }
 ```
+
+`tryClaim` retries up to 3 times when the winner releases between your write and read, then throws `IronflowError` with code `COMMAND_DEDUP_RACE`.
+
+To let a retry recognize its own orphaned claim, put a token that stays the same across retries in the claim and pass `isOwner` as the third argument:
+
+```typescript
+const prior = await dedup.tryClaim(
+  commandId,
+  { token, status: 'claimed' },
+  (p) => p.token === token && p.status === 'claimed',
+);
+```
+
+`isOwner` runs only on a prior entry. It must return false for a finalized result, or a finished command replays. Run one retry lineage at a time: two concurrent callers with the same token both win.
 
 ---
 

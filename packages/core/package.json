@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/core",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "description": "Core types, schemas, and protocol definitions for Ironflow SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -50,8 +50,8 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@bufbuild/protobuf": "^2.14.1",
-    "@connectrpc/connect": "^2.1.2"
+    "@bufbuild/protobuf": "^2.15.0",
+    "@connectrpc/connect": "^2.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",

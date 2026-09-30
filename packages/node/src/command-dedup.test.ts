@@ -36,6 +36,11 @@ function makeDedup<T>(ttlSeconds = 604800) {
   return new CommandDedup<T>(kv, "test-bucket", ttlSeconds);
 }
 
+const bucketOk = () =>
+  mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" });
+const putCalls = () =>
+  vi.mocked(fetch).mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT");
+
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
 });
@@ -115,15 +120,88 @@ describe("CommandDedup.tryClaim", () => {
     expect(result).toEqual(stored);
   });
 
-  it("loser: prior missing (404 on get) → returns null", async () => {
+  it("loser: winner released (404 on get) → claims again and wins", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(bucketOk())
       .mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }))
-      .mockResolvedValueOnce(mockResponse(404, { error: "key not found" }));
+      .mockResolvedValueOnce(mockResponse(404, { error: "key not found" }))
+      .mockResolvedValueOnce(mockResponse(201, { revision: 2 }));
 
-    const dedup = makeDedup();
-    const result = await dedup.tryClaim("cmd-1", {});
-    expect(result).toBeNull();
+    await expect(makeDedup().tryClaim("cmd-1", {})).resolves.toBeNull();
+    expect(putCalls()).toHaveLength(2);
+  });
+
+  it("loser: 412 then a read-back entry with no value → counts as a lost round and claims again", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(bucketOk())
+      .mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }))
+      .mockResolvedValueOnce(
+        mockResponse(200, { key: "cmd-1", revision: 1, operation: "put", created_at: "2026-01-01T00:00:00Z" }),
+      )
+      .mockResolvedValueOnce(mockResponse(201, { revision: 2 }));
+
+    await expect(makeDedup().tryClaim("cmd-1", {})).resolves.toBeNull();
+    expect(putCalls()).toHaveLength(2);
+  });
+
+  it("three lost rounds → throws COMMAND_DEDUP_RACE, never returns null", async () => {
+    const mock = vi.mocked(fetch).mockResolvedValueOnce(bucketOk());
+    for (let i = 0; i < 3; i++) {
+      mock
+        .mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }))
+        .mockResolvedValueOnce(mockResponse(404, { error: "key not found" }));
+    }
+
+    const err = await makeDedup().tryClaim("cmd-1", {}).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(IronflowError);
+    expect((err as IronflowError).code).toBe("COMMAND_DEDUP_RACE");
+    expect((err as IronflowError).message).toContain("cmd-1");
+    expect((err as IronflowError).message).toContain("3");
+    expect(putCalls()).toHaveLength(3);
+  });
+
+  it("read-back error other than 404 → throws without looping", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(bucketOk())
+      .mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }))
+      .mockResolvedValueOnce(mockResponse(403, { error: "forbidden" }));
+
+    await expect(makeDedup().tryClaim("cmd-1", {})).rejects.toBeInstanceOf(IronflowError);
+    expect(putCalls()).toHaveLength(1);
+  });
+
+  describe("isOwner", () => {
+    type Claim = { token: string; status: string };
+    const owns = (p: Claim) => p.token === "t1" && p.status === "claimed";
+
+    async function claimWithPrior(prior: Claim, isOwner?: (p: Claim) => boolean) {
+      vi.mocked(fetch)
+        .mockResolvedValueOnce(bucketOk())
+        .mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }))
+        .mockResolvedValueOnce(mockResponse(200, kvEntry("cmd-1", prior)));
+      return makeDedup<Claim>().tryClaim("cmd-1", { token: "t1", status: "claimed" }, isOwner);
+    }
+
+    it("own orphaned claim → returns null (caller wins)", async () => {
+      await expect(claimWithPrior({ token: "t1", status: "claimed" }, owns)).resolves.toBeNull();
+    });
+
+    it("another caller's claim → returns the prior", async () => {
+      const prior = { token: "t2", status: "claimed" };
+      await expect(claimWithPrior(prior, owns)).resolves.toEqual(prior);
+    });
+
+    it("own finalized result → returns it (no replay)", async () => {
+      const done = { token: "t1", status: "done" };
+      await expect(claimWithPrior(done, owns)).resolves.toEqual(done);
+    });
+
+    it("not called when the write wins", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(bucketOk()).mockResolvedValueOnce(mockResponse(201, { revision: 1 }));
+      const isOwner = vi.fn(() => true);
+      await expect(makeDedup<Claim>().tryClaim("cmd-1", { token: "t1", status: "claimed" }, isOwner)).resolves.toBeNull();
+      expect(isOwner).not.toHaveBeenCalled();
+    });
   });
 
   it("non-412 error from create → re-throws", async () => {

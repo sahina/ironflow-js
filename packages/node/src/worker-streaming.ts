@@ -34,15 +34,20 @@ import {
   JobAckSchema,
   ErrorSchema,
   ExecutedStepSchema,
+  StepStartedSchema,
+  StepCompletedSchema,
+  StepFailedSchema,
+  StepType,
   type WorkerMessage,
   type EngineMessage,
   type JobAssignment,
+  type StepYielded,
 } from "@ironflow/core/gen";
 import type { WorkerConfig, Worker } from "./types.js";
 import { ExecutionContext } from "./internal/context.js";
 import { createStepClient, executeCompensations } from "./step.js";
 import { isYieldSignal } from "./internal/errors.js";
-import { isRetryable } from "@ironflow/core";
+import { stepYieldedMessage, memoSteps, jobOutputFields } from "./internal/stream-yield.js";
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
@@ -534,6 +539,7 @@ class StreamingWorker implements Worker {
           id: job.event.id,
           name: job.event.name,
           data: job.event.data ?? {},
+          version: job.event.version || 1,
           timestamp: timestampToISO(job.event.timestamp),
           source: job.event.source || undefined,
         }
@@ -550,14 +556,17 @@ class StreamingWorker implements Worker {
       function_id: job.functionId,
       attempt: job.attempt,
       event,
-      steps: job.completedSteps.map((s) => ({
-        id: s.stepId,
-        name: s.name,
-        status: "completed" as const,
-        output: s.output,
-      })),
+      steps: memoSteps(job.completedSteps),
       resume: undefined,
-    }, undefined, undefined, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
+    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
+
+    // Only step.run() rows are written here: sleep and wait-for-event reach the
+    // engine as yields and compensations ride on JobFailed. The engine needs a
+    // StepStarted row before it accepts the result, so both go out together.
+    ctx.onStepResult = (s) => {
+      if (s.type !== "invoke") return;
+      this.sendStepResult(job.jobId, s, fence);
+    };
 
     const step = createStepClient(ctx);
     const startTime = Date.now();
@@ -590,12 +599,13 @@ class StreamingWorker implements Worker {
       const durationMs = Date.now() - startTime;
 
       if (isYieldSignal(error)) {
-        // TODO: Send step yielded via stream
-        this.logger.info("Job yielded", { jobId: job.jobId });
+        this.sendStepYielded(stepYieldedMessage(job.jobId, error.yieldInfo, fence));
+        this.logger.debug("Job yielded", { jobId: job.jobId, type: error.yieldInfo.type });
         return;
       }
 
-      const retryable = isRetryable(error);
+      // A plain throw is retryable, as in the polling worker; only IronflowError says otherwise.
+      const retryable = error instanceof IronflowError ? error.retryable : true;
 
       // Run compensations only if error is not retryable (terminal failure)
       if (ctx.hasCompensations() && !retryable) {
@@ -636,7 +646,7 @@ class StreamingWorker implements Worker {
         case: "jobCompleted",
         value: create(JobCompletedSchema, {
           jobId,
-          output: output as JsonObject,
+          ...jobOutputFields(output),
           durationMs,
           executionSeq: fence.executionSeq,
           leaseToken: fence.leaseToken,
@@ -644,6 +654,47 @@ class StreamingWorker implements Worker {
       },
     });
     this.sendMessage(msg);
+  }
+
+  private sendStepResult(
+    jobId: string,
+    s: StepResult,
+    fence: { executionSeq: bigint; leaseToken: string }
+  ): void {
+    if (!this.sendMessage) return;
+    const base = { jobId, stepId: s.id, ...fence };
+    this.sendMessage(
+      create(WorkerMessageSchema, {
+        payload: {
+          case: "stepStarted",
+          value: create(StepStartedSchema, { ...base, name: s.name, stepType: StepType.INVOKE }),
+        },
+      })
+    );
+    const durationMs = s.duration_ms ?? 0;
+    const payload =
+      s.status === "completed"
+        ? ({
+            case: "stepCompleted",
+            value: create(StepCompletedSchema, { ...base, ...jobOutputFields(s.output), durationMs }),
+          } as const)
+        : ({
+            case: "stepFailed",
+            value: create(StepFailedSchema, {
+              ...base,
+              error: create(ErrorSchema, {
+                message: s.error?.message ?? "",
+                retryable: s.error?.retryable ?? false,
+              }),
+              durationMs,
+            }),
+          } as const);
+    this.sendMessage(create(WorkerMessageSchema, { payload }));
+  }
+
+  private sendStepYielded(value: StepYielded): void {
+    if (!this.sendMessage) return;
+    this.sendMessage(create(WorkerMessageSchema, { payload: { case: "stepYielded", value } }));
   }
 
   /**

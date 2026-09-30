@@ -100,7 +100,7 @@ export interface WorkerConfig {
 export interface Worker {
   /** Start the worker (blocks until stopped) */
   start(): Promise<void>;
-  /** Gracefully drain and stop */
+  /** Gracefully drain; pull workers cancel remaining jobs after 30 seconds. */
   drain(): Promise<void>;
   /** Force stop immediately */
   stop(): void;

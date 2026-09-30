@@ -606,10 +606,12 @@ export class SubscriptionManager {
         connectionState: pending.connectionState,
         lastEvent: pending.lastEvent,
         unsubscribe: () => this.unsubscribeByLookupKey(pending.lookupKey),
-        ack: (eventId: string) => this.transport.ack(eventId, "ack"),
+        ack: (eventId: string) =>
+          this.transport.ack(eventId, "ack", undefined, currentSubscriptionId()),
         nak: (eventId: string, delay?: number) =>
-          this.transport.ack(eventId, "nak", delay),
-        term: (eventId: string) => this.transport.ack(eventId, "term"),
+          this.transport.ack(eventId, "nak", delay, currentSubscriptionId()),
+        term: (eventId: string) =>
+          this.transport.ack(eventId, "term", undefined, currentSubscriptionId()),
       };
       pending.resolve?.(ackableSub);
     } else {

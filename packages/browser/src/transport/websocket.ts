@@ -256,7 +256,12 @@ export class WebSocketTransport implements Transport {
     }
   }
 
-  async ack(eventId: string, type: AckType, delay?: number): Promise<void> {
+  async ack(
+    eventId: string,
+    type: AckType,
+    delay?: number,
+    subscriptionId?: string,
+  ): Promise<void> {
     if (this._connectionState !== "connected" || !this.ws) {
       throw new Error("Not connected");
     }
@@ -265,6 +270,7 @@ export class WebSocketTransport implements Transport {
       type: "ack",
       eventId,
       ackType: type,
+      ...(subscriptionId !== undefined ? { subscriptionId } : {}),
     };
 
     if (delay !== undefined && type === "nak") {

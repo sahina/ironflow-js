@@ -482,8 +482,7 @@ async function executeParallel<T>(
   });
 
   const results: (T | Error)[] = new Array(branches.length);
-  let firstError: Error | null = null;
-  let yieldSignal: YieldSignal | null = null;
+  const yieldSignals: (YieldSignal | undefined)[] = new Array(branches.length);
   const cancelled = { value: false };
 
   // Pre-create branch contexts and step clients for each branch
@@ -502,14 +501,13 @@ async function executeParallel<T>(
       results[index] = result;
     } catch (error) {
       if (error instanceof YieldSignal) {
-        yieldSignal = error;
+        yieldSignals[index] = error;
         cancelled.value = true;
       } else {
         const err = error instanceof Error ? error : new Error(String(error));
         results[index] = err;
 
-        if (onError === "failFast" && !firstError) {
-          firstError = err;
+        if (onError === "failFast") {
           cancelled.value = true;
         }
       }
@@ -540,13 +538,9 @@ async function executeParallel<T>(
   }
 
   // Handle yield signal
+  const yieldSignal = yieldSignals.find((signal) => signal !== undefined);
   if (yieldSignal) {
     throw yieldSignal;
-  }
-
-  // Handle errors based on mode
-  if (onError === "failFast" && firstError) {
-    throw firstError;
   }
 
   if (onError !== "allSettled") {

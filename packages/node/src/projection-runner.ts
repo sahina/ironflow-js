@@ -93,6 +93,10 @@ export class ProjectionRunner {
   // In-memory state for managed projections (accumulated across micro-batches)
   private managedState: unknown = null;
   private managedStateInitialized = false;
+  /** Aborts the current stream fetch; a failed flush uses it to force a reconnect (#2404). */
+  private streamAbort: AbortController | null = null;
+  /** Set by a failed flush; later flushes are dropped until the reconnect, which replays from the saved cursor. */
+  private flushFailed = false;
 
   constructor(config: ProjectionRunnerConfig) {
     this.config = config;
@@ -154,6 +158,10 @@ export class ProjectionRunner {
     const FAIL_LOG_ESCALATE_AT = 3;
 
     while (this.running && !this.config.signal?.aborted) {
+      this.streamAbort = new AbortController();
+      const signal = this.config.signal
+        ? AbortSignal.any([this.config.signal, this.streamAbort.signal])
+        : this.streamAbort.signal;
       try {
         const resp = await fetch(
           `${baseUrl}/ironflow.v1.ProjectionService/StreamProjectionEvents`,
@@ -172,7 +180,7 @@ export class ProjectionRunner {
               // Node's default fetch socket idle timer.
               acceptHeartbeats: true,
             })),
-            signal: this.config.signal,
+            signal,
           }
         );
 
@@ -269,12 +277,20 @@ export class ProjectionRunner {
         } finally {
           reader.releaseLock();
           // Flush any remaining events
-          await this.flushPending();
+          try {
+            await this.flushPending();
+          } catch (e) {
+            this.flushFailed = true;
+            throw e;
+          }
         }
 
         // Stream ended normally (server restart, etc.)
         if (this.running) {
           logger.info(`Projection stream ended for ${name}, reconnecting...`);
+          await this.flushChain;
+          this.pendingEvents = [];
+          this.flushFailed = false;
           await this.sleep(1000);
         }
       } catch (err) {
@@ -310,6 +326,9 @@ export class ProjectionRunner {
         // same successful read that resets the log escalation and a flaky-but-working link can
         // never stick at the ceiling. Do NOT use this.backoffMs: that one belongs to the polling
         // fallback and mutating it from here would corrupt its ladder.
+        await this.flushChain;
+        this.pendingEvents = [];
+        this.flushFailed = false;
         await this.sleep(
           calculateBackoff(consecutiveFailures, RECONNECT_BASE_MS, RECONNECT_MAX_MS)
         );
@@ -340,7 +359,13 @@ export class ProjectionRunner {
 
   /** Serializes flush calls so only one runs at a time */
   private scheduleFlush(): void {
-    this.flushChain = this.flushChain.then(() => this.flushPending()).catch(() => {});
+    this.flushChain = this.flushChain.then(() => this.flushPending()).catch((err) => {
+      // A failed save/ack: drop the rest and reconnect; the engine rewinds to the saved cursor (#2404).
+      this.flushFailed = true;
+      this.pendingEvents = [];
+      this.config.logger.warn(`Projection flush failed, reconnecting: ${err}`);
+      this.streamAbort?.abort();
+    });
   }
 
   /**
@@ -350,6 +375,11 @@ export class ProjectionRunner {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
+    }
+
+    if (this.flushFailed) {
+      this.pendingEvents = [];
+      return; // flushing past a failed batch would skip it
     }
 
     const events = this.pendingEvents.splice(0);
@@ -400,13 +430,13 @@ export class ProjectionRunner {
         batch.lastEventTime = event.timestamp;
       }
 
-      // Update in-memory state for __global__ partition
+      await this.saveState(state, batch.lastEventId, batch.lastEventSeq, batch.lastEventTime, pk);
+
+      // Only after a successful save: a failed save must not leave unsaved events in memory (#2404).
       if (pk === "__global__") {
         this.managedState = state;
         this.managedStateInitialized = true;
       }
-
-      await this.saveState(state, batch.lastEventId, batch.lastEventSeq, batch.lastEventTime, pk);
     }
   }
 

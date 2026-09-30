@@ -678,6 +678,116 @@ describe("Worker", () => {
     });
   });
 
+  describe("process signals", () => {
+    it.each(["SIGINT", "SIGTERM"] as const)("drains and stops on %s", async (signal) => {
+      mockFetch.mockImplementation(async (url: string) => {
+        if (url.endsWith("/jobs")) return { ok: false, status: 204 };
+        return { ok: true, status: 200 };
+      });
+      const worker = realCreateWorker({
+        serverUrl: "http://localhost:9123",
+        functions: [],
+        logger: false,
+      });
+      const before = process.listeners(signal);
+      const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+      const count = vi.spyOn(process, "listenerCount").mockReturnValue(0);
+      const start = worker.start();
+      try {
+        const handler = process.listeners(signal).find((listener) => !before.includes(listener));
+        expect(handler).toBeDefined();
+        if (handler) Reflect.apply(handler, process, [signal]);
+        await start;
+        await Promise.resolve();
+        expect(process.listeners(signal)).toEqual(before);
+        // Nobody else listens, so the worker restores exit-on-signal (#2383).
+        expect(exit).toHaveBeenCalledTimes(1);
+      } finally {
+        worker.stop();
+        exit.mockRestore();
+        count.mockRestore();
+      }
+    });
+
+    it("leaves shutdown to the app when it also listens for the signal", async () => {
+      mockFetch.mockImplementation(async (url: string) => {
+        if (url.endsWith("/jobs")) return { ok: false, status: 204 };
+        return { ok: true, status: 200 };
+      });
+      const worker = realCreateWorker({ serverUrl: "http://localhost:9123", functions: [], logger: false });
+      const before = process.listeners("SIGTERM");
+      const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+      const count = vi.spyOn(process, "listenerCount").mockReturnValue(1);
+      const start = worker.start();
+      try {
+        const handler = process.listeners("SIGTERM").find((listener) => !before.includes(listener));
+        if (handler) Reflect.apply(handler, process, ["SIGTERM"]);
+        await start;
+        await Promise.resolve();
+        expect(exit).not.toHaveBeenCalled();
+      } finally {
+        worker.stop();
+        exit.mockRestore();
+        count.mockRestore();
+      }
+    });
+
+    it("cancels an active job when the drain deadline expires", async () => {
+      let handlerStarted = false;
+      let finishHandler: (() => void) | undefined;
+      const fn = createMockFunction("slow-job", async (ctx) => {
+        await ctx.step.run("first-step", async () => ({ saved: true }));
+        handlerStarted = true;
+        return new Promise((resolve) => { finishHandler = () => resolve("late result"); });
+      });
+      let served = false;
+      const jobStatuses: string[] = [];
+      mockFetch.mockImplementation(async (url: string, init?: { method?: string }) => {
+        if (url.includes("/jobs?") && init?.method !== "PUT") {
+          if (served) return { ok: false, status: 204 };
+          served = true;
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              jobs: [{
+                job_id: "job-1", run_id: "run-1", function_id: "slow-job", attempt: 1,
+                event: { id: "event-1", name: "job.started", data: {}, timestamp: new Date().toISOString() },
+                completed_steps: [], execution_seq: 1, lease_token: "lease-1",
+              }],
+            }),
+          };
+        }
+        if (url.includes("/jobs/") && url.endsWith("/ack")) return { ok: true, status: 200 };
+        if (url.includes("/jobs/job-1") && init?.method === "PUT") {
+          jobStatuses.push(JSON.parse((init as { body?: string }).body ?? "{}").status);
+        }
+        return { ok: true, status: 200 };
+      });
+      const worker = realCreateWorker({
+        serverUrl: "http://localhost:9123",
+        functions: [fn],
+        logger: false,
+        checkpointInterval: 5,
+      });
+      const start = worker.start();
+      for (let i = 0; i < 30 && !handlerStarted; i++) await Promise.resolve();
+      expect(handlerStarted).toBe(true);
+      await vi.advanceTimersByTimeAsync(5);
+
+      const drain = worker.drain();
+      await vi.advanceTimersByTimeAsync(30_000);
+      await drain;
+      await start;
+      finishHandler?.();
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+
+      expect(jobStatuses).toContain("progress");
+      expect(jobStatuses).not.toContain("completed");
+      await expect(worker.drain()).resolves.toBeUndefined();
+    });
+  });
+
   describe("duplicate function detection", () => {
     it("should warn on duplicate function IDs", () => {
       const fn1 = createMockFunction("my-func", async () => "a");
