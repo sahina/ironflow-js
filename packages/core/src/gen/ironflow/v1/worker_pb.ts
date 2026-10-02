@@ -14,7 +14,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/worker.proto.
  */
 export const file_ironflow_v1_worker: GenFile = /*@__PURE__*/
-  fileDesc("Chhpcm9uZmxvdy92MS93b3JrZXIucHJvdG8SC2lyb25mbG93LnYxItIDCg1Xb3JrZXJNZXNzYWdlEi8KCHJlZ2lzdGVyGAEgASgLMhsuaXJvbmZsb3cudjEuV29ya2VyUmVnaXN0ZXJIABIxCgloZWFydGJlYXQYAiABKAsyHC5pcm9uZmxvdy52MS5Xb3JrZXJIZWFydGJlYXRIABIwCgxzdGVwX3N0YXJ0ZWQYAyABKAsyGC5pcm9uZmxvdy52MS5TdGVwU3RhcnRlZEgAEjQKDnN0ZXBfY29tcGxldGVkGAQgASgLMhouaXJvbmZsb3cudjEuU3RlcENvbXBsZXRlZEgAEi4KC3N0ZXBfZmFpbGVkGAUgASgLMhcuaXJvbmZsb3cudjEuU3RlcEZhaWxlZEgAEjAKDHN0ZXBfeWllbGRlZBgGIAEoCzIYLmlyb25mbG93LnYxLlN0ZXBZaWVsZGVkSAASMgoNam9iX2NvbXBsZXRlZBgHIAEoCzIZLmlyb25mbG93LnYxLkpvYkNvbXBsZXRlZEgAEiwKCmpvYl9mYWlsZWQYCCABKAsyFi5pcm9uZmxvdy52MS5Kb2JGYWlsZWRIABImCgdqb2JfYWNrGAkgASgLMhMuaXJvbmZsb3cudjEuSm9iQWNrSABCCQoHcGF5bG9hZCL9AQoOV29ya2VyUmVnaXN0ZXISEQoJd29ya2VyX2lkGAEgASgJEhAKCGhvc3RuYW1lGAIgASgJEhQKDGZ1bmN0aW9uX2lkcxgDIAMoCRIbChNtYXhfY29uY3VycmVudF9qb2JzGAQgASgFEjcKBmxhYmVscxgFIAMoCzInLmlyb25mbG93LnYxLldvcmtlclJlZ2lzdGVyLkxhYmVsc0VudHJ5EisKB3ZlcnNpb24YBiABKAsyGi5pcm9uZmxvdy52MS5Xb3JrZXJWZXJzaW9uGi0KC0xhYmVsc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiLQoNV29ya2VyVmVyc2lvbhILCgNzZGsYASABKAkSDwoHcnVudGltZRgCIAEoCSKMAQoPV29ya2VySGVhcnRiZWF0EhEKCXdvcmtlcl9pZBgBIAEoCRITCgthY3RpdmVfam9icxgCIAEoBRIkCgRqb2JzGAMgAygLMhYuaXJvbmZsb3cudjEuQWN0aXZlSm9iEisKB21ldHJpY3MYBCABKAsyGi5pcm9uZmxvdy52MS5Xb3JrZXJNZXRyaWNzIocBCglBY3RpdmVKb2ISDgoGam9iX2lkGAEgASgJEi4KCnN0YXJ0ZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBnJ1bl9pZBgDIAEoCRIVCg1leGVjdXRpb25fc2VxGAQgASgDEhMKC2xlYXNlX3Rva2VuGAUgASgJImkKDVdvcmtlck1ldHJpY3MSEwoLY3B1X3BlcmNlbnQYASABKAESFgoObWVtb3J5X3BlcmNlbnQYAiABKAESFgoOam9ic19jb21wbGV0ZWQYAyABKAMSEwoLam9ic19mYWlsZWQYBCABKAMikgEKC1N0ZXBTdGFydGVkEg4KBmpvYl9pZBgBIAEoCRIPCgdzdGVwX2lkGAIgASgJEgwKBG5hbWUYAyABKAkSKAoJc3RlcF90eXBlGAQgASgOMhUuaXJvbmZsb3cudjEuU3RlcFR5cGUSFQoNZXhlY3V0aW9uX3NlcRgFIAEoAxITCgtsZWFzZV90b2tlbhgGIAEoCSLIAQoNU3RlcENvbXBsZXRlZBIOCgZqb2JfaWQYASABKAkSDwoHc3RlcF9pZBgCIAEoCRInCgZvdXRwdXQYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiwKDG91dHB1dF92YWx1ZRgHIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRITCgtkdXJhdGlvbl9tcxgEIAEoBRIVCg1leGVjdXRpb25fc2VxGAUgASgDEhMKC2xlYXNlX3Rva2VuGAYgASgJIpEBCgpTdGVwRmFpbGVkEg4KBmpvYl9pZBgBIAEoCRIPCgdzdGVwX2lkGAIgASgJEiEKBWVycm9yGAMgASgLMhIuaXJvbmZsb3cudjEuRXJyb3ISEwoLZHVyYXRpb25fbXMYBCABKAUSFQoNZXhlY3V0aW9uX3NlcRgFIAEoAxITCgtsZWFzZV90b2tlbhgGIAEoCSLKAgoLU3RlcFlpZWxkZWQSDgoGam9iX2lkGAEgASgJEg8KB3N0ZXBfaWQYAiABKAkSKAoFc2xlZXAYAyABKAsyFy5pcm9uZmxvdy52MS5TbGVlcFlpZWxkSAASMQoKd2FpdF9ldmVudBgEIAEoCzIbLmlyb25mbG93LnYxLldhaXRFdmVudFlpZWxkSAASOwoPaW52b2tlX2Z1bmN0aW9uGAcgASgLMiAuaXJvbmZsb3cudjEuSW52b2tlRnVuY3Rpb25ZaWVsZEgAEkYKFWludm9rZV9mdW5jdGlvbl9hc3luYxgIIAEoCzIlLmlyb25mbG93LnYxLkludm9rZUZ1bmN0aW9uQXN5bmNZaWVsZEgAEhUKDWV4ZWN1dGlvbl9zZXEYBSABKAMSEwoLbGVhc2VfdG9rZW4YBiABKAlCDAoKeWllbGRfaW5mbyI3CgpTbGVlcFlpZWxkEikKBXVudGlsGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKWAQoOV2FpdEV2ZW50WWllbGQSEgoKZXZlbnRfbmFtZRgBIAEoCRIYChBtYXRjaF9leHByZXNzaW9uGAIgASgJEhMKC21hdGNoX3ZhbHVlGAMgASgJEisKB3RpbWVvdXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHBheWxvYWRfanNvbhgFIAEoDCJZChNJbnZva2VGdW5jdGlvbllpZWxkEhMKC2Z1bmN0aW9uX2lkGAEgASgJEhIKCmlucHV0X2pzb24YAiABKAwSGQoRaW52b2tlX3RpbWVvdXRfbXMYAyABKAMiQwoYSW52b2tlRnVuY3Rpb25Bc3luY1lpZWxkEhMKC2Z1bmN0aW9uX2lkGAEgASgJEhIKCmlucHV0X2pzb24YAiABKAwitgEKDEpvYkNvbXBsZXRlZBIOCgZqb2JfaWQYASABKAkSJwoGb3V0cHV0GAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYBiABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSEwoLZHVyYXRpb25fbXMYAyABKAUSFQoNZXhlY3V0aW9uX3NlcRgEIAEoAxITCgtsZWFzZV90b2tlbhgFIAEoCSKpAQoJSm9iRmFpbGVkEg4KBmpvYl9pZBgBIAEoCRIhCgVlcnJvchgCIAEoCzISLmlyb25mbG93LnYxLkVycm9yEhMKC2R1cmF0aW9uX21zGAMgASgFEigKBXN0ZXBzGAQgAygLMhkuaXJvbmZsb3cudjEuRXhlY3V0ZWRTdGVwEhUKDWV4ZWN1dGlvbl9zZXEYBSABKAMSEwoLbGVhc2VfdG9rZW4YBiABKAki7wEKDEV4ZWN1dGVkU3RlcBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHR5cGUYAyABKAkSDgoGc3RhdHVzGAQgASgJEicKBm91dHB1dBgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSLAoMb3V0cHV0X3ZhbHVlGAkgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEiEKBWVycm9yGAYgASgLMhIuaXJvbmZsb3cudjEuRXJyb3ISGAoQY29tcGVuc2F0aW9uX2ZvchgHIAEoCRITCgtkdXJhdGlvbl9tcxgIIAEoBSJUCgZKb2JBY2sSDgoGam9iX2lkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRIVCg1leGVjdXRpb25fc2VxGAMgASgDEhMKC2xlYXNlX3Rva2VuGAQgASgJIt0CCg1FbmdpbmVNZXNzYWdlEjMKCnJlZ2lzdGVyZWQYASABKAsyHS5pcm9uZmxvdy52MS5Xb3JrZXJSZWdpc3RlcmVkSAASKQoDam9iGAIgASgLMhouaXJvbmZsb3cudjEuSm9iQXNzaWdubWVudEgAEigKCHN0ZXBfYWNrGAMgASgLMhQuaXJvbmZsb3cudjEuU3RlcEFja0gAEigKBnJlc3VtZRgEIAEoCzIWLmlyb25mbG93LnYxLlJlc3VtZUpvYkgAEigKBmNhbmNlbBgFIAEoCzIWLmlyb25mbG93LnYxLkNhbmNlbEpvYkgAEikKCHNodXRkb3duGAYgASgLMhUuaXJvbmZsb3cudjEuU2h1dGRvd25IABI4Cg1sZWFzZV9yZWZyZXNoGAcgASgLMh8uaXJvbmZsb3cudjEuTGVhc2VSZWZyZXNoUmVzdWx0SABCCQoHcGF5bG9hZCJHChJMZWFzZVJlZnJlc2hSZXN1bHQSMQoIc2VnbWVudHMYASADKAsyHy5pcm9uZmxvdy52MS5TZWdtZW50TGVhc2VTdGF0dXMiYwoSU2VnbWVudExlYXNlU3RhdHVzEg4KBnJ1bl9pZBgBIAEoCRIVCg1leGVjdXRpb25fc2VxGAIgASgDEiYKBXN0YXRlGAMgASgOMhcuaXJvbmZsb3cudjEuTGVhc2VTdGF0ZSJEChBXb3JrZXJSZWdpc3RlcmVkEhEKCXdvcmtlcl9pZBgBIAEoCRIdChVoZWFydGJlYXRfaW50ZXJ2YWxfbXMYAiABKAUi4QIKDUpvYkFzc2lnbm1lbnQSDgoGam9iX2lkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRITCgtmdW5jdGlvbl9pZBgDIAEoCRIhCgVldmVudBgEIAEoCzISLmlyb25mbG93LnYxLkV2ZW50EjMKD2NvbXBsZXRlZF9zdGVwcxgFIAMoCzIaLmlyb25mbG93LnYxLkNvbXBsZXRlZFN0ZXASEAoIYWN0b3JfaWQYBiABKAkSDwoHYXR0ZW1wdBgHIAEoBRIoCgdjb250ZXh0GAggASgLMhcuaXJvbmZsb3cudjEuSm9iQ29udGV4dBIVCg1leGVjdXRpb25fc2VxGAkgASgDEhMKC2xlYXNlX3Rva2VuGAogASgJEjQKEGxlYXNlX2V4cGlyZXNfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDG1heF9hdHRlbXB0cxgMIAEoBSKpAQoNQ29tcGxldGVkU3RlcBIPCgdzdGVwX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSJwoGb3V0cHV0GAMgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYBCABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSDgoGc3RhdHVzGAUgASgJEhIKCmVycm9yX2pzb24YBiABKAwi7wEKCkpvYkNvbnRleHQSEAoIdHJhY2VfaWQYASABKAkSNwoIbWV0YWRhdGEYAiADKAsyJS5pcm9uZmxvdy52MS5Kb2JDb250ZXh0Lk1ldGFkYXRhRW50cnkSNQoHc2VjcmV0cxgDIAMoCzIkLmlyb25mbG93LnYxLkpvYkNvbnRleHQuU2VjcmV0c0VudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARouCgxTZWNyZXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASI7CgdTdGVwQWNrEg8KB3N0ZXBfaWQYASABKAkSEAoIYWNjZXB0ZWQYAiABKAgSDQoFZXJyb3IYAyABKAkiogEKCVJlc3VtZUpvYhIOCgZqb2JfaWQYASABKAkSDwoHc3RlcF9pZBgCIAEoCRITCgtyZXN1bWVfdHlwZRgDIAEoCRIsCgtyZXN1bWVfZGF0YRgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSMQoRcmVzdW1lX2RhdGFfdmFsdWUYBSABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUiKwoJQ2FuY2VsSm9iEg4KBmpvYl9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAkiNAoIU2h1dGRvd24SDgoGcmVhc29uGAEgASgJEhgKEGRyYWluX3RpbWVvdXRfbXMYAiABKAUqdAoKTGVhc2VTdGF0ZRIbChdMRUFTRV9TVEFURV9VTlNQRUNJRklFRBAAEhkKFUxFQVNFX1NUQVRFX1JFRlJFU0hFRBABEhUKEUxFQVNFX1NUQVRFX1NUQUxFEAISFwoTTEVBU0VfU1RBVEVfVU5LTk9XThADMlYKDVdvcmtlclNlcnZpY2USRQoHQ29ubmVjdBIaLmlyb25mbG93LnYxLldvcmtlck1lc3NhZ2UaGi5pcm9uZmxvdy52MS5FbmdpbmVNZXNzYWdlKAEwAUI6WjhnaXRodWIuY29tL3NhaGluYS9pcm9uZmxvdy9hcGkvZ28vaXJvbmZsb3cvdjE7aXJvbmZsb3d2MWIGcHJvdG8z", [file_ironflow_v1_types, file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("Chhpcm9uZmxvdy92MS93b3JrZXIucHJvdG8SC2lyb25mbG93LnYxIvwDCg1Xb3JrZXJNZXNzYWdlEi8KCHJlZ2lzdGVyGAEgASgLMhsuaXJvbmZsb3cudjEuV29ya2VyUmVnaXN0ZXJIABIxCgloZWFydGJlYXQYAiABKAsyHC5pcm9uZmxvdy52MS5Xb3JrZXJIZWFydGJlYXRIABIwCgxzdGVwX3N0YXJ0ZWQYAyABKAsyGC5pcm9uZmxvdy52MS5TdGVwU3RhcnRlZEgAEjQKDnN0ZXBfY29tcGxldGVkGAQgASgLMhouaXJvbmZsb3cudjEuU3RlcENvbXBsZXRlZEgAEi4KC3N0ZXBfZmFpbGVkGAUgASgLMhcuaXJvbmZsb3cudjEuU3RlcEZhaWxlZEgAEjAKDHN0ZXBfeWllbGRlZBgGIAEoCzIYLmlyb25mbG93LnYxLlN0ZXBZaWVsZGVkSAASMgoNam9iX2NvbXBsZXRlZBgHIAEoCzIZLmlyb25mbG93LnYxLkpvYkNvbXBsZXRlZEgAEiwKCmpvYl9mYWlsZWQYCCABKAsyFi5pcm9uZmxvdy52MS5Kb2JGYWlsZWRIABImCgdqb2JfYWNrGAkgASgLMhMuaXJvbmZsb3cudjEuSm9iQWNrSAASKAoIam9iX25hY2sYCiABKAsyFC5pcm9uZmxvdy52MS5Kb2JOYWNrSABCCQoHcGF5bG9hZCL9AQoOV29ya2VyUmVnaXN0ZXISEQoJd29ya2VyX2lkGAEgASgJEhAKCGhvc3RuYW1lGAIgASgJEhQKDGZ1bmN0aW9uX2lkcxgDIAMoCRIbChNtYXhfY29uY3VycmVudF9qb2JzGAQgASgFEjcKBmxhYmVscxgFIAMoCzInLmlyb25mbG93LnYxLldvcmtlclJlZ2lzdGVyLkxhYmVsc0VudHJ5EisKB3ZlcnNpb24YBiABKAsyGi5pcm9uZmxvdy52MS5Xb3JrZXJWZXJzaW9uGi0KC0xhYmVsc0VudHJ5EgsKA2tleRgBIAEoCRINCgV2YWx1ZRgCIAEoCToCOAEiLQoNV29ya2VyVmVyc2lvbhILCgNzZGsYASABKAkSDwoHcnVudGltZRgCIAEoCSKMAQoPV29ya2VySGVhcnRiZWF0EhEKCXdvcmtlcl9pZBgBIAEoCRITCgthY3RpdmVfam9icxgCIAEoBRIkCgRqb2JzGAMgAygLMhYuaXJvbmZsb3cudjEuQWN0aXZlSm9iEisKB21ldHJpY3MYBCABKAsyGi5pcm9uZmxvdy52MS5Xb3JrZXJNZXRyaWNzIocBCglBY3RpdmVKb2ISDgoGam9iX2lkGAEgASgJEi4KCnN0YXJ0ZWRfYXQYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBnJ1bl9pZBgDIAEoCRIVCg1leGVjdXRpb25fc2VxGAQgASgDEhMKC2xlYXNlX3Rva2VuGAUgASgJImkKDVdvcmtlck1ldHJpY3MSEwoLY3B1X3BlcmNlbnQYASABKAESFgoObWVtb3J5X3BlcmNlbnQYAiABKAESFgoOam9ic19jb21wbGV0ZWQYAyABKAMSEwoLam9ic19mYWlsZWQYBCABKAMikgEKC1N0ZXBTdGFydGVkEg4KBmpvYl9pZBgBIAEoCRIPCgdzdGVwX2lkGAIgASgJEgwKBG5hbWUYAyABKAkSKAoJc3RlcF90eXBlGAQgASgOMhUuaXJvbmZsb3cudjEuU3RlcFR5cGUSFQoNZXhlY3V0aW9uX3NlcRgFIAEoAxITCgtsZWFzZV90b2tlbhgGIAEoCSLIAQoNU3RlcENvbXBsZXRlZBIOCgZqb2JfaWQYASABKAkSDwoHc3RlcF9pZBgCIAEoCRInCgZvdXRwdXQYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiwKDG91dHB1dF92YWx1ZRgHIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRITCgtkdXJhdGlvbl9tcxgEIAEoBRIVCg1leGVjdXRpb25fc2VxGAUgASgDEhMKC2xlYXNlX3Rva2VuGAYgASgJIpEBCgpTdGVwRmFpbGVkEg4KBmpvYl9pZBgBIAEoCRIPCgdzdGVwX2lkGAIgASgJEiEKBWVycm9yGAMgASgLMhIuaXJvbmZsb3cudjEuRXJyb3ISEwoLZHVyYXRpb25fbXMYBCABKAUSFQoNZXhlY3V0aW9uX3NlcRgFIAEoAxITCgtsZWFzZV90b2tlbhgGIAEoCSLKAgoLU3RlcFlpZWxkZWQSDgoGam9iX2lkGAEgASgJEg8KB3N0ZXBfaWQYAiABKAkSKAoFc2xlZXAYAyABKAsyFy5pcm9uZmxvdy52MS5TbGVlcFlpZWxkSAASMQoKd2FpdF9ldmVudBgEIAEoCzIbLmlyb25mbG93LnYxLldhaXRFdmVudFlpZWxkSAASOwoPaW52b2tlX2Z1bmN0aW9uGAcgASgLMiAuaXJvbmZsb3cudjEuSW52b2tlRnVuY3Rpb25ZaWVsZEgAEkYKFWludm9rZV9mdW5jdGlvbl9hc3luYxgIIAEoCzIlLmlyb25mbG93LnYxLkludm9rZUZ1bmN0aW9uQXN5bmNZaWVsZEgAEhUKDWV4ZWN1dGlvbl9zZXEYBSABKAMSEwoLbGVhc2VfdG9rZW4YBiABKAlCDAoKeWllbGRfaW5mbyI3CgpTbGVlcFlpZWxkEikKBXVudGlsGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCKWAQoOV2FpdEV2ZW50WWllbGQSEgoKZXZlbnRfbmFtZRgBIAEoCRIYChBtYXRjaF9leHByZXNzaW9uGAIgASgJEhMKC21hdGNoX3ZhbHVlGAMgASgJEisKB3RpbWVvdXQYBCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHBheWxvYWRfanNvbhgFIAEoDCJZChNJbnZva2VGdW5jdGlvbllpZWxkEhMKC2Z1bmN0aW9uX2lkGAEgASgJEhIKCmlucHV0X2pzb24YAiABKAwSGQoRaW52b2tlX3RpbWVvdXRfbXMYAyABKAMiQwoYSW52b2tlRnVuY3Rpb25Bc3luY1lpZWxkEhMKC2Z1bmN0aW9uX2lkGAEgASgJEhIKCmlucHV0X2pzb24YAiABKAwitgEKDEpvYkNvbXBsZXRlZBIOCgZqb2JfaWQYASABKAkSJwoGb3V0cHV0GAIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYBiABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSEwoLZHVyYXRpb25fbXMYAyABKAUSFQoNZXhlY3V0aW9uX3NlcRgEIAEoAxITCgtsZWFzZV90b2tlbhgFIAEoCSKpAQoJSm9iRmFpbGVkEg4KBmpvYl9pZBgBIAEoCRIhCgVlcnJvchgCIAEoCzISLmlyb25mbG93LnYxLkVycm9yEhMKC2R1cmF0aW9uX21zGAMgASgFEigKBXN0ZXBzGAQgAygLMhkuaXJvbmZsb3cudjEuRXhlY3V0ZWRTdGVwEhUKDWV4ZWN1dGlvbl9zZXEYBSABKAMSEwoLbGVhc2VfdG9rZW4YBiABKAki7wEKDEV4ZWN1dGVkU3RlcBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEgwKBHR5cGUYAyABKAkSDgoGc3RhdHVzGAQgASgJEicKBm91dHB1dBgFIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSLAoMb3V0cHV0X3ZhbHVlGAkgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEiEKBWVycm9yGAYgASgLMhIuaXJvbmZsb3cudjEuRXJyb3ISGAoQY29tcGVuc2F0aW9uX2ZvchgHIAEoCRITCgtkdXJhdGlvbl9tcxgIIAEoBSJUCgZKb2JBY2sSDgoGam9iX2lkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRIVCg1leGVjdXRpb25fc2VxGAMgASgDEhMKC2xlYXNlX3Rva2VuGAQgASgJIoEBCgdKb2JOYWNrEg4KBmpvYl9pZBgBIAEoCRIOCgZydW5faWQYAiABKAkSFQoNZXhlY3V0aW9uX3NlcRgDIAEoAxITCgtsZWFzZV90b2tlbhgEIAEoCRIqCgZyZWFzb24YBSABKA4yGi5pcm9uZmxvdy52MS5Kb2JOYWNrUmVhc29uIt0CCg1FbmdpbmVNZXNzYWdlEjMKCnJlZ2lzdGVyZWQYASABKAsyHS5pcm9uZmxvdy52MS5Xb3JrZXJSZWdpc3RlcmVkSAASKQoDam9iGAIgASgLMhouaXJvbmZsb3cudjEuSm9iQXNzaWdubWVudEgAEigKCHN0ZXBfYWNrGAMgASgLMhQuaXJvbmZsb3cudjEuU3RlcEFja0gAEigKBnJlc3VtZRgEIAEoCzIWLmlyb25mbG93LnYxLlJlc3VtZUpvYkgAEigKBmNhbmNlbBgFIAEoCzIWLmlyb25mbG93LnYxLkNhbmNlbEpvYkgAEikKCHNodXRkb3duGAYgASgLMhUuaXJvbmZsb3cudjEuU2h1dGRvd25IABI4Cg1sZWFzZV9yZWZyZXNoGAcgASgLMh8uaXJvbmZsb3cudjEuTGVhc2VSZWZyZXNoUmVzdWx0SABCCQoHcGF5bG9hZCJHChJMZWFzZVJlZnJlc2hSZXN1bHQSMQoIc2VnbWVudHMYASADKAsyHy5pcm9uZmxvdy52MS5TZWdtZW50TGVhc2VTdGF0dXMiYwoSU2VnbWVudExlYXNlU3RhdHVzEg4KBnJ1bl9pZBgBIAEoCRIVCg1leGVjdXRpb25fc2VxGAIgASgDEiYKBXN0YXRlGAMgASgOMhcuaXJvbmZsb3cudjEuTGVhc2VTdGF0ZSJEChBXb3JrZXJSZWdpc3RlcmVkEhEKCXdvcmtlcl9pZBgBIAEoCRIdChVoZWFydGJlYXRfaW50ZXJ2YWxfbXMYAiABKAUi4QIKDUpvYkFzc2lnbm1lbnQSDgoGam9iX2lkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRITCgtmdW5jdGlvbl9pZBgDIAEoCRIhCgVldmVudBgEIAEoCzISLmlyb25mbG93LnYxLkV2ZW50EjMKD2NvbXBsZXRlZF9zdGVwcxgFIAMoCzIaLmlyb25mbG93LnYxLkNvbXBsZXRlZFN0ZXASEAoIYWN0b3JfaWQYBiABKAkSDwoHYXR0ZW1wdBgHIAEoBRIoCgdjb250ZXh0GAggASgLMhcuaXJvbmZsb3cudjEuSm9iQ29udGV4dBIVCg1leGVjdXRpb25fc2VxGAkgASgDEhMKC2xlYXNlX3Rva2VuGAogASgJEjQKEGxlYXNlX2V4cGlyZXNfYXQYCyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDG1heF9hdHRlbXB0cxgMIAEoBSKpAQoNQ29tcGxldGVkU3RlcBIPCgdzdGVwX2lkGAEgASgJEgwKBG5hbWUYAiABKAkSJwoGb3V0cHV0GAMgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYBCABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSDgoGc3RhdHVzGAUgASgJEhIKCmVycm9yX2pzb24YBiABKAwi7wEKCkpvYkNvbnRleHQSEAoIdHJhY2VfaWQYASABKAkSNwoIbWV0YWRhdGEYAiADKAsyJS5pcm9uZmxvdy52MS5Kb2JDb250ZXh0Lk1ldGFkYXRhRW50cnkSNQoHc2VjcmV0cxgDIAMoCzIkLmlyb25mbG93LnYxLkpvYkNvbnRleHQuU2VjcmV0c0VudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ARouCgxTZWNyZXRzRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASI7CgdTdGVwQWNrEg8KB3N0ZXBfaWQYASABKAkSEAoIYWNjZXB0ZWQYAiABKAgSDQoFZXJyb3IYAyABKAkiogEKCVJlc3VtZUpvYhIOCgZqb2JfaWQYASABKAkSDwoHc3RlcF9pZBgCIAEoCRITCgtyZXN1bWVfdHlwZRgDIAEoCRIsCgtyZXN1bWVfZGF0YRgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSMQoRcmVzdW1lX2RhdGFfdmFsdWUYBSABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUiKwoJQ2FuY2VsSm9iEg4KBmpvYl9pZBgBIAEoCRIOCgZyZWFzb24YAiABKAkiNAoIU2h1dGRvd24SDgoGcmVhc29uGAEgASgJEhgKEGRyYWluX3RpbWVvdXRfbXMYAiABKAUqbwoNSm9iTmFja1JlYXNvbhIfChtKT0JfTkFDS19SRUFTT05fVU5TUEVDSUZJRUQQABIfChtKT0JfTkFDS19SRUFTT05fQVRfQ0FQQUNJVFkQARIcChhKT0JfTkFDS19SRUFTT05fRFJBSU5JTkcQAip0CgpMZWFzZVN0YXRlEhsKF0xFQVNFX1NUQVRFX1VOU1BFQ0lGSUVEEAASGQoVTEVBU0VfU1RBVEVfUkVGUkVTSEVEEAESFQoRTEVBU0VfU1RBVEVfU1RBTEUQAhIXChNMRUFTRV9TVEFURV9VTktOT1dOEAMyVgoNV29ya2VyU2VydmljZRJFCgdDb25uZWN0EhouaXJvbmZsb3cudjEuV29ya2VyTWVzc2FnZRoaLmlyb25mbG93LnYxLkVuZ2luZU1lc3NhZ2UoATABQjpaOGdpdGh1Yi5jb20vc2FoaW5hL2lyb25mbG93L2FwaS9nby9pcm9uZmxvdy92MTtpcm9uZmxvd3YxYgZwcm90bzM", [file_ironflow_v1_types, file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message ironflow.v1.WorkerMessage
@@ -77,6 +77,12 @@ export type WorkerMessage = Message<"ironflow.v1.WorkerMessage"> & {
      */
     value: JobAck;
     case: "jobAck";
+  } | {
+    /**
+     * @generated from field: ironflow.v1.JobNack job_nack = 10;
+     */
+    value: JobNack;
+    case: "jobNack";
   } | { case: undefined; value?: undefined };
 };
 
@@ -777,6 +783,50 @@ export const JobAckSchema: GenMessage<JobAck> = /*@__PURE__*/
   messageDesc(file_ironflow_v1_worker, 17);
 
 /**
+ * A worker refuses an assignment that it did not start (#2456). A nack uses no
+ * run attempt: the engine re-queues the segment at once under a fresh
+ * execution_seq. An engine that predates this message drops it as unknown.
+ *
+ * @generated from message ironflow.v1.JobNack
+ */
+export type JobNack = Message<"ironflow.v1.JobNack"> & {
+  /**
+   * @generated from field: string job_id = 1;
+   */
+  jobId: string;
+
+  /**
+   * @generated from field: string run_id = 2;
+   */
+  runId: string;
+
+  /**
+   * Echo of the assignment fence (#1206, ADR 0037). A stale nack is discarded,
+   * so it cannot release a newer execution's lease.
+   *
+   * @generated from field: int64 execution_seq = 3;
+   */
+  executionSeq: bigint;
+
+  /**
+   * @generated from field: string lease_token = 4;
+   */
+  leaseToken: string;
+
+  /**
+   * @generated from field: ironflow.v1.JobNackReason reason = 5;
+   */
+  reason: JobNackReason;
+};
+
+/**
+ * Describes the message ironflow.v1.JobNack.
+ * Use `create(JobNackSchema)` to create a new message.
+ */
+export const JobNackSchema: GenMessage<JobNack> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_worker, 18);
+
+/**
  * @generated from message ironflow.v1.EngineMessage
  */
 export type EngineMessage = Message<"ironflow.v1.EngineMessage"> & {
@@ -833,7 +883,7 @@ export type EngineMessage = Message<"ironflow.v1.EngineMessage"> & {
  * Use `create(EngineMessageSchema)` to create a new message.
  */
 export const EngineMessageSchema: GenMessage<EngineMessage> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 18);
+  messageDesc(file_ironflow_v1_worker, 19);
 
 /**
  * LeaseRefreshResult answers a heartbeat's reported active fence tuples
@@ -855,7 +905,7 @@ export type LeaseRefreshResult = Message<"ironflow.v1.LeaseRefreshResult"> & {
  * Use `create(LeaseRefreshResultSchema)` to create a new message.
  */
 export const LeaseRefreshResultSchema: GenMessage<LeaseRefreshResult> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 19);
+  messageDesc(file_ironflow_v1_worker, 20);
 
 /**
  * @generated from message ironflow.v1.SegmentLeaseStatus
@@ -882,7 +932,7 @@ export type SegmentLeaseStatus = Message<"ironflow.v1.SegmentLeaseStatus"> & {
  * Use `create(SegmentLeaseStatusSchema)` to create a new message.
  */
 export const SegmentLeaseStatusSchema: GenMessage<SegmentLeaseStatus> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 20);
+  messageDesc(file_ironflow_v1_worker, 21);
 
 /**
  * @generated from message ironflow.v1.WorkerRegistered
@@ -906,7 +956,7 @@ export type WorkerRegistered = Message<"ironflow.v1.WorkerRegistered"> & {
  * Use `create(WorkerRegisteredSchema)` to create a new message.
  */
 export const WorkerRegisteredSchema: GenMessage<WorkerRegistered> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 21);
+  messageDesc(file_ironflow_v1_worker, 22);
 
 /**
  * @generated from message ironflow.v1.JobAssignment
@@ -991,7 +1041,7 @@ export type JobAssignment = Message<"ironflow.v1.JobAssignment"> & {
  * Use `create(JobAssignmentSchema)` to create a new message.
  */
 export const JobAssignmentSchema: GenMessage<JobAssignment> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 22);
+  messageDesc(file_ironflow_v1_worker, 23);
 
 /**
  * @generated from message ironflow.v1.CompletedStep
@@ -1044,7 +1094,7 @@ export type CompletedStep = Message<"ironflow.v1.CompletedStep"> & {
  * Use `create(CompletedStepSchema)` to create a new message.
  */
 export const CompletedStepSchema: GenMessage<CompletedStep> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 23);
+  messageDesc(file_ironflow_v1_worker, 24);
 
 /**
  * @generated from message ironflow.v1.JobContext
@@ -1071,7 +1121,7 @@ export type JobContext = Message<"ironflow.v1.JobContext"> & {
  * Use `create(JobContextSchema)` to create a new message.
  */
 export const JobContextSchema: GenMessage<JobContext> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 24);
+  messageDesc(file_ironflow_v1_worker, 25);
 
 /**
  * @generated from message ironflow.v1.StepAck
@@ -1098,7 +1148,7 @@ export type StepAck = Message<"ironflow.v1.StepAck"> & {
  * Use `create(StepAckSchema)` to create a new message.
  */
 export const StepAckSchema: GenMessage<StepAck> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 25);
+  messageDesc(file_ironflow_v1_worker, 26);
 
 /**
  * @generated from message ironflow.v1.ResumeJob
@@ -1144,7 +1194,7 @@ export type ResumeJob = Message<"ironflow.v1.ResumeJob"> & {
  * Use `create(ResumeJobSchema)` to create a new message.
  */
 export const ResumeJobSchema: GenMessage<ResumeJob> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 26);
+  messageDesc(file_ironflow_v1_worker, 27);
 
 /**
  * @generated from message ironflow.v1.CancelJob
@@ -1166,7 +1216,7 @@ export type CancelJob = Message<"ironflow.v1.CancelJob"> & {
  * Use `create(CancelJobSchema)` to create a new message.
  */
 export const CancelJobSchema: GenMessage<CancelJob> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 27);
+  messageDesc(file_ironflow_v1_worker, 28);
 
 /**
  * @generated from message ironflow.v1.Shutdown
@@ -1190,7 +1240,35 @@ export type Shutdown = Message<"ironflow.v1.Shutdown"> & {
  * Use `create(ShutdownSchema)` to create a new message.
  */
 export const ShutdownSchema: GenMessage<Shutdown> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_worker, 28);
+  messageDesc(file_ironflow_v1_worker, 29);
+
+/**
+ * @generated from enum ironflow.v1.JobNackReason
+ */
+export enum JobNackReason {
+  /**
+   * The engine treats this value as AT_CAPACITY.
+   *
+   * @generated from enum value: JOB_NACK_REASON_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * @generated from enum value: JOB_NACK_REASON_AT_CAPACITY = 1;
+   */
+  AT_CAPACITY = 1,
+
+  /**
+   * @generated from enum value: JOB_NACK_REASON_DRAINING = 2;
+   */
+  DRAINING = 2,
+}
+
+/**
+ * Describes the enum ironflow.v1.JobNackReason.
+ */
+export const JobNackReasonSchema: GenEnum<JobNackReason> = /*@__PURE__*/
+  enumDesc(file_ironflow_v1_worker, 0);
 
 /**
  * @generated from enum ironflow.v1.LeaseState
@@ -1227,7 +1305,7 @@ export enum LeaseState {
  * Describes the enum ironflow.v1.LeaseState.
  */
 export const LeaseStateSchema: GenEnum<LeaseState> = /*@__PURE__*/
-  enumDesc(file_ironflow_v1_worker, 0);
+  enumDesc(file_ironflow_v1_worker, 1);
 
 /**
  * @generated from service ironflow.v1.WorkerService

@@ -13,6 +13,8 @@ import type {
   Subscription,
   AckableSubscription,
   AckType,
+  EntitySubscribeOptions,
+  StreamEvent,
 } from "@ironflow/core";
 import {
   advanceResumeCursor,
@@ -401,6 +403,51 @@ export class SubscriptionClient {
         }
       },
     );
+  }
+
+  /**
+   * Subscribe to real-time events for one entity stream.
+   * Builds the pattern `entity:{entityType}.{entityId}.>` and delegates to `subscribe`.
+   *
+   * @example
+   * ```typescript
+   * const sub = await client.subscribeEntityStream("order-123", {
+   *   entityType: "order",
+   *   replay: 100,
+   *   onEvent: (e) => console.log(e.name, e.entityVersion),
+   * });
+   * ```
+   */
+  async subscribeEntityStream(
+    entityId: string,
+    options: EntitySubscribeOptions,
+  ): Promise<Subscription> {
+    if (!options.entityType) {
+      throw new Error("entityType is required");
+    }
+    const sub = await this.subscribe<Record<string, unknown>>(
+      `entity:${options.entityType}.${entityId}.>`,
+      {
+        replay: options.replay,
+        onEvent: ({ data }) => {
+          const event: StreamEvent = {
+            id: (data.id as string) ?? "",
+            name: (data.name as string) ?? "",
+            data: (data.data as Record<string, unknown>) ?? {},
+            entityVersion: (data.entityVersion as number) ?? 0,
+            version: (data.version as number) ?? 0,
+            timestamp: (data.timestamp as string) ?? "",
+            source: data.source as string | undefined,
+            metadata: data.metadata as Record<string, unknown> | undefined,
+          };
+          options.onEvent(event);
+        },
+        onError: options.onError
+          ? (info) => options.onError!(new Error(info.message))
+          : undefined,
+      },
+    );
+    return sub as Subscription;
   }
 
   /** Join a durable consumer group with manual acknowledgements. */

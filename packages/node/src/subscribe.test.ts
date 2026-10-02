@@ -1138,6 +1138,95 @@ describe("SubscriptionClient", () => {
     });
   });
 
+  describe("subscribeEntityStream", () => {
+    const pattern = "entity:order.order-123.>";
+
+    async function connectAndSubscribe(
+      options: { replay?: number; onError?: (e: Error) => void } = {},
+    ) {
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({ serverUrl: "http://localhost:9123" });
+      await client.connect();
+
+      const events: any[] = [];
+      const subPromise = client.subscribeEntityStream("order-123", {
+        entityType: "order",
+        onEvent: (e) => events.push(e),
+        ...options,
+      });
+      const sent = JSON.parse(mockWs.send.mock.calls.at(-1)?.[0] as string);
+      mockWs.simulateMessage({
+        type: "subscription_result",
+        results: [{ pattern, status: "ok", subscriptionId: "sub_e" }],
+      });
+      await subPromise;
+      return { client, events, sent };
+    }
+
+    it("subscribes to the entity pattern and forwards replay", async () => {
+      const { client, sent } = await connectAndSubscribe({ replay: 100 });
+      expect(sent.subscription.pattern).toBe(pattern);
+      expect(sent.subscription.options.replay).toBe(100);
+      client.close();
+    });
+
+    it("maps event data to a StreamEvent", async () => {
+      const { client, events } = await connectAndSubscribe();
+      mockWs.simulateMessage({
+        type: "event",
+        subscriptionId: "sub_e",
+        topic: "entity:order.order-123.placed",
+        data: {
+          id: "evt-1",
+          name: "order.placed",
+          data: { total: 5 },
+          entityVersion: 2,
+          version: 1,
+          timestamp: "2026-10-01T00:00:00Z",
+        },
+      });
+      expect(events).toEqual([
+        {
+          id: "evt-1",
+          name: "order.placed",
+          data: { total: 5 },
+          entityVersion: 2,
+          version: 1,
+          timestamp: "2026-10-01T00:00:00Z",
+          source: undefined,
+          metadata: undefined,
+        },
+      ]);
+      client.close();
+    });
+
+    it("delivers subscription errors as Error", async () => {
+      const errors: Error[] = [];
+      const { client } = await connectAndSubscribe({ onError: (e) => errors.push(e) });
+      mockWs.simulateMessage({
+        type: "subscription_error",
+        subscriptionId: "sub_e",
+        code: "NATS_DISCONNECT",
+        message: "Connection lost",
+        retrying: true,
+      });
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toBeInstanceOf(Error);
+      expect(errors[0]?.message).toBe("Connection lost");
+      client.close();
+    });
+
+    it("requires entityType", async () => {
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({ serverUrl: "http://localhost:9123" });
+      await client.connect();
+      await expect(
+        client.subscribeEntityStream("order-123", { entityType: "", onEvent: () => {} }),
+      ).rejects.toThrow("entityType is required");
+      client.close();
+    });
+  });
+
   describe("createSubscriptionClient", () => {
     it("creates a client instance", async () => {
       const { createSubscriptionClient, SubscriptionClient } =

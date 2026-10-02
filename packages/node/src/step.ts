@@ -16,7 +16,7 @@ import type {
   PublishOptions,
   PublishResult,
 } from "@ironflow/core";
-import { StepError, StepTimeoutError, isRetryable, parseDuration, InvokeError } from "@ironflow/core";
+import { StepError, StepTimeoutError, isRetryable, parseDuration, InvokeError, HEADERS } from "@ironflow/core";
 import { ExecutionContext, BranchContext } from "./internal/context.js";
 import {
   YieldSignal,
@@ -35,6 +35,8 @@ interface StepContext {
   readonly stepTimeout?: string;
   readonly serverUrl?: string;
   readonly apiKey?: string;
+  readonly environment?: string;
+  readonly signal?: AbortSignal;
   generateStepId(name: string): string;
   shouldSkipStep(stepId: string): boolean;
   getMemoizedOutput<T>(stepId: string): T | undefined;
@@ -170,6 +172,9 @@ async function executeStep<T>(
     ctx.logger.debug(`Step memoized: ${name}`, { stepId });
     return ctx.getMemoizedOutput<T>(stepId)!;
   }
+
+  // A cancelled job must not start another side effect (#2479).
+  ctx.signal?.throwIfAborted();
 
   // Execute the step
   const startedAt = new Date();
@@ -808,11 +813,19 @@ async function executePublish(
     if (ctx.apiKey) {
       headers["Authorization"] = `Bearer ${ctx.apiKey}`;
     }
+    // An API key without an environment scope falls back to env_default
+    // server-side, so the worker's environment must ride along (#2470).
+    if (ctx.environment) {
+      headers[HEADERS.ENVIRONMENT] = ctx.environment;
+    }
     // Attribute the publish to this run so the flow map can learn
     // function->topic edges (#1706). This request is hand-rolled rather than
     // routed through the client, so it does not get the header for free.
     if (ctx.runId) {
       headers["X-Ironflow-Run-ID"] = ctx.runId;
+    }
+    if (ctx.environment) {
+      headers["X-Ironflow-Environment"] = ctx.environment;
     }
 
     const response = await fetch(url, {

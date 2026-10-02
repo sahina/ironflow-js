@@ -12,7 +12,7 @@ vi.stubGlobal("fetch", mockFetch);
 const noopLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
 /** Drive the real REST worker through one job whose handler publishes once. */
-async function runPublishJob(apiKey?: string): Promise<Record<string, string>> {
+async function runPublishJob(apiKey?: string, environment?: string): Promise<Record<string, string>> {
   let served = false;
   let publishHeaders: Record<string, string> = {};
   let resolveDone: () => void = () => {};
@@ -73,6 +73,7 @@ async function runPublishJob(apiKey?: string): Promise<Record<string, string>> {
     functions: [fn],
     logger: noopLogger,
     ...(apiKey ? { apiKey } : {}),
+    ...(environment ? { environment } : {}),
   });
 
   void worker.start();
@@ -110,5 +111,10 @@ describe("pull worker step callback auth (#1672)", () => {
     vi.stubEnv("IRONFLOW_API_KEY", "env-key");
     const headers = await runPublishJob("explicit-key");
     expect(headers.Authorization).toBe("Bearer explicit-key");
+  });
+
+  it("sends the worker environment on step.publish (#2471)", async () => {
+    const headers = await runPublishJob(undefined, "staging");
+    expect(headers["X-Ironflow-Environment"]).toBe("staging");
   });
 });

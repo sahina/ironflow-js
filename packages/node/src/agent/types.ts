@@ -209,8 +209,8 @@ export interface MemoryAppendOptions {
 /**
  * Memory client.
  *
- * Wraps an entity stream keyed by the agent run. memory.entityStream()
- * requires a projection — raw replay is not exposed.
+ * Wraps an entity stream keyed by the agent run. Reads go through a
+ * projection — raw replay is not exposed.
  */
 export interface MemoryClient {
   /**
@@ -222,13 +222,6 @@ export interface MemoryClient {
 
   /** Append a memory event (durable). */
   append<T = unknown>(eventName: string, data: T, options?: MemoryAppendOptions): Promise<void>;
-
-  /**
-   * Open a projection-backed entity stream view.
-   *
-   * Throws MemoryProjectionRequiredError if no projection name is supplied.
-   */
-  entityStream<T = unknown>(streamId: string, projectionName: string): Promise<T | undefined>;
 }
 
 /**
@@ -357,6 +350,12 @@ export interface ExposeMcpConfig {
    * `IRONFLOW_API_KEY` env var.
    */
   apiKey?: string;
+  /**
+   * Environment for RegisterTool and UnregisterTool, sent as
+   * `X-Ironflow-Environment`. Defaults to `IRONFLOW_ENV`. With neither set no
+   * header is sent and the server uses the API key's environment.
+   */
+  environment?: string;
 }
 
 // ============================================================================

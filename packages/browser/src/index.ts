@@ -72,6 +72,10 @@ export { createWebSocketTransport, createConnectRPCTransport } from "./transport
 // KV exports
 export { BrowserKVClient, BrowserKVBucketHandle } from "./kv.js";
 
+// File storage exports
+export { BrowserFilesClient, BrowserFileBucketHandle, uploadToSignedUrl, downloadFromSignedUrl } from "./files.js";
+export type { BrowserFileBody } from "./files.js";
+
 // Config exports
 export { BrowserConfigClient } from "./config-client.js";
 
@@ -174,6 +178,20 @@ export type {
   KVWatchOptions,
   KVWatcher,
 
+  // File storage types
+  FileBucketConfig,
+  FileBucketInfo,
+  FileInfo,
+  ListFilesOptions,
+  ListFilesResult,
+  PutFileOptions,
+  GetFileOptions,
+  FileObject,
+  MoveFileOptions,
+  CopyFileOptions,
+  SignUploadOptions,
+  SignedUrl,
+
   // Config types
   ConfigResponse,
   ConfigEntry,
@@ -226,6 +244,11 @@ export {
   RunFailedError,
   RunCancelledError,
   AgentInvokeTimeoutError,
+  // The bundle inlines @ironflow/core, so a class imported from core directly
+  // fails instanceof; this re-export is the only reachable copy.
+  PreconditionFailedError,
+  PayloadTooLargeError,
+  UnsupportedMediaTypeError,
   isRetryable,
   isIronflowError,
 } from "@ironflow/core";

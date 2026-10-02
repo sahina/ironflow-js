@@ -25,8 +25,8 @@ const { createStreamingWorker } = await import("./worker-streaming.js");
 
 const noopLogger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 
-/** Drive the real StreamingWorker's executeJob and return the 6th ctor arg. */
-async function apiKeyReachingContext(apiKey?: string): Promise<unknown> {
+/** Drive the real StreamingWorker's executeJob and return the ctor args. */
+async function apiKeyReachingContext(apiKey?: string, environment?: string): Promise<unknown[]> {
   ctorArgs.length = 0;
 
   const fn = {
@@ -39,6 +39,7 @@ async function apiKeyReachingContext(apiKey?: string): Promise<unknown> {
     functions: [fn],
     logger: noopLogger,
     ...(apiKey ? { apiKey } : {}),
+    ...(environment ? { environment } : {}),
   });
 
   const job = {
@@ -59,7 +60,7 @@ async function apiKeyReachingContext(apiKey?: string): Promise<unknown> {
     .catch(() => {});
 
   expect(ctorArgs.length).toBeGreaterThan(0);
-  return ctorArgs[0]![5];
+  return ctorArgs[0]!;
 }
 
 describe("streaming worker step callback auth (#1672)", () => {
@@ -68,11 +69,15 @@ describe("streaming worker step callback auth (#1672)", () => {
 
   it("passes IRONFLOW_API_KEY into the execution context", async () => {
     vi.stubEnv("IRONFLOW_API_KEY", "env-key");
-    expect(await apiKeyReachingContext()).toBe("env-key");
+    expect((await apiKeyReachingContext())[5]).toBe("env-key");
   });
 
   it("prefers an explicit apiKey over the env var", async () => {
     vi.stubEnv("IRONFLOW_API_KEY", "env-key");
-    expect(await apiKeyReachingContext("explicit-key")).toBe("explicit-key");
+    expect((await apiKeyReachingContext("explicit-key"))[5]).toBe("explicit-key");
+  });
+
+  it("passes the worker environment into the execution context", async () => {
+    expect((await apiKeyReachingContext(undefined, "staging"))[6]).toBe("staging");
   });
 });

@@ -521,7 +521,7 @@ The `serve()` function creates a universal HTTP handler for serverless deploymen
 |-------|------|-------------|
 | `functions` | `IronflowFunction[]` | **Required.** Functions to handle. |
 | `projections` | `IronflowProjection[]` | Logs a warning -- use `createWorker` for projections. |
-| `signingKey` | `string` | HMAC-SHA256 signing key for request verification. |
+| `signingKey` | `string` | HMAC-SHA256 signing key for request verification. Verification needs the raw request body: do not run a JSON body parser such as `express.json()` before `serve()`. |
 | `skipVerification` | `boolean` | Skip signature verification (dev only). |
 | `logger` | `Logger \| false` | Custom logger or `false` to disable. |
 | `environment` | `string` | Target environment (default: `IRONFLOW_ENV` or `"default"`). |
@@ -600,14 +600,13 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `eventDefinitions` | `EventDefinitionRegistry` | -- | Registry for automatic event upcasting. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `checkpointInterval` | `number` | `1000` | Debounce window in ms for checkpointing completed steps to the server while a job is still running; `0` disables. Without it a killed worker loses all in-flight progress and the reclaimed run re-executes every step. REST polling worker only -- `createStreamingWorker` ignores it. |
-| `transport` | `"polling" \| "streaming"` | `"polling"` | Inert -- `createWorker` always polls. Import `createStreamingWorker` from `@ironflow/node/worker-streaming` for streaming. |
 
 ### Worker interface
 
 | Method | Description |
 |--------|-------------|
 | `start()` | Start the worker. Blocks until stopped. Auto-reconnects on failure. |
-| `drain()` | Stop polling, wait up to 30 seconds for active jobs, then cancel the remainder. Pull workers also drain on SIGINT and SIGTERM, then exit the process unless your app also listens for that signal. |
+| `drain()` | Stop polling, wait up to `drainTimeout` (default 30 seconds) for active jobs, then cancel the remainder. Pull workers also drain on SIGINT and SIGTERM. When all workers in the process have drained, the process exits unless your app also listens for that signal. |
 | `stop()` | Force stop immediately. Cancels all active jobs. |
 
 ```typescript
@@ -646,11 +645,7 @@ const worker = createStreamingWorker({
   maxConcurrentJobs: 10,
 });
 
-process.on('SIGTERM', async () => {
-  await worker.drain();
-  process.exit(0);
-});
-
+// The streaming worker also drains on SIGINT and SIGTERM, then exits.
 await worker.start();
 ```
 
@@ -670,6 +665,7 @@ The HTTP client for interacting with the Ironflow server from your backend code.
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `timeout` | `number` | `30000` | Request timeout in ms. |
 | `onError` | `OnErrorHandler` | -- | Global error handler (optional). |
+| `retry` | `ClientRetryConfig` | 3 attempts, 100 ms, factor 2, max 10 s | Retry with backoff. A call that changes nothing is retried on a network error, timeout, `408`, `429` or `5xx`; all other calls on `429` only. Honors `Retry-After`. `maxAttempts: 1` disables. |
 
 ### Creating a client
 
@@ -1596,6 +1592,13 @@ const resumedSubscription = await sub.subscribe('events:order.*', {
 // Reconnects preserve every identifying option but do not repeat `replay`.
 // Without a cursor or consumer group, fan-out resumes at the current tail.
 
+// Follow one entity stream (pattern entity:order.order-123.>)
+const entitySub = await sub.subscribeEntityStream('order-123', {
+  entityType: 'order',
+  onEvent: (event) => console.log(event.name, event.entityVersion),
+  replay: 100,
+});
+
 // Cleanup
 subscription.unsubscribe();
 sub.close();
@@ -2017,7 +2020,7 @@ Per-function `recordingRetention` is metadata-only today. The global audit prune
 | `DuplicateToolError` | Two tools registered with the same `name`. |
 | `LLMError` | Base LLM failure; `LLMInvalidJSONError`, `LLMMaxTokensError`, `LLMRefusalError` are subclasses. |
 | `MaxTurnsExceededError` | Agent exceeded its logical `maxTurns` limit. |
-| `MemoryProjectionRequiredError` | `memory.entityStream(streamId, projectionName)` called with an empty projection name. |
+| `MemoryProjectionRequiredError` | `agent()` was given a `memory` config with an empty `projection`. |
 
 ### Expose tools over MCP
 

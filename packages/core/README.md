@@ -1855,7 +1855,8 @@ class IronflowError extends Error {
 ### Utility Functions
 
 ```typescript
-// Check if an error is retryable (also returns true for fetch TypeErrors)
+// Check if an error is retryable. An IronflowError carries its own flag;
+// anything else (a plain Error, a thrown string) is retryable.
 isRetryable(error: unknown): boolean
 
 // Type guard for IronflowError
@@ -2181,7 +2182,8 @@ import {
 
   DEFAULT_WORKER,
   // { MAX_CONCURRENT_JOBS: 10, HEARTBEAT_INTERVAL_MS: 30_000, RECONNECT_DELAY_MS: 5_000,
-  //   CHECKPOINT_INTERVAL_MS: 1_000, MAX_CHECKPOINT_STEPS: 500, MAX_CHECKPOINT_BACKOFF_MS: 30_000 }
+  //   CHECKPOINT_INTERVAL_MS: 1_000, MAX_CHECKPOINT_STEPS: 500, MAX_CHECKPOINT_BACKOFF_MS: 30_000,
+  //   DRAIN_TIMEOUT_MS: 30_000 }
 
   DEFAULT_RECONNECT,
   // { ENABLED: true, MAX_ATTEMPTS: 10, INITIAL_DELAY_MS: 1_000,

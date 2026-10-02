@@ -256,4 +256,50 @@ describe("exposeMcp() — runtime", () => {
     // RegisterTool + first UnregisterTool = 2 calls; second is a no-op.
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    { name: "config", config: "staging", envVar: "qa", want: "staging" },
+    { name: "env var", config: undefined, envVar: "qa", want: "qa" },
+    { name: "empty string", config: "", envVar: "qa", want: "qa" },
+    { name: "none", config: undefined, envVar: undefined, want: undefined },
+  ])("register and unregister send the environment: $name (#2471)", async ({ config, envVar, want }) => {
+    const saved = process.env.IRONFLOW_ENV;
+    if (envVar) process.env.IRONFLOW_ENV = envVar;
+    else delete process.env.IRONFLOW_ENV;
+    try {
+      const fetchMock = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+        const body = String(input).endsWith("UnregisterTool")
+          ? {}
+          : { hmacSecret: "ab".repeat(32), registeredToolNames: ["env-agent.search"] };
+        return new Response(JSON.stringify(body), { status: 200 });
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const handle = await exposeMcp({
+        name: "env-agent",
+        version: "0.1.0",
+        callbackUrl: CALLBACK_URL,
+        serverUrl: SERVER_URL,
+        apiKey: API_KEY,
+        environment: config,
+        tools: [
+          {
+            name: "search",
+            description: "Search the corpus",
+            input: z.object({ q: z.string() }),
+            handler: async ({ q }) => ({ hits: q.length }),
+          },
+        ],
+      });
+      await handle.unregister();
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      for (const [, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
+        expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe(want);
+      }
+    } finally {
+      if (saved === undefined) delete process.env.IRONFLOW_ENV;
+      else process.env.IRONFLOW_ENV = saved;
+    }
+  });
 });

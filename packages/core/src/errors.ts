@@ -293,17 +293,14 @@ export class StepTimeoutError extends IronflowError {
 }
 
 /**
- * Check if an error is retryable
+ * Check if an error is retryable.
+ *
+ * Only an IronflowError can opt out of retry. Go's IsRetryable and the Python
+ * worker use the same rule, so the same handler retries the same way in every
+ * SDK (#2443).
  */
 export function isRetryable(error: unknown): boolean {
-  if (error instanceof IronflowError) {
-    return error.retryable;
-  }
-  // Network errors are generally retryable
-  if (error instanceof TypeError && error.message.includes("fetch")) {
-    return true;
-  }
-  return false;
+  return error instanceof IronflowError ? error.retryable : true;
 }
 
 /**
@@ -607,4 +604,73 @@ export function throwIfAuthError(status: number, context: string): void {
   if (status === 403) {
     throw new UnauthorizedError(`${context}: 403 forbidden. ${AUTH_HELP}`);
   }
+}
+
+/** HTTP 412: an If-Match / If-None-Match precondition did not hold. */
+export class PreconditionFailedError extends IronflowError {
+  constructor(message: string) {
+    super(message, { code: "PRECONDITION_FAILED", status: 412, retryable: false });
+    this.name = "PreconditionFailedError";
+  }
+}
+
+/** HTTP 413: the body exceeds the bucket or server size cap. */
+export class PayloadTooLargeError extends IronflowError {
+  constructor(message: string) {
+    super(message, { code: "PAYLOAD_TOO_LARGE", status: 413, retryable: false });
+    this.name = "PayloadTooLargeError";
+  }
+}
+
+/** HTTP 415: the content type is not allowed by the bucket. */
+export class UnsupportedMediaTypeError extends IronflowError {
+  constructor(message: string) {
+    super(message, { code: "UNSUPPORTED_MEDIA_TYPE", status: 415, retryable: false });
+    this.name = "UnsupportedMediaTypeError";
+  }
+}
+
+/** Typed error for a files-route failure; shared by the node and browser SDKs. */
+export function fileErrorFor(status: number, message: string, code?: string): IronflowError {
+  switch (status) {
+    case 412:
+      return new PreconditionFailedError(message);
+    case 413:
+      return new PayloadTooLargeError(message);
+    case 415:
+      return new UnsupportedMediaTypeError(message);
+    case 409:
+      return new ConflictError(message);
+  }
+  return new IronflowError(message, {
+    code: code ?? `HTTP_${status}`,
+    status,
+    retryable: status >= 500 || status === 429,
+  });
+}
+
+const isBadSegment = (s: string) => s === "" || s === "." || s === "..";
+
+/**
+ * Encode a bucket name as one URL segment ("/" is escaped). Throws on "", "."
+ * and "..", which fetch would resolve away from the bucket route.
+ */
+export function encodeBucketName(name: string): string {
+  if (isBadSegment(name)) {
+    throw new ValidationError(`invalid bucket name ${JSON.stringify(name)}: empty, "." and ".." are not allowed`);
+  }
+  return encodeURIComponent(name);
+}
+
+/**
+ * Percent-encode each path segment; keep "/" so the server sees the hierarchy.
+ * Throws on an empty, "." or ".." segment (the server's rule too): fetch
+ * resolves dot segments in the URL, so "../../b/objects/x" would reach another bucket.
+ */
+export function encodeFilePath(path: string): string {
+  const segs = path.split("/");
+  if (segs.some(isBadSegment)) {
+    throw new ValidationError(`invalid file path ${JSON.stringify(path)}: empty, "." and ".." segments are not allowed`);
+  }
+  return segs.map(encodeURIComponent).join("/");
 }

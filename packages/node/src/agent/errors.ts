@@ -143,15 +143,16 @@ export class ToolNotFoundError extends IronflowError {
 }
 
 /**
- * Thrown when memory.entityStream() is called without a projection.
+ * `agent()` was given a `memory` config with an empty `projection`.
  *
  * Per architecture decision: raw event replay is not exposed through
- * the agent memory API. Consumers must define a projection.
+ * the agent memory API. Consumers must define a projection. Thrown at
+ * definition time.
  */
 export class MemoryProjectionRequiredError extends IronflowError {
   constructor(streamId: string) {
     super(
-      `memory.entityStream("${streamId}") requires a projection — raw replay is not exposed via the agent API`,
+      `agent memory stream "${streamId}" requires a projection — raw replay is not exposed via the agent API`,
       {
         code: "AGENT_MEMORY_PROJECTION_REQUIRED",
         retryable: false,

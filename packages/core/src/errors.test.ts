@@ -19,6 +19,7 @@ import {
   isRetryable,
   isIronflowError,
   toError,
+  encodeFilePath,
 } from "./errors.js";
 
 describe("IronflowError", () => {
@@ -319,31 +320,24 @@ describe("isRetryable", () => {
     expect(isRetryable(error)).toBe(expected);
   });
 
-  it("should return true for TypeError with fetch in message", () => {
-    const error = new TypeError("fetch failed");
-    expect(isRetryable(error)).toBe(true);
+  // Same rule as Go's IsRetryable and the Python worker (#2443): only an
+  // IronflowError can opt out of retry.
+  it("should return true for an error that is not an IronflowError", () => {
+    expect(isRetryable(new Error("test"))).toBe(true);
+    expect(isRetryable(new TypeError("Cannot read property"))).toBe(true);
+    expect(isRetryable(new TypeError("fetch failed"))).toBe(true);
   });
 
-  it("should return true for TypeError with fetch keyword", () => {
-    const error = new TypeError("Failed to fetch");
-    expect(isRetryable(error)).toBe(true);
+  it("should return false for a bare IronflowError", () => {
+    expect(isRetryable(new IronflowError("test"))).toBe(false);
   });
 
-  it("should return false for TypeError without fetch keyword", () => {
-    const error = new TypeError("Cannot read property");
-    expect(isRetryable(error)).toBe(false);
-  });
-
-  it("should return false for generic Error", () => {
-    expect(isRetryable(new Error("test"))).toBe(false);
-  });
-
-  it("should return false for non-error values", () => {
-    expect(isRetryable(null)).toBe(false);
-    expect(isRetryable(undefined)).toBe(false);
-    expect(isRetryable("string")).toBe(false);
-    expect(isRetryable(123)).toBe(false);
-    expect(isRetryable({})).toBe(false);
+  it("should return true for non-error values", () => {
+    expect(isRetryable(null)).toBe(true);
+    expect(isRetryable(undefined)).toBe(true);
+    expect(isRetryable("string")).toBe(true);
+    expect(isRetryable(123)).toBe(true);
+    expect(isRetryable({})).toBe(true);
   });
 });
 
@@ -402,5 +396,16 @@ describe("toError", () => {
     const result = toError(undefined);
     expect(result).toBeInstanceOf(Error);
     expect(result.message).toBe("undefined");
+  });
+});
+
+describe("encodeFilePath", () => {
+  it("encodes each segment and keeps the slashes", () => {
+    expect(encodeFilePath("a b/c#d.txt")).toBe("a%20b/c%23d.txt");
+  });
+
+  // fetch normalizes "/.." away, so "../../b/objects/x" would reach another bucket.
+  it.each(["..", "a/../b", "./a", "a/./b", "a//b", "/a", "a/", ""])("rejects %j", (p) => {
+    expect(() => encodeFilePath(p)).toThrow(ValidationError);
   });
 });

@@ -72,8 +72,6 @@ export interface WorkerConfig {
   reconnectDelay?: number;
   /** Worker labels for routing */
   labels?: Record<string, string>;
-  /** Transport type: "polling" or "streaming" */
-  transport?: "polling" | "streaming";
   /** Logger instance (or false to disable) */
   logger?: Logger | false;
   /** Target environment (default: IRONFLOW_ENV or "default") */
@@ -92,6 +90,13 @@ export interface WorkerConfig {
    * REST polling worker only — `createStreamingWorker` ignores it.
    */
   checkpointInterval?: number;
+  /**
+   * How long drain() waits in ms for active jobs before it cancels them
+   * (default: 30000; 0 or less uses the default). On an engine shutdown
+   * message, `createStreamingWorker` uses the drain timeout in the message
+   * instead, when the message has one.
+   */
+  drainTimeout?: number;
 }
 
 /**
@@ -100,7 +105,7 @@ export interface WorkerConfig {
 export interface Worker {
   /** Start the worker (blocks until stopped) */
   start(): Promise<void>;
-  /** Gracefully drain; pull workers cancel remaining jobs after 30 seconds. */
+  /** Gracefully drain; pull workers cancel remaining jobs after `drainTimeout` (default 30 seconds). */
   drain(): Promise<void>;
   /** Force stop immediately */
   stop(): void;

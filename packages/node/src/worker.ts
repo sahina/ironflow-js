@@ -12,6 +12,7 @@ import type {
 } from "@ironflow/core";
 import {
   IronflowError,
+  isRetryable,
   calculateBackoff,
   UnauthenticatedError,
   UnauthorizedError,
@@ -33,6 +34,7 @@ import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
 import { errorDetail } from "./internal/error-detail.js";
+import { drainOnSignal } from "./internal/drain-on-signal.js";
 import {
   CODE_HASH_META_KEY,
   buildWorkerHeaders,
@@ -49,7 +51,6 @@ export { CODE_HASH_META_KEY, functionCodeHash };
 /** Job-poll retry ladder: 5s, 10s, 20s … capped, so an engine that is down is not a log firehose. */
 const POLL_RETRY_BASE_MS = 5000;
 const POLL_RETRY_MAX_MS = 60_000;
-const DRAIN_TIMEOUT_MS = 30_000;
 
 /**
  * Worker lifecycle states
@@ -102,6 +103,7 @@ class IronflowWorker implements Worker {
   private readonly maxConcurrentJobs: number;
   private readonly heartbeatInterval: number;
   private readonly reconnectDelay: number;
+  private readonly drainTimeout: number;
   private readonly logger: Logger;
   private readonly environment: string;
   private readonly apiKey?: string;
@@ -112,14 +114,7 @@ class IronflowWorker implements Worker {
   private abortController?: AbortController;
   private projectionRunners: ProjectionRunner[] = [];
   private drainPromise?: Promise<void>;
-  private readonly handleSignal = (signal: NodeJS.Signals): void => {
-    void this.drain().then(() => {
-      // Our listener replaced Node's default exit-on-signal. A handler cancelled
-      // at the drain deadline cannot be killed and keeps the event loop alive,
-      // so exit here as Go's Run does — unless the app listens too and owns shutdown.
-      if (process.listenerCount(signal) === 0) process.exit();
-    });
-  };
+  private removeSignalDrain?: () => void;
 
   constructor(config: WorkerConfig) {
     this.config = {
@@ -133,6 +128,8 @@ class IronflowWorker implements Worker {
       config.heartbeatInterval ?? DEFAULT_WORKER.HEARTBEAT_INTERVAL_MS;
     this.reconnectDelay =
       config.reconnectDelay ?? DEFAULT_WORKER.RECONNECT_DELAY_MS;
+    this.drainTimeout =
+      config.drainTimeout && config.drainTimeout > 0 ? config.drainTimeout : DEFAULT_WORKER.DRAIN_TIMEOUT_MS;
     this.environment = resolveEnvironment(config.environment);
     this.apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
 
@@ -170,8 +167,7 @@ class IronflowWorker implements Worker {
 
     this.state = "connecting";
     this.abortController = new AbortController();
-    process.once("SIGINT", this.handleSignal);
-    process.once("SIGTERM", this.handleSignal);
+    this.removeSignalDrain = drainOnSignal(() => this.drain());
 
     this.logger.info(
       `Starting worker ${this.workerId} with ${this.functionMap.size} functions`
@@ -223,7 +219,7 @@ class IronflowWorker implements Worker {
     this.state = "draining";
 
     this.drainPromise = (async () => {
-      const deadline = Date.now() + DRAIN_TIMEOUT_MS;
+      const deadline = Date.now() + this.drainTimeout;
       while (this.activeJobs.size > 0 && Date.now() < deadline) {
         this.logger.info(`Waiting for ${this.activeJobs.size} jobs to complete...`);
         await this.sleep(Math.min(1000, deadline - Date.now()));
@@ -241,8 +237,8 @@ class IronflowWorker implements Worker {
    */
   stop(): void {
     this.state = "stopped";
-    process.removeListener("SIGINT", this.handleSignal);
-    process.removeListener("SIGTERM", this.handleSignal);
+    this.removeSignalDrain?.();
+    this.removeSignalDrain = undefined;
     this.abortController?.abort();
 
     if (this.heartbeatTimer) {
@@ -581,7 +577,7 @@ class IronflowWorker implements Worker {
         error: s.error === undefined ? undefined : JSON.stringify(s.error),
       })),
       resume: undefined,
-    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
+    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
 
     // Checkpoint completed steps to the server as they finish (#1670) so a
     // killed worker does not take the whole run's progress with it. The
@@ -630,7 +626,7 @@ class IronflowWorker implements Worker {
         return;
       }
 
-      const retryable = error instanceof IronflowError ? error.retryable : true;
+      const retryable = isRetryable(error);
 
       // Run compensations only if error is not retryable (terminal failure)
       if (ctx.hasCompensations() && !retryable) {

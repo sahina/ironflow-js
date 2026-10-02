@@ -16,6 +16,7 @@ import type {
 import {
   AUTH_HELP,
   IronflowError,
+  isRetryable,
   createLogger,
   createNoopLogger,
   DEFAULT_SERVER_URL,
@@ -32,12 +33,14 @@ import {
   JobCompletedSchema,
   JobFailedSchema,
   JobAckSchema,
+  JobNackSchema,
   ErrorSchema,
   ExecutedStepSchema,
   StepStartedSchema,
   StepCompletedSchema,
   StepFailedSchema,
   StepType,
+  JobNackReason,
   type WorkerMessage,
   type EngineMessage,
   type JobAssignment,
@@ -57,12 +60,18 @@ import {
   resolveEnvironment,
 } from "./internal/register-functions.js";
 import { startProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
+import { drainOnSignal } from "./internal/drain-on-signal.js";
 import { SDK_VERSION } from "./version.js";
 
 /**
  * Worker states
  */
 type WorkerState = "idle" | "connecting" | "connected" | "draining" | "stopped";
+
+// Abort reason for jobs that lose their stream. An engine cancel aborts with the
+// default reason: that job still reports its result (#1206, D1). A job that lost
+// its stream must not, since its fence belongs to a session that is gone (#2479).
+const STREAM_CLOSED = new Error("stream closed");
 
 /**
  * Active job tracking
@@ -84,7 +93,8 @@ interface ActiveJob {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WorkerClient = ReturnType<typeof createClient<any>> & {
   connect: (
-    messages: AsyncIterable<WorkerMessage>
+    messages: AsyncIterable<WorkerMessage>,
+    options?: { signal?: AbortSignal }
   ) => AsyncIterable<EngineMessage>;
 };
 
@@ -110,6 +120,7 @@ class StreamingWorker implements Worker {
   private readonly maxConcurrentJobs: number;
   private readonly heartbeatInterval: number;
   private readonly reconnectDelay: number;
+  private readonly drainTimeout: number;
   private readonly logger: Logger;
   private readonly apiKey?: string;
   private readonly environment: string;
@@ -120,6 +131,10 @@ class StreamingWorker implements Worker {
   private projectionRunners: ProjectionRunner[] = [];
   private abortController?: AbortController;
   private sendMessage?: (msg: WorkerMessage) => void;
+  private drainPromise?: Promise<void>;
+  private removeSignalDrain?: () => void;
+  // Half-closes the current stream after the queued messages. Set by connect().
+  private endOutgoing?: () => void;
 
   constructor(config: WorkerConfig) {
     this.config = {
@@ -133,6 +148,8 @@ class StreamingWorker implements Worker {
       config.heartbeatInterval ?? DEFAULT_WORKER.HEARTBEAT_INTERVAL_MS;
     this.reconnectDelay =
       config.reconnectDelay ?? DEFAULT_WORKER.RECONNECT_DELAY_MS;
+    this.drainTimeout =
+      config.drainTimeout && config.drainTimeout > 0 ? config.drainTimeout : DEFAULT_WORKER.DRAIN_TIMEOUT_MS;
     this.apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
     this.environment = resolveEnvironment(config.environment);
 
@@ -170,6 +187,7 @@ class StreamingWorker implements Worker {
 
     this.state = "connecting";
     this.abortController = new AbortController();
+    this.removeSignalDrain = drainOnSignal(() => this.drain());
 
     this.logger.info(
       `Starting streaming worker ${this.workerId} with ${this.functionMap.size} functions`
@@ -177,11 +195,20 @@ class StreamingWorker implements Worker {
 
     // Connect loop with auto-reconnect
     while ((this.state as WorkerState) !== "stopped") {
+      // Without a stream no result can reach the engine, so a draining worker
+      // stops here and does not reconnect.
+      if ((this.state as WorkerState) === "draining") {
+        this.stop();
+        break;
+      }
       try {
         await this.connect();
       } catch (error) {
-        if ((this.state as WorkerState) === "stopped") {
-          break;
+        if (
+          (this.state as WorkerState) === "stopped" ||
+          (this.state as WorkerState) === "draining"
+        ) {
+          continue;
         }
 
         // Auth failures do not fix themselves on the reconnect cadence (#1673).
@@ -213,23 +240,42 @@ class StreamingWorker implements Worker {
   /**
    * Gracefully drain and stop
    */
-  async drain(): Promise<void> {
+  drain(): Promise<void> {
+    return this.drainWithin(this.drainTimeout);
+  }
+
+  private drainWithin(timeoutMs: number): Promise<void> {
     if (this.state === "stopped" || this.state === "idle") {
-      return;
+      return Promise.resolve();
     }
+    if (this.drainPromise) return this.drainPromise;
 
     this.logger.info("Draining worker...");
     this.state = "draining";
 
-    // Wait for active jobs to complete
-    while (this.activeJobs.size > 0) {
-      this.logger.info(
-        `Waiting for ${this.activeJobs.size} jobs to complete...`
-      );
-      await this.sleep(1000);
-    }
-
-    this.stop();
+    this.drainPromise = (async () => {
+      const deadline = Date.now() + timeoutMs;
+      const draining = () =>
+        (this.state as WorkerState) === "draining" && Date.now() < deadline;
+      while (this.activeJobs.size > 0 && draining()) {
+        this.logger.info(`Waiting for ${this.activeJobs.size} jobs to complete...`);
+        await this.sleep(Math.min(1000, deadline - Date.now()));
+      }
+      if (this.activeJobs.size > 0) {
+        this.logger.warn(`Drain deadline reached; cancelling ${this.activeJobs.size} active jobs`);
+      } else {
+        // Close the stream gracefully. stop() aborts it, and the engine can
+        // then miss the last results. The stream sends what is queued and
+        // half-closes, the engine reads to the end and closes it, and start()
+        // stops the worker.
+        this.endOutgoing?.();
+        while (draining()) {
+          await this.sleep(Math.min(100, deadline - Date.now()));
+        }
+      }
+      this.stop();
+    })();
+    return this.drainPromise;
   }
 
   /**
@@ -237,6 +283,8 @@ class StreamingWorker implements Worker {
    */
   stop(): void {
     this.state = "stopped";
+    this.removeSignalDrain?.();
+    this.removeSignalDrain = undefined;
     this.abortController?.abort();
 
     if (this.heartbeatTimer) {
@@ -289,6 +337,10 @@ class StreamingWorker implements Worker {
       signal: this.abortController?.signal,
     });
 
+    // drain() or stop() ran during the registration. Do not open a stream:
+    // "connected" below would put the worker back into service.
+    if ((this.state as WorkerState) !== "connecting") return;
+
     // Create Connect transport with HTTP/2 for bidirectional streaming
     const apiKey = this.apiKey;
     const environment = this.environment;
@@ -314,6 +366,12 @@ class StreamingWorker implements Worker {
     // Create message queue for sending
     const messageQueue: WorkerMessage[] = [];
     let resolveNext: (() => void) | null = null;
+    let ending = false;
+    this.endOutgoing = () => {
+      ending = true;
+      resolveNext?.();
+      resolveNext = null;
+    };
 
     // Function to send messages
     this.sendMessage = (msg: WorkerMessage) => {
@@ -329,6 +387,9 @@ class StreamingWorker implements Worker {
       while (true) {
         if (messageQueue.length > 0) {
           yield messageQueue.shift()!;
+        } else if (ending) {
+          // The end of this generator half-closes the stream.
+          return;
         } else {
           await new Promise<void>((resolve) => {
             resolveNext = resolve;
@@ -373,7 +434,11 @@ class StreamingWorker implements Worker {
 
     // Process incoming messages from the stream
     try {
-      const stream = client.connect(outgoingMessages());
+      // stop() must close the stream: the engine reclaims this worker's leases
+      // only after the stream is gone.
+      const stream = client.connect(outgoingMessages(), {
+        signal: this.abortController?.signal,
+      });
 
       for await (const message of stream) {
         if ((this.state as WorkerState) === "stopped") {
@@ -386,6 +451,16 @@ class StreamingWorker implements Worker {
         clearInterval(this.heartbeatTimer);
         this.heartbeatTimer = undefined;
       }
+      // The engine reclaims this stream's leases and sends the jobs again. An
+      // execution that outlives its stream would hold credits the engine gave
+      // to the next session and report with a stale fence (#2479). Parity with
+      // the Go worker's cancelAllJobs.
+      for (const job of this.activeJobs.values()) {
+        job.abortController.abort(STREAM_CLOSED);
+      }
+      this.activeJobs.clear();
+      this.sendMessage = undefined;
+      this.endOutgoing = undefined;
     }
   }
 
@@ -423,7 +498,12 @@ class StreamingWorker implements Worker {
         this.logger.info("Shutdown requested", {
           reason: message.payload.value.reason,
         });
-        this.drain();
+        // The engine stops waiting after its drain timeout, so use it when it is set.
+        this.drainWithin(
+          message.payload.value.drainTimeoutMs > 0
+            ? message.payload.value.drainTimeoutMs
+            : this.drainTimeout
+        );
         break;
 
       default:
@@ -435,9 +515,18 @@ class StreamingWorker implements Worker {
    * Handle a job assignment from the server
    */
   private async handleJobAssignment(job: JobAssignment): Promise<void> {
-    // Check capacity
+    // A job the worker cannot run gets a nack (#2456). A nack uses no run
+    // attempt, and the engine re-queues the job at once. An engine older than
+    // the nack drops the message; it then recovers the job after the lease
+    // expires.
+    if (this.state === "draining") {
+      this.logger.info("Draining, refusing job", { jobId: job.jobId });
+      this.nackJob(job, JobNackReason.DRAINING);
+      return;
+    }
     if (this.activeJobs.size >= this.maxConcurrentJobs) {
-      this.logger.warn("At capacity, cannot accept job", { jobId: job.jobId });
+      this.logger.warn("At capacity, refusing job", { jobId: job.jobId });
+      this.nackJob(job, JobNackReason.AT_CAPACITY);
       return;
     }
 
@@ -476,8 +565,32 @@ class StreamingWorker implements Worker {
         this.logger.error(`Job ${job.jobId} failed`, { error: String(error) });
       })
       .finally(() => {
-        this.activeJobs.delete(job.jobId);
+        // The engine can deliver this job again after a reconnect. Its entry
+        // is not ours to remove (#2479).
+        if (this.activeJobs.get(job.jobId) === activeJob) {
+          this.activeJobs.delete(job.jobId);
+        }
       });
+  }
+
+  /**
+   * Refuse an assignment the worker did not start, echoing its fence.
+   */
+  private nackJob(job: JobAssignment, reason: JobNackReason): void {
+    this.sendMessage?.(
+      create(WorkerMessageSchema, {
+        payload: {
+          case: "jobNack",
+          value: create(JobNackSchema, {
+            jobId: job.jobId,
+            runId: job.runId,
+            executionSeq: job.executionSeq,
+            leaseToken: job.leaseToken,
+            reason,
+          }),
+        },
+      })
+    );
   }
 
   /**
@@ -487,8 +600,9 @@ class StreamingWorker implements Worker {
     const job = this.activeJobs.get(jobId);
     if (job) {
       this.logger.info("Cancelling job", { jobId, reason });
+      // The entry stays until the handler exits, so the capacity count and
+      // drain() still see the execution (#2479).
       job.abortController.abort();
-      this.activeJobs.delete(jobId);
     }
   }
 
@@ -501,9 +615,9 @@ class StreamingWorker implements Worker {
   ): Promise<void> {
     // Capture the execution fence from the assignment up front (#1206, ADR 0037).
     // Terminal messages echo it from here, NOT from a late activeJobs lookup — a
-    // concurrent cancel deletes the job from the map, and a handler that finishes
-    // afterward would otherwise send an empty token and the engine would
-    // fenceDisconnect the whole stream. Parity with the Go SDK, whose per-job
+    // stream drop clears the map, and a handler that finishes afterward would
+    // otherwise send an empty token and the engine would fenceDisconnect the
+    // whole stream. Parity with the Go SDK, whose per-job
     // reporter captures the fence at construction.
     const fence = {
       executionSeq: job.executionSeq,
@@ -558,13 +672,14 @@ class StreamingWorker implements Worker {
       event,
       steps: memoSteps(job.completedSteps),
       resume: undefined,
-    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey);
+    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
 
     // Only step.run() rows are written here: sleep and wait-for-event reach the
     // engine as yields and compensations ride on JobFailed. The engine needs a
     // StepStarted row before it accepts the result, so both go out together.
+    ctx.signal = signal;
     ctx.onStepResult = (s) => {
-      if (s.type !== "invoke") return;
+      if (s.type !== "invoke" || signal.reason === STREAM_CLOSED) return;
       this.sendStepResult(job.jobId, s, fence);
     };
 
@@ -589,6 +704,8 @@ class StreamingWorker implements Worker {
       );
       const durationMs = Date.now() - startTime;
 
+      if (signal.reason === STREAM_CLOSED) return;
+
       // Send completion via stream
       await this.sendJobCompleted(job.jobId, result, durationMs, fence);
     } catch (error) {
@@ -604,8 +721,7 @@ class StreamingWorker implements Worker {
         return;
       }
 
-      // A plain throw is retryable, as in the polling worker; only IronflowError says otherwise.
-      const retryable = error instanceof IronflowError ? error.retryable : true;
+      const retryable = isRetryable(error);
 
       // Run compensations only if error is not retryable (terminal failure)
       if (ctx.hasCompensations() && !retryable) {
@@ -630,8 +746,8 @@ class StreamingWorker implements Worker {
   /**
    * Send job completed message via stream. The fence (execution_seq, lease_token)
    * is captured from the JobAssignment by the caller (#1206, ADR 0037), not
-   * re-derived from the mutable activeJobs map, so a concurrent cancel cannot
-   * blank it.
+   * re-derived from the mutable activeJobs map, so a concurrent stream drop
+   * cannot blank it.
    */
   private async sendJobCompleted(
     jobId: string,

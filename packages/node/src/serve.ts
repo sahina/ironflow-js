@@ -98,6 +98,12 @@ export function serve(config: ServeConfig): UniversalHandler {
   // Resolve environment
   const environment =
     config.environment ?? process.env.IRONFLOW_ENV ?? DEFAULT_ENVIRONMENT;
+  // Step callbacks get only an explicitly chosen environment. The "default"
+  // fallback above is for the response header; sending it would 403 a push
+  // app whose API key is scoped to another environment (#2471). `||`, not
+  // `??`: an empty string falls back to IRONFLOW_ENV, as in Go, and an empty
+  // result is unset.
+  const runEnvironment = config.environment || process.env.IRONFLOW_ENV || undefined;
 
   // Initialize logger
   let logger: Logger;
@@ -327,7 +333,7 @@ export function serve(config: ServeConfig): UniversalHandler {
 
       // Execute function
       const serverUrl = config.serverUrl || process.env.IRONFLOW_URL || process.env.IRONFLOW_SERVER_URL;
-      const response = await executeHandler(fn, pushRequest, config.eventDefinitions, serverUrl);
+      const response = await executeHandler(fn, pushRequest, config.eventDefinitions, serverUrl, runEnvironment);
       return sendResponse(200, response);
     } catch (error) {
       // Unexpected error
@@ -353,7 +359,8 @@ async function executeHandler(
   fn: IronflowFunction,
   request: ValidatedPushRequest,
   eventDefinitions?: EventDefinitionRegistry,
-  serverUrl?: string
+  serverUrl?: string,
+  environment?: string
 ): Promise<PushResponse> {
   // Create execution context (with optional upcasting)
   // Step callbacks authenticate with the same env key the worker uses; serve()
@@ -364,7 +371,8 @@ async function executeHandler(
     eventDefinitions,
     fn.config.stepTimeout,
     serverUrl,
-    process.env.IRONFLOW_API_KEY
+    process.env.IRONFLOW_API_KEY,
+    environment
   );
 
   // Create step client
@@ -569,35 +577,45 @@ function extractRequestPath(req: Request | NodeRequest): string {
   return nodeReq.url ?? "";
 }
 
+const SIGNATURE_TOLERANCE_SECONDS = 300;
+
 /**
- * Verify HMAC-SHA256 signature using timing-safe comparison.
+ * Verify the engine's push signature (signPayload in
+ * internal/engine/executor_transport.go): "t=<unix-seconds>,v1=<hex>", where
+ * the hex is HMAC-SHA256 over "{t}.{body}".
  *
- * The signature header is expected in the format "sha256=<hex digest>".
+ * This is NOT the agent-tool "sha256=<hex>" contract (agent/dispatch.ts).
  */
 function verifySignature(
   body: string,
   signature: string,
   signingKey: string
 ): boolean {
-  const prefix = "sha256=";
-  if (!signature.startsWith(prefix)) {
+  const parts = new Map<string, string>();
+  for (const pair of signature.split(",")) {
+    const eq = pair.indexOf("=");
+    if (eq > 0) {
+      parts.set(pair.slice(0, eq).trim(), pair.slice(eq + 1));
+    }
+  }
+
+  const tsRaw = parts.get("t");
+  const receivedHex = parts.get("v1");
+  // Buffer.from(..., "hex") silently truncates at the first non-hex char, so
+  // the digest shape is checked before it is decoded.
+  if (!tsRaw || !/^\d+$/.test(tsRaw) || !receivedHex || !/^[0-9a-fA-F]{64}$/.test(receivedHex)) {
     return false;
   }
 
-  const receivedHex = signature.slice(prefix.length);
-  const expectedHex = createHmac("sha256", signingKey)
-    .update(body)
-    .digest("hex");
-
-  // Timing-safe comparison to prevent timing attacks
-  const receivedBuf = Buffer.from(receivedHex, "hex");
-  const expectedBuf = Buffer.from(expectedHex, "hex");
-
-  if (receivedBuf.length !== expectedBuf.length) {
+  if (Math.abs(Date.now() / 1000 - Number(tsRaw)) > SIGNATURE_TOLERANCE_SECONDS) {
     return false;
   }
 
-  return timingSafeEqual(receivedBuf, expectedBuf);
+  const expected = createHmac("sha256", signingKey)
+    .update(`${tsRaw}.${body}`)
+    .digest();
+
+  return timingSafeEqual(Buffer.from(receivedHex, "hex"), expected);
 }
 
 /**

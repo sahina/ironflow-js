@@ -2,7 +2,7 @@
  * Browser client configuration
  */
 
-import type { Logger } from "@ironflow/core";
+import type { ClientRetryConfig, Logger } from "@ironflow/core";
 import { DEFAULT_SERVER_URL, DEFAULT_RECONNECT, DEFAULT_ENVIRONMENT } from "@ironflow/core";
 
 /**
@@ -62,6 +62,8 @@ export interface IronflowConfig {
   logger?: Logger | false;
   /** Request timeout in milliseconds (default: 30000) */
   timeout?: number;
+  /** Retry policy for file uploads with a replayable body. Other requests are not retried. */
+  retry?: ClientRetryConfig;
   /** Target environment (default: "default") */
   environment: string;
 }
@@ -84,6 +86,8 @@ export interface IronflowConfigOptions {
   logger?: Logger | false;
   /** Request timeout in milliseconds */
   timeout?: number;
+  /** Retry policy for file uploads with a replayable body. Other requests are not retried. */
+  retry?: ClientRetryConfig;
   /** Target environment (default: "default") */
   environment?: string;
 }
@@ -138,6 +142,7 @@ export function mergeConfig(options: IronflowConfigOptions): IronflowConfig {
     },
     logger: options.logger,
     timeout: options.timeout,
+    retry: options.retry,
     environment: options.environment ?? DEFAULT_CONFIG.environment,
   };
 }

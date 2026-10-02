@@ -150,6 +150,7 @@ import { createConnectRPCTransport } from "./transport/connectrpc.js";
 import { filterWaitStreamFrames } from "./projection-stream.js";
 import type { Transport, TransportOptions } from "./transport/types.js";
 import { BrowserKVClient } from "./kv.js";
+import { BrowserFilesClient } from "./files.js";
 import { BrowserConfigClient } from "./config-client.js";
 import { createAgentsNamespace, type AgentsNamespace } from "./agents/index.js";
 import type { z } from "zod";
@@ -2260,6 +2261,15 @@ class IronflowClient {
   kv(): BrowserKVClient {
     this.ensureConfigured();
     return new BrowserKVClient(this.config!);
+  }
+
+  /**
+   * File storage: buckets and files. For end users without credentials, use
+   * uploadToSignedUrl / downloadFromSignedUrl with a URL from signUpload().
+   */
+  files(): BrowserFilesClient {
+    this.ensureConfigured();
+    return new BrowserFilesClient(this.config!);
   }
 
   // ============================================================================

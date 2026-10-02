@@ -22,6 +22,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       INVOKE_FUNCTION_SYNC: "/ironflow.v1.IronflowService/InvokeFunctionSync",
     },
     DEFAULT_SERVER_URL: "http://localhost:9123",
+    DEFAULT_CLIENT_RETRY: actual.DEFAULT_CLIENT_RETRY,
     DEFAULT_TIMEOUTS: actual.DEFAULT_TIMEOUTS,
     InvokeFunctionSyncResponseSchema: actual.InvokeFunctionSyncResponseSchema,
     validate: actual.validate,
@@ -189,6 +190,54 @@ describe("IronflowClient", () => {
           id: "test-function",
         })
       ).rejects.toThrow();
+    });
+
+    it("sends secrets, recording fields and metadata", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ created: true }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createClient({ serverUrl: "http://localhost:9123" }).registerFunction({
+        id: "push-fn",
+        endpointUrl: "http://localhost:3000/api/ironflow",
+        preferredMode: "push",
+        secrets: ["STRIPE_KEY"],
+        recording: false,
+        recordingProfile: "steps",
+        recordingRetention: "30d",
+        metadata: { team: "billing" },
+      });
+
+      const [, init] = assertDefined(mockFetch.mock.calls[0]);
+      const body = JSON.parse(init.body as string);
+      expect(body).toMatchObject({
+        secrets: ["STRIPE_KEY"],
+        recording: false,
+        recordingProfile: "steps",
+        recordingRetention: "30d",
+        metadata: { team: "billing" },
+      });
+    });
+
+    it("omits an empty secrets list and unset optional fields", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ created: true }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await createClient({ serverUrl: "http://localhost:9123" }).registerFunction({
+        id: "push-fn",
+        secrets: [],
+      });
+
+      const [, init] = assertDefined(mockFetch.mock.calls[0]);
+      const body = JSON.parse(init.body as string);
+      for (const key of ["secrets", "recording", "recordingProfile", "recordingRetention", "metadata"]) {
+        expect(body).not.toHaveProperty(key);
+      }
     });
   });
 
@@ -934,7 +983,7 @@ describe("IronflowClient", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const client = createClient();
+      const client = createClient({ retry: { maxAttempts: 1 } });
 
       await expect(client.listTopics()).rejects.toThrow("service unavailable");
     });
@@ -1290,7 +1339,7 @@ describe("IronflowClient", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const client = createClient();
+      const client = createClient({ retry: { maxAttempts: 1 } });
 
       await expect(client.listWorkers()).rejects.toThrow(
         "List workers failed: 500"
@@ -1636,7 +1685,7 @@ describe("IronflowClient", () => {
         });
         vi.stubGlobal("fetch", mockFetch);
 
-        const client = createClient({ serverUrl: "http://localhost:9123" });
+        const client = createClient({ serverUrl: "http://localhost:9123", retry: { maxAttempts: 1 } });
 
         await expect(client.streams.getInfo("order-123")).rejects.toThrow(
           "internal server error"
@@ -2870,7 +2919,7 @@ describe("IronflowClient", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const client = createClient();
+      const client = createClient({ retry: { maxAttempts: 1 } });
       await expect(client.secrets.list()).rejects.toThrow("server error");
     });
   });
@@ -2958,7 +3007,7 @@ describe("IronflowClient", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const client = createClient();
+      const client = createClient({ retry: { maxAttempts: 1 } });
       await expect(client.projects.list()).rejects.toThrow("server error");
     });
   });
@@ -3101,7 +3150,7 @@ describe("IronflowClient", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
-      const client = createClient();
+      const client = createClient({ retry: { maxAttempts: 1 } });
       await expect(client.environments.list()).rejects.toThrow("server error");
     });
   });
@@ -3913,5 +3962,45 @@ describe("getPausedState step metadata", () => {
     expect(step.status).toBe("");
     expect(step.error).toBeNull();
     expect(step.output).toBeNull();
+  });
+});
+
+describe("environment (#2471)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  const envHeader = (call: unknown[]): string | undefined =>
+    ((call[1] as RequestInit).headers as Record<string, string>)["X-Ironflow-Environment"];
+
+  it("sends the configured environment on Connect, REST and listWorkers calls", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => "{}" });
+    vi.stubGlobal("fetch", mockFetch);
+    const client = createClient({ serverUrl: "http://localhost:9123", environment: "staging" });
+
+    await client.patchStep("step_1", {}).catch(() => {});
+    await client.environments.list().catch(() => {});
+    await client.listWorkers().catch(() => {});
+
+    expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(3);
+    for (const call of mockFetch.mock.calls) {
+      expect(envHeader(call)).toBe("staging");
+    }
+  });
+
+  it("sends no environment header when unset, even with IRONFLOW_ENV", async () => {
+    vi.stubEnv("IRONFLOW_ENV", "qa");
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => "{}" });
+    vi.stubGlobal("fetch", mockFetch);
+    const client = createClient({ serverUrl: "http://localhost:9123" });
+
+    await client.patchStep("step_1", {}).catch(() => {});
+    await client.listWorkers().catch(() => {});
+
+    expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of mockFetch.mock.calls) {
+      expect(envHeader(call)).toBeUndefined();
+    }
   });
 });

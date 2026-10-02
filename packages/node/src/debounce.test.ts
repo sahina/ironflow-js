@@ -22,6 +22,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       HEALTH: "/ironflow.v1.IronflowService/Health",
     },
     DEFAULT_SERVER_URL: "http://localhost:9123",
+    DEFAULT_CLIENT_RETRY: actual.DEFAULT_CLIENT_RETRY,
     getServerUrl: () => undefined,
     IronflowError: actual.IronflowError,
     RunFailedError: actual.RunFailedError,

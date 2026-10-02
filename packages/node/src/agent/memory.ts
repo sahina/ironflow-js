@@ -6,15 +6,13 @@
  *     auto-waitForEvent so memory.get() inside the same run sees the write.
  *   - memory.get() → step.run wraps backend.getProjection. In-run cache
  *     short-circuits repeated reads. Cache invalidates on append.
- *   - memory.entityStream() — kept as NotImplementedError stub. Lands when a
- *     concrete cross-agent peer-memory use case surfaces.
  *
  * Cross-run retry safety: append generates a deterministic idempotencyKey
  * (`${runId}:memory.append:${counter}`) so a replayed handler appends the
  * same logical event and the server dedupes server-side.
  *
  * Anti-scope: raw event replay is not exposed. Consumers must register a
- * projection — see MemoryProjectionRequiredError.
+ * projection.
  */
 
 import type {
@@ -23,7 +21,6 @@ import type {
   StepClient,
 } from "@ironflow/core";
 import { IronflowError } from "@ironflow/core";
-import { MemoryProjectionRequiredError } from "./errors.js";
 import type {
   MemoryAppendOptions,
   MemoryClient,
@@ -46,20 +43,6 @@ const DEFAULT_WAIT_TIMEOUT_MS = 5000;
  * and avoids surprising users who don't know about it.
  */
 const DEFAULT_ENTITY_TYPE = "agent";
-
-class NotImplementedError extends IronflowError {
-  constructor(method: string) {
-    super(
-      `memory.${method}() is not yet implemented — entityStream lands when a concrete cross-agent peer-memory use case surfaces`,
-      {
-        code: "AGENT_MEMORY_NOT_IMPLEMENTED",
-        retryable: false,
-        details: { method },
-      }
-    );
-    this.name = "NotImplementedError";
-  }
-}
 
 /**
  * Minimal backend the memory client needs. Wraps the IronflowClient surface
@@ -188,16 +171,6 @@ export function makeMemory(
 
       cache.has = false;
       cache.value = undefined;
-    },
-
-    async entityStream<T = unknown>(
-      streamId: string,
-      projectionName: string
-    ): Promise<T | undefined> {
-      if (!projectionName) {
-        throw new MemoryProjectionRequiredError(streamId);
-      }
-      throw new NotImplementedError("entityStream");
     },
   };
 }

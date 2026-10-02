@@ -97,6 +97,8 @@ export async function exposeMcp(config: ExposeMcpConfig): Promise<ExposeMcpHandl
       { code: "AGENT_MCP_MISSING_API_KEY", retryable: false }
     );
   }
+  // `||`, not `??`: an empty string falls back to IRONFLOW_ENV, as in Go.
+  const environment = config.environment || process.env.IRONFLOW_ENV;
 
   const seen = new Set<string>();
   const toolPayload = config.tools.map((def) => {
@@ -116,7 +118,7 @@ export async function exposeMcp(config: ExposeMcpConfig): Promise<ExposeMcpHandl
     tools: toolPayload,
   };
 
-  const resp = await postJSON(serverUrl, REGISTER_PATH, apiKey, requestBody);
+  const resp = await postJSON(serverUrl, REGISTER_PATH, apiKey, environment, requestBody);
   const decoded = (await readJSON(resp)) as RegisterToolResponseJSON;
   if (!decoded.hmacSecret || !decoded.registeredToolNames?.length) {
     throw new IronflowError(
@@ -152,7 +154,7 @@ export async function exposeMcp(config: ExposeMcpConfig): Promise<ExposeMcpHandl
       // dispatches even when the server-side call fails.
       unregisterLocal(config.name);
       try {
-        const r = await postJSON(serverUrl, UNREGISTER_PATH, apiKey, {
+        const r = await postJSON(serverUrl, UNREGISTER_PATH, apiKey, environment, {
           agentName: config.name,
         });
         await readJSON(r);
@@ -197,15 +199,20 @@ async function postJSON(
   serverUrl: string,
   path: string,
   apiKey: string,
+  environment: string | undefined,
   body: unknown
 ): Promise<Response> {
   const url = `${serverUrl.replace(/\/+$/, "")}${path}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+  };
+  if (environment) {
+    headers["X-Ironflow-Environment"] = environment;
+  }
   const resp = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!resp.ok) {

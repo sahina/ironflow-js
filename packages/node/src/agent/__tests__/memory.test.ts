@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { agent, createDefaultMemoryBackend } from "../agent.js";
 import { IronflowError } from "@ironflow/core";
 import type {
   AppendResult,
   StepClient,
   StepRunOptions,
 } from "@ironflow/core";
-import { MemoryProjectionRequiredError } from "../errors.js";
 import {
   type MemoryBackend,
   createMemoryRuntimeCache,
@@ -93,31 +93,6 @@ describe("makeMemory() — guard rails", () => {
     await expect(memory.get()).rejects.toMatchObject({ code: "AGENT_MEMORY_NO_BACKEND" });
     await expect(memory.append("evt", {})).rejects.toMatchObject({
       code: "AGENT_MEMORY_NO_BACKEND",
-    });
-  });
-
-  it("entityStream() throws MemoryProjectionRequiredError on empty projection name", async () => {
-    const { step } = makeFakeStep();
-    const memory = makeMemory(step, undefined, "run-1", createMemoryRuntimeCache(), undefined);
-
-    await expect(memory.entityStream("stream-1", "")).rejects.toBeInstanceOf(
-      MemoryProjectionRequiredError
-    );
-  });
-
-  it("entityStream() with projection still throws NotImplementedError (deferred)", async () => {
-    const { step } = makeFakeStep();
-    const { backend } = makeFakeBackend();
-    const memory = makeMemory(
-      step,
-      { streamId: "agent-mem-1", projection: "agent-memory" },
-      "run-1",
-      createMemoryRuntimeCache(),
-      backend
-    );
-
-    await expect(memory.entityStream("stream-1", "some-projection")).rejects.toMatchObject({
-      code: "AGENT_MEMORY_NOT_IMPLEMENTED",
     });
   });
 });
@@ -316,5 +291,52 @@ describe("makeMemory() — get()", () => {
 
     expect(result).toEqual({ count: 7 });
     expect(getCalls).toEqual(["agent-memory"]);
+  });
+});
+
+describe("default memory backend environment (#2471)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("scopes append and the projection wait to the run environment", async () => {
+    vi.stubEnv("IRONFLOW_URL", "http://localhost:9123");
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => "{}" });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const backend = createDefaultMemoryBackend("staging");
+    expect(backend).toBeDefined();
+    await backend!.appendEvent("s1", { name: "n", data: { a: 1 }, entityType: "agent", idempotencyKey: "k" }).catch(() => {});
+    await backend!.waitForEvent("e1", "notes", { timeoutMs: 1000 }).catch(() => {});
+
+    expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const [, init] of mockFetch.mock.calls as [string, RequestInit][]) {
+      expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe("staging");
+    }
+  });
+
+  it("agent() builds the backend from ctx.run.environment", async () => {
+    vi.stubEnv("IRONFLOW_URL", "http://localhost:9123");
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => "{}" });
+    vi.stubGlobal("fetch", mockFetch);
+
+    const memAgent = agent(
+      { id: "mem-agent", triggers: [{ event: "mem.start" }], memory: { streamId: "s1", projection: "notes" } },
+      async ({ memory }) => {
+        await memory.append("note.added", { a: 1 }).catch(() => {});
+        return "ok";
+      }
+    );
+    await memAgent.handler({
+      event: { id: "e", name: "mem.start", data: {} },
+      step: { run: (_name: string, fn: () => unknown) => fn() },
+      run: { id: "run_1", functionId: "mem-agent", attempt: 1, startedAt: new Date(), environment: "staging" },
+    } as never);
+
+    expect(mockFetch).toHaveBeenCalled();
+    for (const [, init] of mockFetch.mock.calls as [string, RequestInit][]) {
+      expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe("staging");
+    }
   });
 });

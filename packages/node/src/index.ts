@@ -62,6 +62,8 @@ export type {
 } from "./client.js";
 export { KVClient, KVBucketHandle } from "./kv.js";
 export type { KVClientConfig } from "./kv.js";
+export { FilesClient, FileBucketHandle } from "./files.js";
+export type { FilesClientConfig, FileBody } from "./files.js";
 export { CommandDedup, DEFAULT_COMMAND_DEDUP_TTL_SECONDS } from "./command-dedup.js";
 export type { CommandDedupOptions } from "./command-dedup.js";
 export { ConfigClient } from "./config-client.js";
@@ -195,6 +197,20 @@ export type {
   KVWatchOptions,
   KVWatcher,
 
+  // File storage types
+  FileBucketConfig,
+  FileBucketInfo,
+  FileInfo,
+  ListFilesOptions,
+  ListFilesResult,
+  PutFileOptions,
+  GetFileOptions,
+  FileObject,
+  MoveFileOptions,
+  CopyFileOptions,
+  SignUploadOptions,
+  SignedUrl,
+
   // Config types
   ConfigResponse,
   ConfigEntry,
@@ -295,6 +311,9 @@ export {
   UnauthorizedError,
   ConflictError,
   ContendedError,
+  PreconditionFailedError,
+  PayloadTooLargeError,
+  UnsupportedMediaTypeError,
   isRetryable,
   isIronflowError,
 } from "@ironflow/core";

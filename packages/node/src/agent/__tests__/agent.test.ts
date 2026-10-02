@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createTestClient } from "../../test/index.js";
 import { agent } from "../agent.js";
-import { DuplicateToolError, MaxTurnsExceededError } from "../errors.js";
+import {
+  DuplicateToolError,
+  MaxTurnsExceededError,
+  MemoryProjectionRequiredError,
+} from "../errors.js";
 import { defineTool } from "../tool.js";
 import type { LLMCompleteResult } from "../types.js";
 
@@ -102,6 +106,32 @@ describe("agent()", () => {
         async () => "noop"
       )
     ).toThrowError(DuplicateToolError);
+  });
+
+  it("throws MemoryProjectionRequiredError when memory.projection is empty", () => {
+    expect(() =>
+      agent(
+        {
+          id: "no-projection",
+          triggers: [{ event: "mem.start" }],
+          memory: { streamId: "mem-stream", projection: "" },
+        },
+        async () => "noop"
+      )
+    ).toThrowError(MemoryProjectionRequiredError);
+  });
+
+  it("accepts memory with a projection", () => {
+    expect(() =>
+      agent(
+        {
+          id: "with-projection",
+          triggers: [{ event: "mem.start" }],
+          memory: { streamId: "mem-stream", projection: "mem-proj" },
+        },
+        async () => "noop"
+      )
+    ).not.toThrow();
   });
 
   it("uses default maxTurns of 20 when not configured", async () => {

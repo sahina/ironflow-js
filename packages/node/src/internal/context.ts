@@ -90,6 +90,8 @@ export class ExecutionContext {
   readonly serverUrl?: string;
   /** API key for authenticated requests from steps */
   readonly apiKey?: string;
+  /** Environment sent with step callbacks (publish) and exposed on runInfo */
+  readonly environment?: string;
   /**
    * Called after each step is recorded. The pull worker uses it to schedule a
    * debounced checkpoint (#1670) so a killed worker does not lose completed
@@ -101,8 +103,14 @@ export class ExecutionContext {
    * rows as they finish (#2413). Unset elsewhere.
    */
   onStepResult?: (step: StepResult) => void;
+  /**
+   * Aborts when the worker cancels the job or loses its stream. step.run()
+   * checks it before the step function runs, so a cancelled job stops at the
+   * next step (#2479). Unset in push mode.
+   */
+  signal?: AbortSignal;
 
-  constructor(request: PushRequest, logger?: Logger, eventDefinitions?: EventDefinitionRegistry, stepTimeout?: string, serverUrl?: string, apiKey?: string) {
+  constructor(request: PushRequest, logger?: Logger, eventDefinitions?: EventDefinitionRegistry, stepTimeout?: string, serverUrl?: string, apiKey?: string, environment?: string) {
     this.runId = request.run_id;
     this.functionId = request.function_id;
     this.attempt = request.attempt;
@@ -133,6 +141,7 @@ export class ExecutionContext {
       functionId: this.functionId,
       attempt: this.attempt,
       startedAt: new Date(),
+      environment,
     };
 
     // Store completed steps for memoization
@@ -149,6 +158,7 @@ export class ExecutionContext {
     this.stepTimeout = stepTimeout;
     this.serverUrl = serverUrl;
     this.apiKey = apiKey;
+    this.environment = environment;
   }
 
   /**
@@ -394,6 +404,14 @@ export class BranchContext {
 
   get apiKey(): string | undefined {
     return this.parent.apiKey;
+  }
+
+  get environment(): string | undefined {
+    return this.parent.environment;
+  }
+
+  get signal(): AbortSignal | undefined {
+    return this.parent.signal;
   }
 
   constructor(parent: ExecutionContext, scopePrefix: string, legacyScopePrefix?: string) {

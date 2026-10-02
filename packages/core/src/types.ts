@@ -388,6 +388,13 @@ export interface RunInfo {
   attempt: number;
   /** When the run started */
   startedAt: Date;
+  /**
+   * Environment this run's outbound calls are scoped to: the value a pull worker
+   * polls with, or `serve({ environment })` / `IRONFLOW_ENV` in push mode. Unset
+   * means no environment header is sent. Pass it to `new IronflowClient({ environment })`
+   * for a client built inside a handler.
+   */
+  environment?: string;
 }
 
 /**

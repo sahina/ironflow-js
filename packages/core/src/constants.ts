@@ -89,6 +89,8 @@ export const DEFAULT_WORKER = {
   MAX_CHECKPOINT_STEPS: 500,
   /** Ceiling for exponential backoff after failed checkpoints (30 seconds). */
   MAX_CHECKPOINT_BACKOFF_MS: 30_000,
+  /** How long drain() waits for active jobs before it cancels them (30 seconds). */
+  DRAIN_TIMEOUT_MS: 30_000,
 } as const;
 
 /** Default reconnection configuration */

@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { IronflowFunction, FunctionContext } from "@ironflow/core";
 import { NonRetryableError, IronflowError } from "@ironflow/core";
@@ -671,6 +672,98 @@ describe("serve (real module)", () => {
     expect(body.error.code).toBe("SIGNATURE_INVALID");
   });
 
+  // The engine's signPayload (internal/engine/executor_transport.go).
+  function engineSign(rawBody: string, key: string, ts: number): string {
+    const mac = createHmac("sha256", key).update(`${ts}.${rawBody}`).digest("hex");
+    return `t=${ts},v1=${mac}`;
+  }
+
+  function signedRequest(signature: (rawBody: string) => string): Request {
+    const rawBody = JSON.stringify(createRealPushBody());
+    return new Request("http://localhost/api/ironflow", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-ironflow-signature": signature(rawBody),
+      },
+      body: rawBody,
+    });
+  }
+
+  const nowSeconds = () => Math.floor(Date.now() / 1000);
+
+  it("accepts a push signed in the engine format", async () => {
+    const handler = realServe({ functions: [testFn], signingKey: "test-secret", logger: false });
+    const response = await handler(
+      signedRequest((raw) => engineSign(raw, "test-secret", nowSeconds()))
+    ) as Response;
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, any>;
+    expect(body.status).toBe("completed");
+  });
+
+  it.each([
+    [-300, 200],
+    [300, 200],
+    [-301, 401],
+    [301, 401],
+  ])("applies the 5-minute tolerance: offset %ds -> %d", async (offset, status) => {
+    // Only Date is faked: the handler still needs real timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    try {
+      const handler = realServe({ functions: [testFn], signingKey: "test-secret", logger: false });
+      const response = await handler(
+        signedRequest((raw) => engineSign(raw, "test-secret", nowSeconds() + offset))
+      ) as Response;
+      expect(response.status).toBe(status);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns 401 when the body differs from the signed body", async () => {
+    const handler = realServe({ functions: [testFn], signingKey: "test-secret", logger: false });
+    const signature = engineSign(JSON.stringify(createRealPushBody()), "test-secret", nowSeconds());
+    const response = await handler(
+      new Request("http://localhost/api/ironflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ironflow-signature": signature },
+        body: JSON.stringify(createRealPushBody({ run_id: "run_2" })),
+      })
+    ) as Response;
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as Record<string, any>;
+    expect(body.error.code).toBe("SIGNATURE_INVALID");
+  });
+
+  it.each([
+    ["no t", (raw: string) => engineSign(raw, "test-secret", nowSeconds()).replace(/^t=\d+,/, "")],
+    ["no v1", () => `t=${nowSeconds()}`],
+    ["non-numeric t", () => `t=abc,v1=${"a".repeat(64)}`],
+    ["short digest", (raw: string) => engineSign(raw, "test-secret", nowSeconds()).slice(0, -2)],
+    ["digest with trailing non-hex", (raw: string) => `${engineSign(raw, "test-secret", nowSeconds())}zz`],
+    // The agent-tool scheme, valid for this body and key, is a different contract.
+    ["sha256= over the bare body", (raw: string) =>
+      `sha256=${createHmac("sha256", "test-secret").update(raw).digest("hex")}`],
+  ])("returns 401 for a malformed signature header: %s", async (_name, signature) => {
+    const handler = realServe({ functions: [testFn], signingKey: "test-secret", logger: false });
+    const response = await handler(signedRequest(signature)) as Response;
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as Record<string, any>;
+    expect(body.error.code).toBe("SIGNATURE_INVALID");
+  });
+
+  it("returns 401 for an engine-format signature made with a different key", async () => {
+    const handler = realServe({ functions: [testFn], signingKey: "test-secret", logger: false });
+    const response = await handler(
+      signedRequest((raw) => engineSign(raw, "other-secret", nowSeconds()))
+    ) as Response;
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as Record<string, any>;
+    expect(body.error.code).toBe("SIGNATURE_INVALID");
+  });
+
   it("handles function errors with failed status", async () => {
     const handler = realServe({ functions: [failingFn], skipVerification: true, logger: false });
     const request = new Request("http://localhost/api/ironflow", {
@@ -683,6 +776,47 @@ describe("serve (real module)", () => {
     const body = (await response.json()) as Record<string, any>;
     expect(body.status).toBe("failed");
     expect(body.error.message).toBe("intentional failure");
+    expect(body.error.retryable).toBe(true);
+  });
+
+  it("treats a plain throw inside step.run as retryable and runs no compensation (#2443)", async () => {
+    let compensated = false;
+    const stepFailFn = createFunction(
+      { id: "step-fail-fn", triggers: [{ event: "test.event" }] },
+      async ({ step }) => {
+        await step.run("a", async () => 1);
+        step.compensate("a", async () => { compensated = true; });
+        await step.run("b", async () => { throw new Error("temporary failure"); });
+      }
+    );
+    const handler = realServe({ functions: [stepFailFn], skipVerification: true, logger: false });
+    const request = new Request("http://localhost/api/ironflow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(createRealPushBody({ function_id: "step-fail-fn" })),
+    });
+    const body = (await (await handler(request) as Response).json()) as Record<string, any>;
+    expect(body.status).toBe("failed");
+    expect(body.error.retryable).toBe(true);
+    expect(body.steps.find((s: { name: string }) => s.name === "b").error.retryable).toBe(true);
+    expect(compensated).toBe(false);
+  });
+
+  it("reports a NonRetryableError thrown inside step.run as not retryable", async () => {
+    const terminalFn = createFunction(
+      { id: "terminal-fn", triggers: [{ event: "test.event" }] },
+      async ({ step }) => {
+        await step.run("bad", async () => { throw new NonRetryableError("bad input"); });
+      }
+    );
+    const handler = realServe({ functions: [terminalFn], skipVerification: true, logger: false });
+    const request = new Request("http://localhost/api/ironflow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(createRealPushBody({ function_id: "terminal-fn" })),
+    });
+    const body = (await (await handler(request) as Response).json()) as Record<string, any>;
+    expect(body.status).toBe("failed");
     expect(body.error.retryable).toBe(false);
   });
 
@@ -778,6 +912,55 @@ describe("serve (real module)", () => {
 
       const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
       expect((init.headers as Record<string, string>).Authorization).toBe("Bearer env-key");
+    });
+
+    it.each([
+      { name: "config", config: "staging", envVar: "qa", want: "staging" },
+      { name: "env var", config: undefined, envVar: "qa", want: "qa" },
+      { name: "empty string", config: "", envVar: "qa", want: "qa" },
+      { name: "none", config: undefined, envVar: undefined, want: undefined },
+    ])("push publish environment: $name (#2471)", async ({ config, envVar, want }) => {
+      const saved = process.env.IRONFLOW_ENV;
+      if (envVar) process.env.IRONFLOW_ENV = envVar;
+      else delete process.env.IRONFLOW_ENV;
+      try {
+        const mockFetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ sequence: "1" }),
+        });
+        vi.stubGlobal("fetch", mockFetch);
+        let runEnv: string | undefined = "unset";
+
+        const publishFn = createFunction(
+          { id: "publish-fn", triggers: [{ event: "test.event" }] },
+          async ({ step, run }) => {
+            runEnv = run.environment;
+            return step.publish("orders", { id: "1" });
+          }
+        );
+        const handler = realServe({
+          functions: [publishFn],
+          skipVerification: true,
+          logger: false,
+          serverUrl: "http://localhost:9123",
+          environment: config,
+        });
+
+        await handler(
+          new Request("http://localhost/api/ironflow", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(createRealPushBody({ function_id: "publish-fn" })),
+          })
+        );
+
+        const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+        expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe(want);
+        expect(runEnv).toBe(want);
+      } finally {
+        if (saved === undefined) delete process.env.IRONFLOW_ENV;
+        else process.env.IRONFLOW_ENV = saved;
+      }
     });
   });
 

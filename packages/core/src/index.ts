@@ -319,6 +319,12 @@ export {
   UnauthorizedError,
   ConflictError,
   ContendedError,
+  PreconditionFailedError,
+  PayloadTooLargeError,
+  UnsupportedMediaTypeError,
+  fileErrorFor,
+  encodeFilePath,
+  encodeBucketName,
   InjectionUnverifiedError,
   AUTH_HELP,
   throwIfAuthError,
@@ -493,6 +499,25 @@ export type {
   KVWatchOptions,
   KVWatcher,
 } from "./kv-types.js";
+
+// ============================================================================
+// File Storage Exports
+// ============================================================================
+
+export type {
+  FileBucketConfig,
+  FileBucketInfo,
+  FileInfo,
+  ListFilesOptions,
+  ListFilesResult,
+  PutFileOptions,
+  GetFileOptions,
+  FileObject,
+  MoveFileOptions,
+  CopyFileOptions,
+  SignUploadOptions,
+  SignedUrl,
+} from "./files-types.js";
 
 // ============================================================================
 // Config Exports

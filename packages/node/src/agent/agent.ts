@@ -21,7 +21,7 @@ import type { z } from "zod";
 import { IronflowClient } from "../client.js";
 import { createFunction } from "../function.js";
 import { makeApprove } from "./approve.js";
-import { DuplicateToolError } from "./errors.js";
+import { DuplicateToolError, MemoryProjectionRequiredError } from "./errors.js";
 import { createTurnCounter, makeLlm } from "./llm.js";
 import {
   type MemoryBackend,
@@ -86,13 +86,16 @@ export function agent<TEventSchema extends z.ZodType = z.ZodType<unknown>, TResu
 ): IronflowAgent<z.infer<TEventSchema>, TResult> {
   const maxTurns = config.maxTurns ?? DEFAULT_MAX_TURNS;
   const registry = buildRegistry(config.tools);
+  if (config.memory && !config.memory.projection) {
+    throw new MemoryProjectionRequiredError(config.memory.streamId);
+  }
 
   return createFunction<TEventSchema, TResult>(config, async (ctx) => {
     const counter = createTurnCounter();
     const toolRuntime = createToolRuntime();
     const memoryCache = createMemoryRuntimeCache();
     const memoryCounters = createMemoryRuntimeCounters();
-    const memoryBackend = config.memory ? createDefaultMemoryBackend() : undefined;
+    const memoryBackend = config.memory ? createDefaultMemoryBackend(ctx.run.environment) : undefined;
 
     const agentCtx: AgentContext<z.infer<TEventSchema>> = {
       event: ctx.event,
@@ -122,13 +125,15 @@ export function agent<TEventSchema extends z.ZodType = z.ZodType<unknown>, TResu
 }
 
 /**
- * Construct the default MemoryBackend from environment variables.
+ * Construct the default MemoryBackend from environment variables, scoped to
+ * the run's environment so the stream and the projection wait land where the
+ * run's projections run (#2471).
  *
  * Reads IRONFLOW_URL / IRONFLOW_SERVER_URL for the server endpoint and
  * IRONFLOW_API_KEY for auth. Returns undefined when no URL is set so
  * makeMemory() can surface a clear "no backend" error on first use.
  */
-function createDefaultMemoryBackend(): MemoryBackend | undefined {
+export function createDefaultMemoryBackend(environment?: string): MemoryBackend | undefined {
   const serverUrl =
     process.env.IRONFLOW_URL ?? process.env.IRONFLOW_SERVER_URL;
   if (!serverUrl) return undefined;
@@ -136,6 +141,7 @@ function createDefaultMemoryBackend(): MemoryBackend | undefined {
   const client = new IronflowClient({
     serverUrl,
     apiKey: process.env.IRONFLOW_API_KEY,
+    environment,
   });
 
   return {

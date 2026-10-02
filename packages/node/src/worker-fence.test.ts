@@ -73,7 +73,7 @@ describe("streaming worker fence echo (#1206 chunk 3e)", () => {
     expect(value.leaseToken).toBe("tok-fail");
   });
 
-  // D1 (#1206, ADR 0037): a cancel deletes the job from activeJobs. A compute-bound
+  // D1 (#1206, ADR 0037): a cancel aborts the job. A compute-bound
   // handler that finishes AFTER the cancel must still send the terminal with the
   // real fence captured from the assignment — NOT an empty token, which the engine
   // would treat as a protocol violation and fenceDisconnect the whole stream.
@@ -101,9 +101,9 @@ describe("streaming worker fence echo (#1206 chunk 3e)", () => {
     });
 
     await w.handleJobAssignment(job); // starts executeJob in the background
-    // Engine cancels (e.g. pause-for-injection): aborts + deletes from activeJobs.
+    // Engine cancels (e.g. pause-for-injection): aborts the job.
     w.handleJobCancel("job-1", "pause-for-injection");
-    // The handler finishes only now — after the job is gone from activeJobs.
+    // The handler finishes only now — after the cancel.
     releaseHandler();
     await new Promise((r) => setTimeout(r, 30));
 

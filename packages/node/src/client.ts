@@ -30,9 +30,13 @@ import {
   EnterpriseRequiredError,
   UnauthorizedError,
   ConflictError,
+  PreconditionFailedError,
+  PayloadTooLargeError,
+  UnsupportedMediaTypeError,
   ContendedError,
   ValidationError,
   type EmitSyncResult,
+  type RecordingProfile,
   type InvokeSyncOptions,
   type InvokeSyncResult,
   type TriggerBatchEvent,
@@ -135,8 +139,12 @@ import {
   runStepFromWire,
   consumerGroupFromWire,
   runStatusToWire,
+  DEFAULT_CLIENT_RETRY,
+  type ClientRetryConfig,
 } from "@ironflow/core";
+import { SAFE_RPC_PATHS } from "./internal/safe-rpc-paths.js";
 import { KVClient } from "./kv.js";
+import { FilesClient } from "./files.js";
 import { CommandDedup, type CommandDedupOptions } from "./command-dedup.js";
 import { ConfigClient } from "./config-client.js";
 import type { OnErrorHandler, ErrorContext } from "./types.js";
@@ -163,6 +171,21 @@ function visibleAgentToolFromWire(raw: Record<string, unknown>) {
   };
 }
 
+// A retry sends the same request again, so only a call that changes nothing
+// may be retried after a failure that could have reached the handler. For
+// REST the verb tells; every Connect call is a POST, so SAFE_RPC_PATHS does.
+// POST and PATCH are excluded: a retry after a timeout can duplicate a
+// committed write. Same set as the Python SDK.
+const SAFE_REST_METHODS = new Set(["GET", "HEAD", "PUT", "DELETE"]);
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds; 0 when absent or unusable. */
+function retryAfterMs(header: string | null): number {
+  if (!header) return 0;
+  const seconds = Number(header);
+  const ms = Number.isNaN(seconds) ? Date.parse(header) - Date.now() : seconds * 1000;
+  return ms > 0 ? ms : 0;
+}
+
 // ============================================================================
 // Client Configuration
 // ============================================================================
@@ -175,10 +198,25 @@ export interface IronflowClientConfig {
   serverUrl?: string;
   /** API key for authentication. Empty or unset falls back to the IRONFLOW_API_KEY env var; optional for local dev. */
   apiKey?: string;
+  /**
+   * Environment for REST and Connect requests, sent as `X-Ironflow-Environment`.
+   * KV, config and secrets requests do not send it. Unset sends
+   * no header: the server uses the API key's environment, or the default one when
+   * auth is off. The client does not read `IRONFLOW_ENV`: a process can set it
+   * for its worker and still use a client for another environment's key.
+   */
+  environment?: string;
   /** Request timeout in milliseconds (default: 30000) */
   timeout?: number;
   /** Global error handler called on every client error (fires before re-throw) */
   onError?: OnErrorHandler;
+  /**
+   * Retry with backoff (default: 3 attempts, 100 ms initial delay, factor 2,
+   * 10 s maximum). A call that changes nothing is retried on a network error,
+   * a timeout, 408, 429 or 5xx. Any other call is retried on 429 only. Set
+   * `maxAttempts: 1` to disable.
+   */
+  retry?: ClientRetryConfig;
 }
 
 // ============================================================================
@@ -213,6 +251,16 @@ export interface RegisterFunctionRequest {
   actorKey?: string;
   /** Cancel-on-event specs (issue #546 P3 / #572). */
   cancelOn?: { event: string; match: string }[];
+  /** Secret names the function requires. The engine resolves them at execution time. */
+  secrets?: string[];
+  /** Record this function's runs. */
+  recording?: boolean;
+  /** Which run data to record. */
+  recordingProfile?: RecordingProfile;
+  /** @deprecated Metadata only. IRONFLOW_AUDIT_RETENTION_DAYS controls all audit pruning; forever does not exempt rows. */
+  recordingRetention?: string;
+  /** Free-form metadata stored with the function. */
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -335,16 +383,27 @@ export interface ListRunsResult {
 export class IronflowClient {
   private readonly serverUrl: string;
   private readonly apiKey?: string;
+  private readonly environment?: string;
   private readonly timeout: number;
   private readonly onErrorHandler?: OnErrorHandler;
+  private readonly retry: Required<Omit<ClientRetryConfig, "onRetry">> & Pick<ClientRetryConfig, "onRetry">;
 
   constructor(config: IronflowClientConfig = {}) {
+    this.retry = {
+      maxAttempts: Math.max(1, config.retry?.maxAttempts ?? DEFAULT_CLIENT_RETRY.MAX_ATTEMPTS),
+      initialDelayMs: config.retry?.initialDelayMs ?? DEFAULT_CLIENT_RETRY.INITIAL_DELAY_MS,
+      maxDelayMs: config.retry?.maxDelayMs ?? DEFAULT_CLIENT_RETRY.MAX_DELAY_MS,
+      backoffMultiplier: config.retry?.backoffMultiplier ?? DEFAULT_CLIENT_RETRY.BACKOFF_MULTIPLIER,
+      connectionRetryDelayMs: config.retry?.connectionRetryDelayMs ?? DEFAULT_CLIENT_RETRY.CONNECTION_RETRY_DELAY_MS,
+      onRetry: config.retry?.onRetry,
+    };
     this.serverUrl = config.serverUrl || getServerUrl() || DEFAULT_SERVER_URL;
     // `||`, not `??`: an empty string means "not configured" here, matching Go's
     // `if apiKey == "" { apiKey = GetAPIKey() }`. Without it, the common
     // `apiKey: process.env.SOMETHING ?? ""` spelling stays unauthenticated with a
     // perfectly good key in the environment — the bug this fallback exists to fix.
     this.apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
+    this.environment = config.environment || undefined;
     this.timeout = config.timeout ?? 30000;
     this.onErrorHandler = config.onError;
   }
@@ -380,6 +439,11 @@ export class IronflowClient {
     if (request.endpointUrl) body.endpointUrl = request.endpointUrl;
     if (request.actorKey) body.actorKey = request.actorKey;
     if (request.cancelOn?.length) body.cancelOn = request.cancelOn;
+    if (request.secrets?.length) body.secrets = request.secrets;
+    if (request.recording != null) body.recording = request.recording;
+    if (request.recordingProfile != null) body.recordingProfile = request.recordingProfile;
+    if (request.recordingRetention != null) body.recordingRetention = request.recordingRetention;
+    if (request.metadata) body.metadata = request.metadata;
 
     const response = await this.request<{ created: boolean }>(
 
@@ -2590,6 +2654,27 @@ export class IronflowClient {
   }
 
   /**
+   * File storage: buckets, files and signed URLs.
+   *
+   * @example
+   * ```typescript
+   * const docs = client.files().bucket("docs");
+   * await docs.put("notes/a.txt", new TextEncoder().encode("hi"), { contentType: "text/plain" });
+   * const file = await docs.get("notes/a.txt");
+   * ```
+   */
+  files(): FilesClient {
+    return new FilesClient({
+      serverUrl: this.serverUrl,
+      apiKey: this.apiKey,
+      environment: this.environment,
+      timeout: this.timeout,
+      retry: this.retry,
+      onError: this.onErrorHandler,
+    });
+  }
+
+  /**
    * Create a CommandDedup instance for atomic command-level idempotency.
    *
    * Uses the claim-first pattern backed by NATS KV. The KV bucket is created
@@ -2811,31 +2896,25 @@ export class IronflowClient {
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+    if (this.environment) {
+      headers["X-Ironflow-Environment"] = this.environment;
+    }
 
     let status: number | undefined;
     try {
-      const response = await fetch(url, {
-        method: "GET",
-        headers,
-        signal: controller.signal,
+      return await this.send(url, { method: "GET", headers }, this.timeout, true, async (response) => {
+        status = response.status;
+
+        if (!response.ok) {
+          throw new Error(`List workers failed: ${response.status}`);
+        }
+
+        const data = (await response.json()) as { workers: unknown[] };
+        return data.workers || [];
       });
-
-      status = response.status;
-
-      if (!response.ok) {
-        throw new Error(`List workers failed: ${response.status}`);
-      }
-
-      const data = (await response.json()) as { workers: unknown[] };
-      return data.workers || [];
     } catch (error) {
       await this.callOnError(error as Error, { method: "listWorkers", endpoint, statusCode: status });
       throw error;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
@@ -2864,71 +2943,66 @@ export class IronflowClient {
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
+    if (this.environment) {
+      headers["X-Ironflow-Environment"] = this.environment;
+    }
 
     const runId = getCurrentRunId();
     if (runId) {
       headers["X-Ironflow-Run-ID"] = runId;
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs ?? this.timeout);
     let status: number | undefined;
 
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
+      const init = { method: "POST", headers, body: JSON.stringify(body) };
+      return await this.send(url, init, timeoutMs ?? this.timeout, SAFE_RPC_PATHS.has(endpoint), async (response) => {
+        status = response.status;
 
-      status = response.status;
-
-      if (!response.ok) {
-        const errorBody = await response.text();
-        let errorMessage = `Request failed with status ${response.status}`;
-        // The Connect code, kept rather than discarded: two codes serialize to
-        // 409 with opposite retry advice and the status cannot tell them
-        // apart (#2074).
-        let connectCode: string | undefined;
-        if (errorBody) {
-          try {
-            const errorJson = JSON.parse(errorBody);
-            if (typeof errorJson.code === "string") {
-              connectCode = errorJson.code;
-            }
-            if (errorJson.message) {
-              errorMessage = errorJson.message;
-            } else if (errorJson.code) {
-              errorMessage = `Error code: ${errorJson.code}`;
-            } else {
+        if (!response.ok) {
+          const errorBody = await response.text();
+          let errorMessage = `Request failed with status ${response.status}`;
+          // The Connect code, kept rather than discarded: two codes serialize to
+          // 409 with opposite retry advice and the status cannot tell them
+          // apart (#2074).
+          let connectCode: string | undefined;
+          if (errorBody) {
+            try {
+              const errorJson = JSON.parse(errorBody);
+              if (typeof errorJson.code === "string") {
+                connectCode = errorJson.code;
+              }
+              if (errorJson.message) {
+                errorMessage = errorJson.message;
+              } else if (errorJson.code) {
+                errorMessage = `Error code: ${errorJson.code}`;
+              } else {
+                errorMessage = errorBody;
+              }
+            } catch {
+              // Not a JSON response, use raw text.
               errorMessage = errorBody;
             }
-          } catch {
-            // Not a JSON response, use raw text.
-            errorMessage = errorBody;
           }
+          if (useSDKErrorTypes) {
+            // reason splits the two meanings of `aborted` (#2093): a lost CAS
+            // race wrote nothing, an unverified injection wrote the step. Both
+            // arrive as aborted/409 and only this header tells them apart.
+            throw connectHTTPError(response.status, errorMessage, connectCode ?? (response.status === 409 ? "already_exists" : undefined), {
+              authHelp: AUTH_HELP,
+              reason: response.headers.get(ERROR_REASON_HEADER) ?? undefined,
+            });
+          }
+          this.throwTypedError(response.status, errorMessage, connectCode);
         }
-        if (useSDKErrorTypes) {
-          // reason splits the two meanings of `aborted` (#2093): a lost CAS
-          // race wrote nothing, an unverified injection wrote the step. Both
-          // arrive as aborted/409 and only this header tells them apart.
-          throw connectHTTPError(response.status, errorMessage, connectCode ?? (response.status === 409 ? "already_exists" : undefined), {
-            authHelp: AUTH_HELP,
-            reason: response.headers.get(ERROR_REASON_HEADER) ?? undefined,
-          });
-        }
-        this.throwTypedError(response.status, errorMessage, connectCode);
-      }
 
-      return response.json() as Promise<T>;
+        return response.json() as Promise<T>;
+      });
     } catch (error) {
       if (method) {
         await this.callOnError(error as Error, { method, endpoint, statusCode: status });
       }
       throw error;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
@@ -2958,6 +3032,12 @@ export class IronflowClient {
           throw new ContendedError(message);
         }
         throw new ConflictError(message);
+      case 412:
+        throw new PreconditionFailedError(message);
+      case 413:
+        throw new PayloadTooLargeError(message);
+      case 415:
+        throw new UnsupportedMediaTypeError(message);
       default:
         throw new IronflowError(message);
     }
@@ -2977,6 +3057,9 @@ export class IronflowClient {
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
+    if (this.environment) {
+      headers["X-Ironflow-Environment"] = this.environment;
+    }
     if (path === "/api/v1/secrets" || path.startsWith("/api/v1/secrets/")) {
       // Secret routes require an explicit environment header, while the
       // authenticated API key remains the authority for the actual scope.
@@ -2989,39 +3072,77 @@ export class IronflowClient {
       options.body = JSON.stringify(body);
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
     let status: number | undefined;
 
     try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal,
+      return await this.send(url, options, this.timeout, SAFE_REST_METHODS.has(httpMethod), async (response) => {
+        status = response.status;
+
+        if (!response.ok) {
+          const errBody = await response
+            .json()
+            .catch(() => ({ error: response.statusText }));
+          const message =
+            (errBody as Record<string, string>).error ||
+            (errBody as Record<string, string>).message ||
+            response.statusText;
+          this.throwTypedError(response.status, message);
+        }
+
+        if (response.status === 204) return undefined as T;
+
+        return response.json() as Promise<T>;
       });
-
-      status = response.status;
-
-      if (!response.ok) {
-        const errBody = await response
-          .json()
-          .catch(() => ({ error: response.statusText }));
-        const message =
-          (errBody as Record<string, string>).error ||
-          (errBody as Record<string, string>).message ||
-          response.statusText;
-        this.throwTypedError(response.status, message);
-      }
-
-      if (response.status === 204) return undefined as T;
-
-      return response.json() as Promise<T>;
     } catch (error) {
       if (method) {
         await this.callOnError(error as Error, { method, endpoint: path, statusCode: status });
       }
       throw error;
-    } finally {
-      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * fetch with a per-attempt timeout and the client's retry policy. `parse`
+   * turns the response into a result or throws the typed error; the timeout
+   * covers it, so a stalled body cannot hang the call.
+   */
+  private async send<T>(
+    url: string,
+    init: RequestInit,
+    timeoutMs: number,
+    safe: boolean,
+    parse: (response: Response) => Promise<T>
+  ): Promise<T> {
+    const { maxAttempts, initialDelayMs, maxDelayMs, backoffMultiplier, connectionRetryDelayMs, onRetry } = this.retry;
+    for (let attempt = 1; ; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      let response: Response | undefined;
+      let delayMs: number;
+      try {
+        response = await fetch(url, { ...init, signal: controller.signal });
+        return await parse(response);
+      } catch (error) {
+        // No response means the network failed or the timeout fired, and the
+        // handler may have run. 429 is the one status that says the server
+        // refused the request before it ran, so it is safe for a write too.
+        const status = response?.status;
+        const retry =
+          status === undefined ? safe : status === 429 || (safe && (status === 408 || status >= 500));
+        if (!retry || attempt >= maxAttempts) throw error;
+
+        delayMs =
+          status === undefined
+            ? connectionRetryDelayMs
+            : Math.min(initialDelayMs * backoffMultiplier ** (attempt - 1), maxDelayMs);
+        // Retry-After is clamped: one header must not park the client for a day.
+        const retryAfter = retryAfterMs(response?.headers.get("Retry-After") ?? null);
+        delayMs = Math.max(delayMs, Math.min(retryAfter, maxDelayMs));
+        onRetry?.({ attempt, maxAttempts, error: error as Error, delayMs });
+      } finally {
+        clearTimeout(timeoutId);
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 

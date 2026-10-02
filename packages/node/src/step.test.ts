@@ -1215,7 +1215,7 @@ import {
 import { StepError } from "@ironflow/core";
 import type { PushRequest } from "@ironflow/core";
 
-function createTestContext(overrides?: Partial<PushRequest>, options?: { serverUrl?: string; apiKey?: string }): ExecutionContext {
+function createTestContext(overrides?: Partial<PushRequest>, options?: { serverUrl?: string; apiKey?: string; environment?: string }): ExecutionContext {
   const request: PushRequest = {
     run_id: "run_test_123",
     function_id: "test-fn",
@@ -1230,7 +1230,7 @@ function createTestContext(overrides?: Partial<PushRequest>, options?: { serverU
     steps: [],
     ...overrides,
   };
-  return new ExecutionContext(request, undefined, undefined, undefined, options?.serverUrl, options?.apiKey);
+  return new ExecutionContext(request, undefined, undefined, undefined, options?.serverUrl, options?.apiKey, options?.environment);
 }
 
 describe("createStepClient (real implementation)", () => {
@@ -1501,6 +1501,30 @@ describe("createStepClient (real implementation)", () => {
       }
     });
 
+    it("sends the worker environment, including from a parallel branch", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ eventId: "msg_abc", sequence: "1" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const ctx = createTestContext(undefined, {
+        serverUrl: "http://localhost:9123",
+        environment: "staging",
+      });
+      const step = createRealStepClient(ctx);
+
+      await step.publish("top", {});
+      await step.parallel("fan", [async (branchStep) => branchStep.publish("branch", {})]);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      for (const [, init] of mockFetch.mock.calls) {
+        expect((init as RequestInit).headers).toMatchObject({
+          "X-Ironflow-Environment": "staging",
+        });
+      }
+    });
+
     it("should memoize a completed publish step", async () => {
       const ctx = createTestContext(
         {
@@ -1524,6 +1548,26 @@ describe("createStepClient (real implementation)", () => {
 
       expect(result).toEqual({ eventId: "msg_cached", sequence: 5 });
       expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("sends the run environment on publish, including from a parallel branch (#2471)", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ eventId: "msg_env", sequence: "1" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const ctx = createTestContext(undefined, { serverUrl: "http://localhost:9123", environment: "staging" });
+      expect(ctx.runInfo.environment).toBe("staging");
+      const step = createRealStepClient(ctx);
+
+      await step.publish("topic-a", { x: 1 });
+      await step.parallel("fan", [(s) => s.publish("topic-b", { x: 2 })]);
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      for (const [, init] of mockFetch.mock.calls as [string, RequestInit][]) {
+        expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe("staging");
+      }
     });
 
     it("should include Authorization header when apiKey is set", async () => {

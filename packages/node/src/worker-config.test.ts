@@ -62,3 +62,31 @@ describe("createWorker default fallback (no env)", () => {
     }
   });
 });
+
+describe("createWorker drainTimeout (#2458)", () => {
+  it("cancels the active jobs at the configured drain timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = createWorker({ functions: [], logger: false, drainTimeout: 5_000 });
+      const internals = worker as unknown as {
+        state: string;
+        activeJobs: Map<string, { abortController: AbortController }>;
+      };
+      internals.state = "connected";
+      const abortController = new AbortController();
+      internals.activeJobs.set("held", { abortController });
+
+      let drained = false;
+      void worker.drain().then(() => {
+        drained = true;
+      });
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(drained).toBe(false);
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(drained).toBe(true);
+      expect(abortController.signal.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
