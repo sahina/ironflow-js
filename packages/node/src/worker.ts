@@ -4,6 +4,7 @@
  * Pull mode worker that polls the Ironflow server for jobs.
  */
 
+import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import type {
   IronflowFunction,
   Logger,
@@ -117,6 +118,7 @@ class IronflowWorker implements Worker {
   private removeSignalDrain?: () => void;
 
   constructor(config: WorkerConfig) {
+    hydrateEnvFromDiscovery();
     this.config = {
       ...config,
       serverUrl: config.serverUrl || getServerUrl() || DEFAULT_SERVER_URL,

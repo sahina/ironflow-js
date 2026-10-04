@@ -19,6 +19,7 @@
  * `agent:tools:register` action on the calling key.
  */
 
+import { hydrateEnvFromDiscovery } from "../internal/discovery.js";
 import { IronflowError } from "@ironflow/core";
 import { z } from "zod";
 import {
@@ -79,6 +80,7 @@ export async function exposeMcp(config: ExposeMcpConfig): Promise<ExposeMcpHandl
     );
   }
 
+  hydrateEnvFromDiscovery();
   const serverUrl =
     config.serverUrl ??
     process.env.IRONFLOW_URL ??

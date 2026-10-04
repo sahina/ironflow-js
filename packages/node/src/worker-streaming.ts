@@ -4,6 +4,7 @@
  * ConnectRPC bidirectional streaming worker for low-latency pull mode.
  */
 
+import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-node";
 import { create, type JsonObject } from "@bufbuild/protobuf";
@@ -137,6 +138,7 @@ class StreamingWorker implements Worker {
   private endOutgoing?: () => void;
 
   constructor(config: WorkerConfig) {
+    hydrateEnvFromDiscovery();
     this.config = {
       ...config,
       serverUrl: config.serverUrl || DEFAULT_SERVER_URL,

@@ -1,4 +1,5 @@
 import { projectionStateFromWire, projectionStatusFromWire, rebuildJobFromWire } from "@ironflow/core";
+import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { stepInspectionFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
@@ -397,6 +398,7 @@ export class IronflowClient {
       connectionRetryDelayMs: config.retry?.connectionRetryDelayMs ?? DEFAULT_CLIENT_RETRY.CONNECTION_RETRY_DELAY_MS,
       onRetry: config.retry?.onRetry,
     };
+    hydrateEnvFromDiscovery();
     this.serverUrl = config.serverUrl || getServerUrl() || DEFAULT_SERVER_URL;
     // `||`, not `??`: an empty string means "not configured" here, matching Go's
     // `if apiKey == "" { apiKey = GetAPIKey() }`. Without it, the common

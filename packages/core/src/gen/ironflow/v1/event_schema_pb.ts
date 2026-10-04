@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/event_schema.proto.
  */
 export const file_ironflow_v1_event_schema: GenFile = /*@__PURE__*/
-  fileDesc("Ch5pcm9uZmxvdy92MS9ldmVudF9zY2hlbWEucHJvdG8SC2lyb25mbG93LnYxImYKFVJlZ2lzdGVyU2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEwoLc2NoZW1hX2pzb24YAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkiKAoWUmVnaXN0ZXJTY2hlbWFSZXNwb25zZRIOCgZzdGF0dXMYASABKAkiNwoQR2V0U2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUiqgEKEUdldFNjaGVtYVJlc3BvbnNlEhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRITCgtzY2hlbWFfanNvbhgDIAEoCRITCgtkZXNjcmlwdGlvbhgEIAEoCRIuCgpjcmVhdGVkX2F0GAUgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5lbnZpcm9ubWVudF9pZBgGIAEoCSJHChJMaXN0U2NoZW1hc1JlcXVlc3QSEgoKZXZlbnRfbmFtZRgBIAEoCRINCgVsaW1pdBgCIAEoBRIOCgZvZmZzZXQYAyABKAUiVAoTTGlzdFNjaGVtYXNSZXNwb25zZRIoCgdzY2hlbWFzGAEgAygLMhcuaXJvbmZsb3cudjEuU2NoZW1hSW5mbxITCgt0b3RhbF9jb3VudBgCIAEoBSKjAQoKU2NoZW1hSW5mbxISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEwoLZGVzY3JpcHRpb24YAyABKAkSLgoKY3JlYXRlZF9hdBgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASEwoLc2NoZW1hX2pzb24YBSABKAkSFgoOZW52aXJvbm1lbnRfaWQYBiABKAkiOgoTRGVsZXRlU2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUiFgoURGVsZXRlU2NoZW1hUmVzcG9uc2UipAEKEVRlc3RVcGNhc3RSZXF1ZXN0EhIKCmV2ZW50X25hbWUYASABKAkSFAoMZnJvbV92ZXJzaW9uGAIgASgFEhIKCnRvX3ZlcnNpb24YAyABKAUSJQoEZGF0YRgEIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKgoKZGF0YV92YWx1ZRgFIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZSKXAQoSVGVzdFVwY2FzdFJlc3BvbnNlEiUKBGRhdGEYASABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EioKCmRhdGFfdmFsdWUYAyABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSLgoNc3RlcHNfYXBwbGllZBgCIAMoCzIXLmlyb25mbG93LnYxLlVwY2FzdFN0ZXAiSwoKVXBjYXN0U3RlcBIUCgxmcm9tX3ZlcnNpb24YASABKAUSEgoKdG9fdmVyc2lvbhgCIAEoBRITCgtkZXNjcmlwdGlvbhgDIAEoCSJLChdDaGVja0VuZm9yY2VtZW50UmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEhwKFHRyYWZmaWNfd2luZG93X2hvdXJzGAIgASgFIogBChhDaGVja0VuZm9yY2VtZW50UmVzcG9uc2USDAoEbW9kZRgBIAEoCRIpCgdzY2hlbWFzGAIgAygLMhguaXJvbmZsb3cudjEuU2NoZW1hQ2hlY2sSHAoUdHJhZmZpY193aW5kb3dfaG91cnMYAyABKAUSFQoNdG90YWxfc2NoZW1hcxgEIAEoBSK3AQoLU2NoZW1hQ2hlY2sSEgoKZXZlbnRfbmFtZRgBIAEoCRITCgtzY2hlbWFfaGFzaBgDIAEoCRIPCgd2ZXJzaW9uGAIgASgFEg8KB2Fzc2VydHMYBCABKAgSFQoNY29tcGlsZV9lcnJvchgFIAEoCRIrCgd0cmFmZmljGAYgAygLMhouaXJvbmZsb3cudjEuU2NoZW1hVHJhZmZpYxIZChF0cmFmZmljX3RydW5jYXRlZBgHIAEoCCJECg1TY2hlbWFUcmFmZmljEg8KB3ZlcnNpb24YASABKAUSEwoLc2NoZW1hX2hhc2gYAiABKAkSDQoFY291bnQYAyABKAMypgQKEkV2ZW50U2NoZW1hU2VydmljZRJZCg5SZWdpc3RlclNjaGVtYRIiLmlyb25mbG93LnYxLlJlZ2lzdGVyU2NoZW1hUmVxdWVzdBojLmlyb25mbG93LnYxLlJlZ2lzdGVyU2NoZW1hUmVzcG9uc2USTwoJR2V0U2NoZW1hEh0uaXJvbmZsb3cudjEuR2V0U2NoZW1hUmVxdWVzdBoeLmlyb25mbG93LnYxLkdldFNjaGVtYVJlc3BvbnNlIgOQAgESVQoLTGlzdFNjaGVtYXMSHy5pcm9uZmxvdy52MS5MaXN0U2NoZW1hc1JlcXVlc3QaIC5pcm9uZmxvdy52MS5MaXN0U2NoZW1hc1Jlc3BvbnNlIgOQAgESUwoMRGVsZXRlU2NoZW1hEiAuaXJvbmZsb3cudjEuRGVsZXRlU2NoZW1hUmVxdWVzdBohLmlyb25mbG93LnYxLkRlbGV0ZVNjaGVtYVJlc3BvbnNlElIKClRlc3RVcGNhc3QSHi5pcm9uZmxvdy52MS5UZXN0VXBjYXN0UmVxdWVzdBofLmlyb25mbG93LnYxLlRlc3RVcGNhc3RSZXNwb25zZSIDkAIBEmQKEENoZWNrRW5mb3JjZW1lbnQSJC5pcm9uZmxvdy52MS5DaGVja0VuZm9yY2VtZW50UmVxdWVzdBolLmlyb25mbG93LnYxLkNoZWNrRW5mb3JjZW1lbnRSZXNwb25zZSIDkAIBQjpaOGdpdGh1Yi5jb20vc2FoaW5hL2lyb25mbG93L2FwaS9nby9pcm9uZmxvdy92MTtpcm9uZmxvd3YxYgZwcm90bzM", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
+  fileDesc("Ch5pcm9uZmxvdy92MS9ldmVudF9zY2hlbWEucHJvdG8SC2lyb25mbG93LnYxIn0KFVJlZ2lzdGVyU2NoZW1hUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSEwoLc2NoZW1hX2pzb24YAyABKAkSEwoLZGVzY3JpcHRpb24YBCABKAkSFQoNY2hhbmdlX3JlYXNvbhgFIAEoCSIoChZSZWdpc3RlclNjaGVtYVJlc3BvbnNlEg4KBnN0YXR1cxgBIAEoCSI3ChBHZXRTY2hlbWFSZXF1ZXN0EhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBSKqAQoRR2V0U2NoZW1hUmVzcG9uc2USEgoKZXZlbnRfbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFEhMKC3NjaGVtYV9qc29uGAMgASgJEhMKC2Rlc2NyaXB0aW9uGAQgASgJEi4KCmNyZWF0ZWRfYXQYBSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhYKDmVudmlyb25tZW50X2lkGAYgASgJIkcKEkxpc3RTY2hlbWFzUmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg0KBWxpbWl0GAIgASgFEg4KBm9mZnNldBgDIAEoBSJUChNMaXN0U2NoZW1hc1Jlc3BvbnNlEigKB3NjaGVtYXMYASADKAsyFy5pcm9uZmxvdy52MS5TY2hlbWFJbmZvEhMKC3RvdGFsX2NvdW50GAIgASgFIqMBCgpTY2hlbWFJbmZvEhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRITCgtkZXNjcmlwdGlvbhgDIAEoCRIuCgpjcmVhdGVkX2F0GAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBITCgtzY2hlbWFfanNvbhgFIAEoCRIWCg5lbnZpcm9ubWVudF9pZBgGIAEoCSJRChNEZWxldGVTY2hlbWFSZXF1ZXN0EhIKCmV2ZW50X25hbWUYASABKAkSDwoHdmVyc2lvbhgCIAEoBRIVCg1jaGFuZ2VfcmVhc29uGAMgASgJIhYKFERlbGV0ZVNjaGVtYVJlc3BvbnNlIqQBChFUZXN0VXBjYXN0UmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEhQKDGZyb21fdmVyc2lvbhgCIAEoBRISCgp0b192ZXJzaW9uGAMgASgFEiUKBGRhdGEYBCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EioKCmRhdGFfdmFsdWUYBSABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUilwEKElRlc3RVcGNhc3RSZXNwb25zZRIlCgRkYXRhGAEgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIqCgpkYXRhX3ZhbHVlGAMgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEi4KDXN0ZXBzX2FwcGxpZWQYAiADKAsyFy5pcm9uZmxvdy52MS5VcGNhc3RTdGVwIksKClVwY2FzdFN0ZXASFAoMZnJvbV92ZXJzaW9uGAEgASgFEhIKCnRvX3ZlcnNpb24YAiABKAUSEwoLZGVzY3JpcHRpb24YAyABKAkiSwoXQ2hlY2tFbmZvcmNlbWVudFJlcXVlc3QSEgoKZXZlbnRfbmFtZRgBIAEoCRIcChR0cmFmZmljX3dpbmRvd19ob3VycxgCIAEoBSKIAQoYQ2hlY2tFbmZvcmNlbWVudFJlc3BvbnNlEgwKBG1vZGUYASABKAkSKQoHc2NoZW1hcxgCIAMoCzIYLmlyb25mbG93LnYxLlNjaGVtYUNoZWNrEhwKFHRyYWZmaWNfd2luZG93X2hvdXJzGAMgASgFEhUKDXRvdGFsX3NjaGVtYXMYBCABKAUitwEKC1NjaGVtYUNoZWNrEhIKCmV2ZW50X25hbWUYASABKAkSEwoLc2NoZW1hX2hhc2gYAyABKAkSDwoHdmVyc2lvbhgCIAEoBRIPCgdhc3NlcnRzGAQgASgIEhUKDWNvbXBpbGVfZXJyb3IYBSABKAkSKwoHdHJhZmZpYxgGIAMoCzIaLmlyb25mbG93LnYxLlNjaGVtYVRyYWZmaWMSGQoRdHJhZmZpY190cnVuY2F0ZWQYByABKAgiRAoNU2NoZW1hVHJhZmZpYxIPCgd2ZXJzaW9uGAEgASgFEhMKC3NjaGVtYV9oYXNoGAIgASgJEg0KBWNvdW50GAMgASgDImcKGExpc3RTY2hlbWFIaXN0b3J5UmVxdWVzdBISCgpldmVudF9uYW1lGAEgASgJEg8KB3ZlcnNpb24YAiABKAUSDQoFbGltaXQYAyABKAUSFwoPYmVmb3JlX3JldmlzaW9uGAQgASgDIn0KGUxpc3RTY2hlbWFIaXN0b3J5UmVzcG9uc2USMAoHZW50cmllcxgBIAMoCzIfLmlyb25mbG93LnYxLlNjaGVtYUhpc3RvcnlFbnRyeRIQCghoYXNfbW9yZRgCIAEoCBIcChRuZXh0X2JlZm9yZV9yZXZpc2lvbhgDIAEoAyJRChhHZXRTY2hlbWFSZXZpc2lvblJlcXVlc3QSEgoKZXZlbnRfbmFtZRgBIAEoCRIPCgd2ZXJzaW9uGAIgASgFEhAKCHJldmlzaW9uGAMgASgDIksKGUdldFNjaGVtYVJldmlzaW9uUmVzcG9uc2USLgoFZW50cnkYASABKAsyHy5pcm9uZmxvdy52MS5TY2hlbWFIaXN0b3J5RW50cnki4wEKElNjaGVtYUhpc3RvcnlFbnRyeRIQCghldmVudF9pZBgBIAEoCRIQCghyZXZpc2lvbhgCIAEoAxI6ChNwcmV2aW91c19kZWZpbml0aW9uGAMgASgLMh0uaXJvbmZsb3cudjEuU2NoZW1hRGVmaW5pdGlvbhIQCghhY3Rvcl9pZBgEIAEoCRIVCg1jaGFuZ2VfcmVhc29uGAUgASgJEhMKC2NoYW5nZV90eXBlGAYgASgJEi8KC3JlY29yZGVkX2F0GAcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJ5ChBTY2hlbWFEZWZpbml0aW9uEhIKCmV2ZW50X25hbWUYASABKAkSFgoOZW52aXJvbm1lbnRfaWQYAiABKAkSDwoHdmVyc2lvbhgDIAEoBRITCgtzY2hlbWFfanNvbhgEIAEoCRITCgtkZXNjcmlwdGlvbhgFIAEoCTL4BQoSRXZlbnRTY2hlbWFTZXJ2aWNlEmcKEUxpc3RTY2hlbWFIaXN0b3J5EiUuaXJvbmZsb3cudjEuTGlzdFNjaGVtYUhpc3RvcnlSZXF1ZXN0GiYuaXJvbmZsb3cudjEuTGlzdFNjaGVtYUhpc3RvcnlSZXNwb25zZSIDkAIBEmcKEUdldFNjaGVtYVJldmlzaW9uEiUuaXJvbmZsb3cudjEuR2V0U2NoZW1hUmV2aXNpb25SZXF1ZXN0GiYuaXJvbmZsb3cudjEuR2V0U2NoZW1hUmV2aXNpb25SZXNwb25zZSIDkAIBElkKDlJlZ2lzdGVyU2NoZW1hEiIuaXJvbmZsb3cudjEuUmVnaXN0ZXJTY2hlbWFSZXF1ZXN0GiMuaXJvbmZsb3cudjEuUmVnaXN0ZXJTY2hlbWFSZXNwb25zZRJPCglHZXRTY2hlbWESHS5pcm9uZmxvdy52MS5HZXRTY2hlbWFSZXF1ZXN0Gh4uaXJvbmZsb3cudjEuR2V0U2NoZW1hUmVzcG9uc2UiA5ACARJVCgtMaXN0U2NoZW1hcxIfLmlyb25mbG93LnYxLkxpc3RTY2hlbWFzUmVxdWVzdBogLmlyb25mbG93LnYxLkxpc3RTY2hlbWFzUmVzcG9uc2UiA5ACARJTCgxEZWxldGVTY2hlbWESIC5pcm9uZmxvdy52MS5EZWxldGVTY2hlbWFSZXF1ZXN0GiEuaXJvbmZsb3cudjEuRGVsZXRlU2NoZW1hUmVzcG9uc2USUgoKVGVzdFVwY2FzdBIeLmlyb25mbG93LnYxLlRlc3RVcGNhc3RSZXF1ZXN0Gh8uaXJvbmZsb3cudjEuVGVzdFVwY2FzdFJlc3BvbnNlIgOQAgESZAoQQ2hlY2tFbmZvcmNlbWVudBIkLmlyb25mbG93LnYxLkNoZWNrRW5mb3JjZW1lbnRSZXF1ZXN0GiUuaXJvbmZsb3cudjEuQ2hlY2tFbmZvcmNlbWVudFJlc3BvbnNlIgOQAgFCOlo4Z2l0aHViLmNvbS9zYWhpbmEvaXJvbmZsb3cvYXBpL2dvL2lyb25mbG93L3YxO2lyb25mbG93djFiBnByb3RvMw", [file_google_protobuf_struct, file_google_protobuf_timestamp]);
 
 /**
  * @generated from message ironflow.v1.RegisterSchemaRequest
@@ -39,6 +39,11 @@ export type RegisterSchemaRequest = Message<"ironflow.v1.RegisterSchemaRequest">
    * @generated from field: string description = 4;
    */
   description: string;
+
+  /**
+   * @generated from field: string change_reason = 5;
+   */
+  changeReason: string;
 };
 
 /**
@@ -53,10 +58,7 @@ export const RegisterSchemaRequestSchema: GenMessage<RegisterSchemaRequest> = /*
  */
 export type RegisterSchemaResponse = Message<"ironflow.v1.RegisterSchemaResponse"> & {
   /**
-   * "created" or "updated". Advisory only: the server reads before the upsert
-   * rather than deriving this from it, so concurrent registrations of the same
-   * (event_name, version) can both report "created". The write is still
-   * correct — last one wins. Display it; do not branch on it. (#1958)
+   * "created" or "updated", determined inside the registration transaction.
    *
    * @generated from field: string status = 1;
    */
@@ -244,6 +246,11 @@ export type DeleteSchemaRequest = Message<"ironflow.v1.DeleteSchemaRequest"> & {
    * @generated from field: int32 version = 2;
    */
   version: number;
+
+  /**
+   * @generated from field: string change_reason = 3;
+   */
+  changeReason: string;
 };
 
 /**
@@ -534,9 +541,230 @@ export const SchemaTrafficSchema: GenMessage<SchemaTraffic> = /*@__PURE__*/
   messageDesc(file_ironflow_v1_event_schema, 15);
 
 /**
+ * History revisions identify pre-change snapshots, not the current definition.
+ *
+ * @generated from message ironflow.v1.ListSchemaHistoryRequest
+ */
+export type ListSchemaHistoryRequest = Message<"ironflow.v1.ListSchemaHistoryRequest"> & {
+  /**
+   * @generated from field: string event_name = 1;
+   */
+  eventName: string;
+
+  /**
+   * Required positive schema version; independent of revision.
+   *
+   * @generated from field: int32 version = 2;
+   */
+  version: number;
+
+  /**
+   * 0 = 50, maximum 200; negative values are invalid.
+   *
+   * @generated from field: int32 limit = 3;
+   */
+  limit: number;
+
+  /**
+   * Exclusive cursor; 0 starts at the newest revision.
+   *
+   * @generated from field: int64 before_revision = 4;
+   */
+  beforeRevision: bigint;
+};
+
+/**
+ * Describes the message ironflow.v1.ListSchemaHistoryRequest.
+ * Use `create(ListSchemaHistoryRequestSchema)` to create a new message.
+ */
+export const ListSchemaHistoryRequestSchema: GenMessage<ListSchemaHistoryRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 16);
+
+/**
+ * @generated from message ironflow.v1.ListSchemaHistoryResponse
+ */
+export type ListSchemaHistoryResponse = Message<"ironflow.v1.ListSchemaHistoryResponse"> & {
+  /**
+   * @generated from field: repeated ironflow.v1.SchemaHistoryEntry entries = 1;
+   */
+  entries: SchemaHistoryEntry[];
+
+  /**
+   * @generated from field: bool has_more = 2;
+   */
+  hasMore: boolean;
+
+  /**
+   * 0 when exhausted.
+   *
+   * @generated from field: int64 next_before_revision = 3;
+   */
+  nextBeforeRevision: bigint;
+};
+
+/**
+ * Describes the message ironflow.v1.ListSchemaHistoryResponse.
+ * Use `create(ListSchemaHistoryResponseSchema)` to create a new message.
+ */
+export const ListSchemaHistoryResponseSchema: GenMessage<ListSchemaHistoryResponse> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 17);
+
+/**
+ * @generated from message ironflow.v1.GetSchemaRevisionRequest
+ */
+export type GetSchemaRevisionRequest = Message<"ironflow.v1.GetSchemaRevisionRequest"> & {
+  /**
+   * @generated from field: string event_name = 1;
+   */
+  eventName: string;
+
+  /**
+   * Required positive schema version; independent of revision.
+   *
+   * @generated from field: int32 version = 2;
+   */
+  version: number;
+
+  /**
+   * Required positive history revision; exact match only.
+   *
+   * @generated from field: int64 revision = 3;
+   */
+  revision: bigint;
+};
+
+/**
+ * Describes the message ironflow.v1.GetSchemaRevisionRequest.
+ * Use `create(GetSchemaRevisionRequestSchema)` to create a new message.
+ */
+export const GetSchemaRevisionRequestSchema: GenMessage<GetSchemaRevisionRequest> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 18);
+
+/**
+ * @generated from message ironflow.v1.GetSchemaRevisionResponse
+ */
+export type GetSchemaRevisionResponse = Message<"ironflow.v1.GetSchemaRevisionResponse"> & {
+  /**
+   * @generated from field: ironflow.v1.SchemaHistoryEntry entry = 1;
+   */
+  entry?: SchemaHistoryEntry | undefined;
+};
+
+/**
+ * Describes the message ironflow.v1.GetSchemaRevisionResponse.
+ * Use `create(GetSchemaRevisionResponseSchema)` to create a new message.
+ */
+export const GetSchemaRevisionResponseSchema: GenMessage<GetSchemaRevisionResponse> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 19);
+
+/**
+ * @generated from message ironflow.v1.SchemaHistoryEntry
+ */
+export type SchemaHistoryEntry = Message<"ironflow.v1.SchemaHistoryEntry"> & {
+  /**
+   * @generated from field: string event_id = 1;
+   */
+  eventId: string;
+
+  /**
+   * @generated from field: int64 revision = 2;
+   */
+  revision: bigint;
+
+  /**
+   * @generated from field: ironflow.v1.SchemaDefinition previous_definition = 3;
+   */
+  previousDefinition?: SchemaDefinition | undefined;
+
+  /**
+   * Actor of the mutation that archived the definition.
+   *
+   * @generated from field: string actor_id = 4;
+   */
+  actorId: string;
+
+  /**
+   * @generated from field: string change_reason = 5;
+   */
+  changeReason: string;
+
+  /**
+   * @generated from field: string change_type = 6;
+   */
+  changeType: string;
+
+  /**
+   * @generated from field: google.protobuf.Timestamp recorded_at = 7;
+   */
+  recordedAt?: Timestamp | undefined;
+};
+
+/**
+ * Describes the message ironflow.v1.SchemaHistoryEntry.
+ * Use `create(SchemaHistoryEntrySchema)` to create a new message.
+ */
+export const SchemaHistoryEntrySchema: GenMessage<SchemaHistoryEntry> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 20);
+
+/**
+ * @generated from message ironflow.v1.SchemaDefinition
+ */
+export type SchemaDefinition = Message<"ironflow.v1.SchemaDefinition"> & {
+  /**
+   * @generated from field: string event_name = 1;
+   */
+  eventName: string;
+
+  /**
+   * @generated from field: string environment_id = 2;
+   */
+  environmentId: string;
+
+  /**
+   * @generated from field: int32 version = 3;
+   */
+  version: number;
+
+  /**
+   * @generated from field: string schema_json = 4;
+   */
+  schemaJson: string;
+
+  /**
+   * @generated from field: string description = 5;
+   */
+  description: string;
+};
+
+/**
+ * Describes the message ironflow.v1.SchemaDefinition.
+ * Use `create(SchemaDefinitionSchema)` to create a new message.
+ */
+export const SchemaDefinitionSchema: GenMessage<SchemaDefinition> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_event_schema, 21);
+
+/**
  * @generated from service ironflow.v1.EventSchemaService
  */
 export const EventSchemaService: GenService<{
+  /**
+   * Archived definitions captured before replacement or deletion.
+   *
+   * @generated from rpc ironflow.v1.EventSchemaService.ListSchemaHistory
+   */
+  listSchemaHistory: {
+    methodKind: "unary";
+    input: typeof ListSchemaHistoryRequestSchema;
+    output: typeof ListSchemaHistoryResponseSchema;
+  },
+  /**
+   * @generated from rpc ironflow.v1.EventSchemaService.GetSchemaRevision
+   */
+  getSchemaRevision: {
+    methodKind: "unary";
+    input: typeof GetSchemaRevisionRequestSchema;
+    output: typeof GetSchemaRevisionResponseSchema;
+  },
   /**
    * @generated from rpc ironflow.v1.EventSchemaService.RegisterSchema
    */

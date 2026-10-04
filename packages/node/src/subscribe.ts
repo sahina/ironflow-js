@@ -5,6 +5,7 @@
  * server-side Node.js usage (long-running processes, workers).
  */
 
+import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import type {
   ConnectionState,
   SubscribeOptions,
@@ -176,6 +177,7 @@ export class SubscriptionClient {
       ...config,
     };
 
+    hydrateEnvFromDiscovery();
     // Build WebSocket URL with auth/env params
     const baseWsUrl = getWebSocketUrl(config.serverUrl);
     const params: string[] = [];

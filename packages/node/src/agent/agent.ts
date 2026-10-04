@@ -17,6 +17,7 @@
  * crash-resume, replay, and audit semantics from the existing runtime.
  */
 
+import { hydrateEnvFromDiscovery } from "../internal/discovery.js";
 import type { z } from "zod";
 import { IronflowClient } from "../client.js";
 import { createFunction } from "../function.js";
@@ -134,6 +135,7 @@ export function agent<TEventSchema extends z.ZodType = z.ZodType<unknown>, TResu
  * makeMemory() can surface a clear "no backend" error on first use.
  */
 export function createDefaultMemoryBackend(environment?: string): MemoryBackend | undefined {
+  hydrateEnvFromDiscovery();
   const serverUrl =
     process.env.IRONFLOW_URL ?? process.env.IRONFLOW_SERVER_URL;
   if (!serverUrl) return undefined;

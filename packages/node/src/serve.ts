@@ -8,6 +8,7 @@
  * - Generic Fetch API (native Request/Response)
  */
 
+import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import type {
   IronflowFunction,
   IronflowWebhook,
@@ -95,6 +96,7 @@ type UniversalHandler = (
  * ```
  */
 export function serve(config: ServeConfig): UniversalHandler {
+  hydrateEnvFromDiscovery();
   // Resolve environment
   const environment =
     config.environment ?? process.env.IRONFLOW_ENV ?? DEFAULT_ENVIRONMENT;

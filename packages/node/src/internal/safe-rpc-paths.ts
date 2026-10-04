@@ -33,6 +33,8 @@ const SAFE_METHODS: Record<string, string[]> = {
   "ironflow.v1.EventSchemaService": [
     "CheckEnforcement",
     "GetSchema",
+    "GetSchemaRevision",
+    "ListSchemaHistory",
     "ListSchemas",
     "TestUpcast",
   ],
@@ -48,6 +50,8 @@ const SAFE_METHODS: Record<string, string[]> = {
   ],
   "ironflow.v1.ProjectionService": [
     "GetProjection",
+    "GetProjectionRevision",
+    "ListProjectionHistory",
     "GetProjectionStatus",
     "GetRebuildJob",
     "ListProjections",
