@@ -23,16 +23,17 @@ Requires Node.js 22+.
 7. [Server-Side Client](#server-side-client)
 8. [Entity Streams](#entity-streams)
 9. [KV Store](#kv-store)
-10. [Config Management](#config-management)
-11. [Auth Management](#auth-management)
-12. [Subscriptions](#subscriptions)
-13. [Projections](#projections)
-14. [Webhooks](#webhooks)
-15. [Event Versioning (Upcasters)](#event-versioning-upcasters)
-16. [Error Handling](#error-handling)
-17. [Environment Variables](#environment-variables)
-18. [Agent Primitives](#agent-primitives)
-19. [Testing](#testing)
+10. [File Storage](#file-storage)
+11. [Config Management](#config-management)
+12. [Auth Management](#auth-management)
+13. [Subscriptions](#subscriptions)
+14. [Projections](#projections)
+15. [Webhooks](#webhooks)
+16. [Event Versioning (Upcasters)](#event-versioning-upcasters)
+17. [Error Handling](#error-handling)
+18. [Environment Variables](#environment-variables)
+19. [Agent Primitives](#agent-primitives)
+20. [Testing](#testing)
 
 ---
 
@@ -1412,6 +1413,58 @@ watcher.stop();
 
 ---
 
+## File Storage
+
+### client.files()
+
+Get a files client for buckets, files, signed URLs and events.
+
+```typescript
+const files = client.files();                        // files() is a METHOD, not a property
+await files.createBucket("inbox", { emitEvents: true, allowSignedUrls: true });
+
+const inbox = files.bucket("inbox");
+const info = await inbox.put("scans/a.pdf", bytes, { contentType: "application/pdf" });
+const file = await inbox.get("scans/a.pdf", { ifMatch: info.etag });
+const text = await file.text();                      // or arrayBuffer(), or read file.body
+```
+
+`FilesClient` methods:
+
+| Method | Description |
+| :--- | :--- |
+| `createBucket(name, config?)` | Create a bucket. `config`: `maxObjectBytes`, `allowedContentTypes`, `emitEvents`, `allowSignedUrls`. |
+| `listBuckets()` | `FileBucketInfo[]`. |
+| `getBucket(name)` | One bucket's configuration. |
+| `updateBucket(name, config)` | Change the set fields. The change applies to new writes only. |
+| `deleteBucket(name)` | Delete an empty bucket. A bucket with files throws `ConflictError`. |
+| `bucket(name)` | A `FileBucketHandle`. |
+
+`FileBucketHandle` methods:
+
+| Method | Description |
+| :--- | :--- |
+| `put(path, body, { contentType, contentLength?, metadata?, ifMatch?, ifNoneMatch? })` | Upload. Returns `FileInfo`. |
+| `get(path, { ifMatch?, range? })` | `{ body, contentType, etag, size, arrayBuffer(), text() }`. |
+| `info(path)` | A file's metadata, without the bytes. |
+| `list({ prefix?, delimiter?, cursor?, limit? })` | `{ files, prefixes, nextCursor }`. |
+| `delete(path)` | Delete a file. A missing path is not an error. |
+| `move(from, to, { toBucket?, ifMatch? })` | Rename one file. |
+| `copy(from, to, { toBucket? })` | Copy one file. |
+| `movePrefix(from, to)` | Move every file under a prefix (both end in `/`). Returns the count. |
+| `signUpload(path, { ttlSeconds?, maxBytes?, contentType?, createOnly? })` | `{ url, expiresAt }` for a credential-free upload. `createOnly` makes the PUT fail with `412` if the path exists. |
+| `signDownload(path, ttlSeconds?)` | `{ url, expiresAt }` for a credential-free download. |
+
+`body` is a `Uint8Array`, `ArrayBuffer`, `Blob` or string. It can also be a Node `Readable` or a
+`ReadableStream`. A stream needs `contentLength`. A stream upload is sent once: it is not
+retried after a `503`. The other bodies are retried. `put` has no fixed timeout.
+
+Errors: `PreconditionFailedError` (412), `PayloadTooLargeError` (413),
+`UnsupportedMediaTypeError` (415) and `ConflictError` (409). A 404 is an `IronflowError` with
+code `NOT_FOUND`. Import the three file error classes from `@ironflow/node`.
+
+---
+
 ## Config Management
 
 Centralized configuration store with set, get, patch (shallow merge), list, and delete.
@@ -1869,6 +1922,9 @@ These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. C
 | `EnterpriseRequiredError` | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility. |
 | `ConflictError` | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun()`. Wait, do not retry. |
 | `ContendedError` | HTTP 409 from a lost compare-and-set race; nothing was applied, so re-read and reissue. |
+| `PreconditionFailedError` | HTTP 412. An `If-Match` or `If-None-Match` precondition failed (file storage). |
+| `PayloadTooLargeError` | HTTP 413. A file is larger than the server, bucket or token cap (file storage). |
+| `UnsupportedMediaTypeError` | HTTP 415. The bucket or signed URL does not allow the content type (file storage). |
 
 ### Utility functions
 
@@ -1901,7 +1957,7 @@ throw new NonRetryableError('Payment declined - do not retry');
 |----------|-------------|---------|
 | `IRONFLOW_URL` | Ironflow server URL, checked before `IRONFLOW_SERVER_URL` by `serve()`'s emit path and by the agent primitives (`agent()`, `exposeMcp()`, `memory`) | -- |
 | `IRONFLOW_SERVER_URL` | Ironflow server URL | `http://localhost:9123` |
-| `IRONFLOW_SIGNING_KEY` | HMAC-SHA256 signing key for push mode verification | -- |
+| `IRONFLOW_SIGNING_KEY` | The Node SDK does not read this variable. Your code reads it and passes it to `serve` as `signingKey`. With no key, the handler does not verify requests. | -- |
 | `IRONFLOW_API_KEY` | API key for authentication (worker and client) | -- |
 | `IRONFLOW_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` | `info` |
 | `IRONFLOW_ENV` | Target environment name | `default` |

@@ -115,6 +115,28 @@ describe("ConfigClient", () => {
     });
   });
 
+  describe("conditional writes", () => {
+    it.each([
+      ["create", (c: ConfigClient) => c.create("app", { a: 1 }), "POST", { "If-None-Match": "*" }],
+      ["update", (c: ConfigClient) => c.update("app", { a: 1 }, 3), "POST", { "If-Match": "3" }],
+      ["patchIf", (c: ConfigClient) => c.patchIf("app", { a: 1 }, 3), "PATCH", { "If-Match": "3" }],
+      ["deleteIf", (c: ConfigClient) => c.deleteIf("app", 3), "DELETE", { "If-Match": "3" }],
+    ] as const)("%s sends its condition header", async (_name, call, method, condition) => {
+      vi.mocked(fetch).mockResolvedValueOnce(
+        method === "DELETE" ? new Response(null, { status: 204 }) : createMockResponse(200, { name: "app", revision: 4 }),
+      );
+      await call(new ConfigClient(defaultConfig()));
+      const { init } = lastFetchCall();
+      expect(init.method).toBe(method);
+      expect(init.headers).toMatchObject(condition);
+    });
+
+    it("throws on a stale revision (412)", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(412, { error: "config write precondition failed" }));
+      await expect(new ConfigClient(defaultConfig()).update("app", { a: 1 }, 9)).rejects.toThrow("config write precondition failed");
+    });
+  });
+
   describe("get", () => {
     it("should GET config by name", async () => {
       const config = {

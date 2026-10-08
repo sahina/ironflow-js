@@ -12,6 +12,7 @@ import {
   DEFAULT_ENVIRONMENT,
   HEADERS,
   IronflowError,
+  restRetryable,
   throwIfAuthError,
 } from "@ironflow/core";
 import { errorDetail } from "./error-detail.js";
@@ -120,13 +121,27 @@ export async function registerFunctions(opts: {
     );
 
     if (!response.ok) {
+      let errorBody: { retryable?: unknown } | null = null;
+      try {
+        const body: unknown = await response.clone().json();
+        if (body && typeof body === "object" && "retryable" in body) {
+          errorBody = { retryable: body.retryable };
+        }
+      } catch {
+        // A proxy may return plain text; fall back to the HTTP status.
+      }
       // Read the body BEFORE throwIfAuthError: a Response body can only be
       // consumed once, and the auth throw would take the reason with it.
       const detail = await errorDetail(response);
       throwIfAuthError(response.status, `Failed to register function ${fnId}`);
       throw new IronflowError(
         `Failed to register function ${fnId}: ${detail}`,
-        { code: "FUNCTION_REGISTRATION_FAILED" }
+        {
+          code: "FUNCTION_REGISTRATION_FAILED",
+          status: response.status,
+          retryable: restRetryable(response.status, errorBody) ||
+            (response.status === 408 && typeof errorBody?.retryable !== "boolean"),
+        }
       );
     }
 

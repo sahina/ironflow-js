@@ -3,7 +3,7 @@ import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { stepInspectionFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
-import { connectHTTPError, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
+import { connectHTTPError, restRetryable, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
  * Ironflow Node.js Client
  *
@@ -186,6 +186,12 @@ function retryAfterMs(header: string | null): number {
   const ms = Number.isNaN(seconds) ? Date.parse(header) - Date.now() : seconds * 1000;
   return ms > 0 ? ms : 0;
 }
+
+/**
+ * `retry_after` (seconds) from a REST error body. IronflowError has no field for
+ * it, so `send` reads it here when the response has no Retry-After header.
+ */
+const bodyRetryAfter = new WeakMap<Error, number>();
 
 // ============================================================================
 // Client Configuration
@@ -3014,7 +3020,7 @@ export class IronflowClient {
    * second argument today (#2074); `connectCode` is undefined on the REST path,
    * whose bodies carry no code.
    */
-  private throwTypedError(status: number, message: string, connectCode?: string): never {
+  private throwTypedError(status: number, message: string, connectCode?: string, body?: Record<string, unknown>): never {
     switch (status) {
       case 401:
         throw new UnauthenticatedError(`${message} — ${AUTH_HELP}`);
@@ -3033,15 +3039,18 @@ export class IronflowClient {
         if (connectCode === "aborted") {
           throw new ContendedError(message);
         }
-        throw new ConflictError(message);
+        throw new ConflictError(message, body?.retryable === true);
       case 412:
         throw new PreconditionFailedError(message);
       case 413:
         throw new PayloadTooLargeError(message);
       case 415:
         throw new UnsupportedMediaTypeError(message);
-      default:
-        throw new IronflowError(message);
+      default: {
+        const error = new IronflowError(message, { status, retryable: restRetryable(status, body) });
+        if (typeof body?.retry_after === "number") bodyRetryAfter.set(error, body.retry_after);
+        throw error;
+      }
     }
   }
 
@@ -3081,14 +3090,11 @@ export class IronflowClient {
         status = response.status;
 
         if (!response.ok) {
-          const errBody = await response
+          const errBody = (await response
             .json()
-            .catch(() => ({ error: response.statusText }));
-          const message =
-            (errBody as Record<string, string>).error ||
-            (errBody as Record<string, string>).message ||
-            response.statusText;
-          this.throwTypedError(response.status, message);
+            .catch(() => ({ error: response.statusText }))) as Record<string, unknown>;
+          const message = (errBody.error as string) || (errBody.message as string) || response.statusText;
+          this.throwTypedError(response.status, message, undefined, errBody);
         }
 
         if (response.status === 204) return undefined as T;
@@ -3129,8 +3135,12 @@ export class IronflowClient {
         // handler may have run. 429 is the one status that says the server
         // refused the request before it ran, so it is safe for a write too.
         const status = response?.status;
+        // A safe 5xx also follows the error's own flag: the server's `retryable`
+        // wins, and 501 and 507-style refusals are not worth another attempt.
         const retry =
-          status === undefined ? safe : status === 429 || (safe && (status === 408 || status >= 500));
+          status === undefined
+            ? safe
+            : status === 429 || (safe && (status === 408 || (status >= 500 && (error as IronflowError).retryable !== false)));
         if (!retry || attempt >= maxAttempts) throw error;
 
         delayMs =
@@ -3138,7 +3148,8 @@ export class IronflowClient {
             ? connectionRetryDelayMs
             : Math.min(initialDelayMs * backoffMultiplier ** (attempt - 1), maxDelayMs);
         // Retry-After is clamped: one header must not park the client for a day.
-        const retryAfter = retryAfterMs(response?.headers.get("Retry-After") ?? null);
+        const header = response?.headers.get("Retry-After") ?? null;
+        const retryAfter = header ? retryAfterMs(header) : (bodyRetryAfter.get(error as Error) ?? 0) * 1000;
         delayMs = Math.max(delayMs, Math.min(retryAfter, maxDelayMs));
         onRetry?.({ attempt, maxAttempts, error: error as Error, delayMs });
       } finally {

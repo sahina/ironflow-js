@@ -41,17 +41,19 @@ async function errorFrom(res: Response): Promise<IronflowError> {
   const text = await res.text().catch(() => "");
   let message = text || res.statusText;
   let code: string | undefined;
+  let retryable: boolean | undefined;
   try {
-    const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string };
+    const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string; retryable?: unknown };
     message = parsed.message ?? parsed.error ?? message;
     code = parsed.code;
+    if (typeof parsed.retryable === "boolean") retryable = parsed.retryable;
   } catch {
     // not JSON; keep the raw text
   }
   // 401 and 403 keep UnauthenticatedError / UnauthorizedError, as every other
   // client does. A bucket with signed URLs off is not a credential problem.
   if (code !== SIGNED_URLS_DISABLED) throwIfAuthError(res.status, "files");
-  return fileErrorFor(res.status, message, code);
+  return fileErrorFor(res.status, message, code, retryable);
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -127,10 +129,12 @@ export class FilesClient {
       }
       clearTimeout(timer);
       if (res.ok) return res;
-      const retryable = res.status === 429 || res.status === 408 || res.status >= 500;
-      if (!retryable) throw await errorFrom(res);
-      if (attempt >= max) throw failFirst(await errorFrom(res));
       const failure = await errorFrom(res).catch((e: unknown) => e as Error);
+      // The server's retryable flag wins over the status for a 5xx (501, 507).
+      const retryable =
+        res.status === 429 || res.status === 408 || (res.status >= 500 && (failure as IronflowError).retryable !== false);
+      if (!retryable) throw failure;
+      if (attempt >= max) throw failFirst(failure);
       this.retry.onRetry?.({ attempt, maxAttempts: max, error: failure, delayMs: delay });
       await sleep(delay);
       delay = Math.min(delay * this.retry.backoffMultiplier, this.retry.maxDelayMs);

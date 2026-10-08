@@ -13,13 +13,15 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  publish:
-    name: Publish all packages
+  build:
+    name: Build and pack SDK artifacts
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      npm_tag: ${{ steps.resolve.outputs.npm_tag }}
     env:
       # All untrusted inputs routed through env vars; never interpolate
       # ${{ github.* }} directly into a `run:` block (workflow-injection
@@ -29,17 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          persist-credentials: false
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.0.0
+      - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: pnpm
-          registry-url: "https://registry.npmjs.org"
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -85,14 +85,56 @@ jobs:
             fi
           done
 
+      - name: Pack packages without a publishing credential
+        env:
+          VERSION: ${{ steps.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/packs"
+          for pkg in core node browser langgraph; do
+            (cd "packages/$pkg" && pnpm pack --pack-destination "$RUNNER_TEMP/packs")
+            # The publish job finds each tarball by this name and cannot repack it.
+            tarball="$RUNNER_TEMP/packs/ironflow-${pkg}-${VERSION}.tgz"
+            manifest="$(tar -xOzf "$tarball" package/package.json)"
+            if grep -q '"workspace:' <<< "$manifest"; then
+              echo "FATAL: $tarball keeps a workspace: range" >&2
+              exit 1
+            fi
+          done
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: npm-tarballs
+          path: ${{ runner.temp }}/packs/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish prepared packages
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: npm-tarballs
+          path: ${{ runner.temp }}/packs
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
       # Publish order matches dep graph: core first, then leaves.
       # Halt on first failure. "already in registry" treated as success
       # so manual re-runs are idempotent.
       - name: Publish packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_TAG: ${{ steps.resolve.outputs.npm_tag }}
-          VERSION: ${{ steps.resolve.outputs.version }}
+          NPM_TAG: ${{ needs.build.outputs.npm_tag }}
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
           # pipefail is load-bearing: the publish below pipes into `tee`, and
           # without it `if` tests tee's status (always 0), so a failed publish
@@ -101,10 +143,10 @@ jobs:
           # went green in 36s, npm stayed on 0.29.0.
           set -euo pipefail
           for pkg in core node browser langgraph; do
-            dir="packages/${pkg}"
-            echo "==> Publishing @ironflow/${pkg} from ${dir}"
+            tarball="$RUNNER_TEMP/packs/ironflow-${pkg}-${VERSION}.tgz"
+            echo "==> Publishing @ironflow/${pkg} from ${tarball}"
             log=$(mktemp)
-            if (cd "$dir" && pnpm publish --tag "$NPM_TAG" --provenance --no-git-checks --access public) 2>&1 | tee "$log"; then
+            if npm publish "$tarball" --tag "$NPM_TAG" --provenance --ignore-scripts --access public 2>&1 | tee "$log"; then
               rm -f "$log"
               continue
             fi

@@ -28,6 +28,7 @@ export function functionListFromWire(raw: Record<string, unknown>) {
     version: fn.version,
     created_at: fn.createdAt,
     updated_at: fn.updatedAt,
+    ...(typeof raw.nextRun === "string" ? { next_run: raw.nextRun } : {}),
     ...(raw.metadata ? { metadata: raw.metadata } : {}),
     ...(fn.debounce
       ? {

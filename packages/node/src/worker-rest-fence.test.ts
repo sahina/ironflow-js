@@ -39,7 +39,9 @@ describe("schema: fence fields", () => {
 });
 
 describe("real REST worker fence echo (#1206 T9)", () => {
-  beforeEach(() => mockFetch.mockReset());
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("polls available=N, acks the fenced assignment, then completes with the fence echoed", async () => {

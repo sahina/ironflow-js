@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import type {
   SubscriptionEvent,
   SubscriptionErrorInfo,
@@ -9,14 +9,14 @@ import type {
 // Mock Transport interface inline
 interface MockTransport {
   connectionState: ConnectionState;
-  connect: ReturnType<typeof vi.fn>;
-  disconnect: ReturnType<typeof vi.fn>;
-  subscribe: ReturnType<typeof vi.fn>;
-  unsubscribe: ReturnType<typeof vi.fn>;
-  ack: ReturnType<typeof vi.fn>;
-  pause: ReturnType<typeof vi.fn>;
-  resume: ReturnType<typeof vi.fn>;
-  setCallbacks: ReturnType<typeof vi.fn>;
+  connect: Mock;
+  disconnect: Mock;
+  subscribe: Mock;
+  unsubscribe: Mock;
+  ack: Mock;
+  pause: Mock;
+  resume: Mock;
+  setCallbacks: Mock;
   _callbacks?: {
     onEvent: (subscriptionId: string, event: SubscriptionEvent) => void;
     onError: (subscriptionId: string, error: SubscriptionErrorInfo) => void;
@@ -1216,7 +1216,7 @@ describe("SubscriptionManager (real module)", () => {
     });
 
     it("kicks off transport.connect() when subscribing while disconnected", async () => {
-      (transport.connect as ReturnType<typeof vi.fn>).mockImplementation(
+      (transport.connect as Mock).mockImplementation(
         async () => {
           transport._setConnectionState("connected");
           transport._callbacks()!.onConnectionChange("connected");
@@ -1239,7 +1239,7 @@ describe("SubscriptionManager (real module)", () => {
 
     it("shares one in-flight connect across concurrent subscribe() calls", async () => {
       let resolveConnect: (() => void) | null = null;
-      (transport.connect as ReturnType<typeof vi.fn>).mockImplementation(
+      (transport.connect as Mock).mockImplementation(
         () =>
           new Promise<void>((res) => {
             resolveConnect = () => {
@@ -1286,7 +1286,7 @@ describe("SubscriptionManager (real module)", () => {
     });
 
     it("rejects subscribe() when transport.connect() fails", async () => {
-      (transport.connect as ReturnType<typeof vi.fn>).mockRejectedValue(
+      (transport.connect as Mock).mockRejectedValue(
         new Error("server unreachable"),
       );
 
@@ -1314,7 +1314,7 @@ describe("SubscriptionManager (real module)", () => {
     it("triggers connect() when the tab becomes visible while disconnected", () => {
       if (typeof document === "undefined") return;
       transport._setConnectionState("disconnected");
-      (transport.connect as ReturnType<typeof vi.fn>).mockClear();
+      (transport.connect as Mock).mockClear();
 
       Object.defineProperty(document, "hidden", {
         configurable: true,
@@ -1328,7 +1328,7 @@ describe("SubscriptionManager (real module)", () => {
     it("does not trigger connect() while still hidden", () => {
       if (typeof document === "undefined") return;
       transport._setConnectionState("disconnected");
-      (transport.connect as ReturnType<typeof vi.fn>).mockClear();
+      (transport.connect as Mock).mockClear();
 
       Object.defineProperty(document, "hidden", {
         configurable: true,
@@ -1342,7 +1342,7 @@ describe("SubscriptionManager (real module)", () => {
     it("does not trigger connect() when already connected", () => {
       if (typeof document === "undefined") return;
       transport._setConnectionState("connected");
-      (transport.connect as ReturnType<typeof vi.fn>).mockClear();
+      (transport.connect as Mock).mockClear();
 
       Object.defineProperty(document, "hidden", {
         configurable: true,
@@ -1357,7 +1357,7 @@ describe("SubscriptionManager (real module)", () => {
       if (typeof document === "undefined") return;
       transport._setConnectionState("disconnected");
       manager.disconnect();
-      (transport.connect as ReturnType<typeof vi.fn>).mockClear();
+      (transport.connect as Mock).mockClear();
 
       Object.defineProperty(document, "hidden", {
         configurable: true,

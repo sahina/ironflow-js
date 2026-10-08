@@ -59,6 +59,7 @@ export function stepInspectionFromWire(r: Record<string, unknown>) {
     id: r.id ?? "",
     run_id: r.runId ?? "",
     step_id: r.stepId ?? "",
+    child_run_id: r.childRunId,
     step_type: enumName(r.stepType, "STEP_TYPE_", [
       "unspecified",
       "invoke",

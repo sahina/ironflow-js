@@ -18,7 +18,7 @@
  * on ALL THREE helpers, not just the queue's path. Before T2 the rule was a bare
  * `status >= 500`, which classified 429 as permanent.
  */
-import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 
 const ENV_HEADER = "X-Ironflow-Environment";
 
@@ -400,6 +400,32 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
         code: "TIMEOUT",
         message: "Request timeout after 77ms for GET /api/v1/apikeys",
       });
+    });
+  });
+
+  describe("server retry signal", () => {
+    beforeEach(() => ironflow.configure({ serverUrl: "http://test:9123", logger: false }));
+
+    const reply = (status: number, body: unknown) =>
+      vi.stubGlobal("fetch", vi.fn(async () => mockResponse(JSON.stringify(body), { status })));
+
+    it("does not mark 501 retryable on any helper", async () => {
+      reply(501, {});
+      await expect(ironflow.emit("x", {})).rejects.toMatchObject({ retryable: false });
+      await expect(ironflow.streams.append("o", { entityType: "order", name: "c", data: {} })).rejects.toMatchObject({ retryable: false });
+      await expect(ironflow.apiKeys.list()).rejects.toMatchObject({ retryable: false });
+    });
+
+    it("lets the body retryable flag win over the status on every helper", async () => {
+      reply(507, { message: "disk full", retryable: false });
+      await expect(ironflow.emit("x", {})).rejects.toMatchObject({ retryable: false });
+      await expect(ironflow.streams.append("o", { entityType: "order", name: "c", data: {} })).rejects.toMatchObject({ retryable: false });
+      await expect(ironflow.apiKeys.list()).rejects.toMatchObject({ retryable: false });
+
+      reply(409, { message: "busy", retryable: true });
+      await expect(ironflow.emit("x", {})).rejects.toMatchObject({ retryable: true });
+      await expect(ironflow.streams.append("o", { entityType: "order", name: "c", data: {} })).rejects.toMatchObject({ retryable: true });
+      await expect(ironflow.apiKeys.list()).rejects.toMatchObject({ retryable: true });
     });
   });
 });

@@ -229,6 +229,16 @@ class StreamingWorker implements Worker {
           throw error;
         }
 
+        if (
+          error instanceof IronflowError &&
+          error.code === "FUNCTION_REGISTRATION_FAILED" &&
+          !error.retryable
+        ) {
+          this.logger.error(error.message);
+          this.stop();
+          throw error;
+        }
+
         this.logger.error("Connection error", { error: String(error) });
         this.logger.info(`Reconnecting in ${this.reconnectDelay}ms...`);
 

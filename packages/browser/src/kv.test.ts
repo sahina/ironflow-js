@@ -477,6 +477,16 @@ describe("IronflowError handling", () => {
     }
   });
 
+  it("501 is not retryable and the body retryable flag wins", async () => {
+    const client = new BrowserKVClient(config);
+    mockFetch.mockResolvedValueOnce(errorResponse(501, "unimplemented"));
+    await expect(client.listBuckets()).rejects.toMatchObject({ retryable: false });
+    mockFetch.mockResolvedValueOnce(errorResponse(507, { error: "disk full", retryable: false }));
+    await expect(client.listBuckets()).rejects.toMatchObject({ retryable: false });
+    mockFetch.mockResolvedValueOnce(errorResponse(409, { error: "busy", retryable: true }));
+    await expect(client.listBuckets()).rejects.toMatchObject({ retryable: true });
+  });
+
   it("extracts error message from JSON body", async () => {
     mockFetch.mockResolvedValueOnce(
       errorResponse(400, { error: "invalid bucket name" })

@@ -5,7 +5,7 @@ import {
 import { stepInspectionFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
-import { connectHTTPError, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
+import { connectHTTPError, restRetryable, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
  * Ironflow Browser Client
  *
@@ -188,8 +188,8 @@ export const REPLAY_QUEUED_WRITE = Symbol("ironflow.replayQueuedWrite");
  * earn a 429. Classifying it as permanent would send those writes to the dead
  * letter store precisely when the queue was doing its job.
  */
-function isRetryableStatus(status: number): boolean {
-  return status >= 500 || status === 429;
+function isRetryableStatus(status: number, body?: { retryable?: unknown } | null): boolean {
+  return restRetryable(status, body);
 }
 
 /**
@@ -3239,7 +3239,7 @@ class IronflowClient {
             {
               code: errorData.code ?? `HTTP_${response.status}`,
               status: response.status,
-              retryable: isRetryableStatus(response.status),
+              retryable: isRetryableStatus(response.status, safeJsonParse(responseBody) as { retryable?: unknown } | undefined),
             }
           );
         }
@@ -3324,15 +3324,15 @@ class IronflowClient {
     return this.send("POST", path, body, async (response) => {
       if (!response.ok) {
         const errorBody = safeJsonParse(await response.text()) as
-          | { message?: string; code?: string }
+          | { message?: string; code?: string; retryable?: unknown }
           | undefined;
         if (useSDKErrorTypes) {
-          throw connectHTTPError(response.status, errorBody?.message ?? `Request failed: ${response.status}`, errorBody?.code, { retryable: isRetryableStatus(response.status) });
+          throw connectHTTPError(response.status, errorBody?.message ?? `Request failed: ${response.status}`, errorBody?.code, { retryable: isRetryableStatus(response.status, errorBody) });
         }
         throw new IronflowError(errorBody?.message ?? `Request failed: ${response.status}`, {
           code: errorBody?.code ?? `HTTP_${response.status}`,
           status: response.status,
-          retryable: isRetryableStatus(response.status),
+          retryable: isRetryableStatus(response.status, errorBody),
         });
       }
 
@@ -3366,9 +3366,10 @@ class IronflowClient {
       if (!response.ok) {
         const errorText = await response.text();
         let errorMessage = `Request failed with status ${response.status}`;
+        let errorJson: { message?: string; retryable?: unknown } | undefined;
         if (errorText) {
-          const errorJson = safeJsonParse(errorText) as
-            | { message?: string; code?: string }
+          errorJson = safeJsonParse(errorText) as
+            | { message?: string; code?: string; retryable?: unknown }
             | undefined;
           if (errorJson?.message) {
             errorMessage = errorJson.message;
@@ -3388,7 +3389,7 @@ class IronflowClient {
             throw new IronflowError(errorMessage, {
               code: `HTTP_${response.status}`,
               status: response.status,
-              retryable: isRetryableStatus(response.status),
+              retryable: isRetryableStatus(response.status, errorJson),
             });
         }
       }

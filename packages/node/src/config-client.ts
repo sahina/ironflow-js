@@ -48,6 +48,22 @@ export class ConfigClient {
   }
 
   /**
+   * Create a config only if the name does not exist.
+   * Throws on conflict (HTTP 412).
+   */
+  async create(name: string, data: Record<string, unknown>): Promise<ConfigSetResult> {
+    return this.restRequest<ConfigSetResult>("POST", `/api/v1/config/${enc(name)}`, data, "config.create", { "If-None-Match": "*" });
+  }
+
+  /**
+   * Replace a config only if `revision` is its current revision (compare-and-swap).
+   * Throws if the config changed or was deleted (HTTP 412).
+   */
+  async update(name: string, data: Record<string, unknown>, revision: number): Promise<ConfigSetResult> {
+    return this.restRequest<ConfigSetResult>("POST", `/api/v1/config/${enc(name)}`, data, "config.update", ifRevision(revision));
+  }
+
+  /**
    * Get a config by name.
    */
   async get(name: string): Promise<ConfigResponse> {
@@ -59,6 +75,14 @@ export class ConfigClient {
    */
   async patch(name: string, data: Record<string, unknown>): Promise<ConfigSetResult> {
     return this.restRequest<ConfigSetResult>("PATCH", `/api/v1/config/${enc(name)}`, data, "config.patch");
+  }
+
+  /**
+   * Patch a config only if `revision` is its current revision.
+   * Throws if the config changed or was deleted (HTTP 412).
+   */
+  async patchIf(name: string, data: Record<string, unknown>, revision: number): Promise<ConfigSetResult> {
+    return this.restRequest<ConfigSetResult>("PATCH", `/api/v1/config/${enc(name)}`, data, "config.patchIf", ifRevision(revision));
   }
 
   /**
@@ -74,6 +98,14 @@ export class ConfigClient {
    */
   async delete(name: string): Promise<void> {
     await this.restRequest<void>("DELETE", `/api/v1/config/${enc(name)}`, undefined, "config.delete");
+  }
+
+  /**
+   * Delete a config only if `revision` is its current revision.
+   * Throws if the config changed or was deleted (HTTP 412).
+   */
+  async deleteIf(name: string, revision: number): Promise<void> {
+    await this.restRequest<void>("DELETE", `/api/v1/config/${enc(name)}`, undefined, "config.deleteIf", ifRevision(revision));
   }
 
   /**
@@ -147,10 +179,11 @@ export class ConfigClient {
     httpMethod: string,
     path: string,
     body?: unknown,
-    clientMethod?: string
+    clientMethod?: string,
+    extraHeaders?: Record<string, string>
   ): Promise<T> {
     const url = `${this.config.serverUrl}${path}`;
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extraHeaders };
 
     if (body !== undefined) {
       headers["Content-Type"] = "application/json";
@@ -200,6 +233,10 @@ export class ConfigClient {
       clearTimeout(timeoutId);
     }
   }
+}
+
+function ifRevision(revision: number): Record<string, string> {
+  return { "If-Match": String(revision) };
 }
 
 function enc(s: string): string {

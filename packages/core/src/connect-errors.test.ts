@@ -19,6 +19,11 @@ describe("Connect error contract", () => {
       expect(error).toMatchObject({ status, code, retryable });
     }
   );
+  it("does not retry 501 or code unimplemented: a missing route does not heal", () => {
+    expect(connectHTTPError(501, "no route").retryable).toBe(false);
+    expect(connectHTTPError(500, "no rpc", "unimplemented").retryable).toBe(false);
+    expect(connectHTTPError(501, "no rpc", "unimplemented").retryable).toBe(false);
+  });
 });
 
 describe("throttle retry classification (#1972 step 10)", () => {

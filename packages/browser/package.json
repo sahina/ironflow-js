@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/browser",
-  "version": "0.42.0",
+  "version": "0.43.1",
   "description": "Browser client for Ironflow event-driven backend platform - real-time subscriptions, workflow triggers, and event emission",
   "type": "module",
   "main": "./dist/index.js",
@@ -37,12 +37,12 @@
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
-    "@vitest/coverage-v8": "2.1.9",
-    "esbuild": "^0.27.7",
+    "@vitest/coverage-v8": "4.1.11",
+    "esbuild": "^0.28.2",
     "fake-indexeddb": "6.2.5",
     "jsdom": "^26.1.0",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "typescript": ">=5.0.0"

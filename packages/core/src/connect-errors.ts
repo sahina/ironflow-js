@@ -53,7 +53,7 @@ export function connectHTTPError(status: number, message: string, code?: string,
         // the one case worth resending unchanged — while its disk cap answers
         // failed_precondition (400), permanent until an operator frees space.
         // Reading only the status made the transient one fatal (#1972 step 10).
-        retryable: options.retryable ?? (status >= 500 || code === "resource_exhausted"),
+        retryable: options.retryable ?? (code === "unimplemented" ? false : (status >= 500 && status !== 501) || code === "resource_exhausted"),
       });
   }
 }

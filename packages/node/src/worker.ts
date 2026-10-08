@@ -58,9 +58,13 @@ const POLL_RETRY_MAX_MS = 60_000;
  */
 type WorkerState = "idle" | "connecting" | "connected" | "draining" | "stopped";
 
-/**
- * Active job tracking
- */
+interface JobFence {
+  executionSeq?: number;
+  leaseToken?: string;
+  onStale?: () => void;
+}
+
+/** Active job tracking */
 interface ActiveJob {
   jobId: string;
   runId: string;
@@ -185,11 +189,14 @@ class IronflowWorker implements Worker {
           break;
         }
 
-        // An auth failure will not fix itself on the network cadence (#1673):
-        // surface the actionable message once and stop instead of 401-looping.
+        // Credentials and terminal registration failures need operator action,
+        // not another attempt with the same configuration.
         if (
           error instanceof UnauthenticatedError ||
-          error instanceof UnauthorizedError
+          error instanceof UnauthorizedError ||
+          (error instanceof IronflowError &&
+            error.code === "FUNCTION_REGISTRATION_FAILED" &&
+            !error.retryable)
         ) {
           this.logger.error(error.message);
           this.stop();
@@ -372,16 +379,16 @@ class IronflowWorker implements Worker {
       }
 
       try {
+        const jobs = Array.from(this.activeJobs.values())
+          .filter((job) => !job.abortController.signal.aborted)
+          .map((job) => ({ job_id: job.jobId, started_at: job.startedAt.toISOString() }));
         await fetch(`${baseUrl}/api/v1/workers/${this.workerId}/heartbeat`, {
           method: "POST",
           headers: this.buildHeaders(),
           body: JSON.stringify({
             worker_id: this.workerId,
-            active_jobs: this.activeJobs.size,
-            jobs: Array.from(this.activeJobs.values()).map((job) => ({
-              job_id: job.jobId,
-              started_at: job.startedAt.toISOString(),
-            })),
+            active_jobs: jobs.length,
+            jobs,
           }),
           signal: this.abortController?.signal,
         });
@@ -519,7 +526,7 @@ class IronflowWorker implements Worker {
     this.activeJobs.set(job.job_id, activeJob);
 
     // Execute in background
-    this.executeJob(baseUrl, job, abortController.signal)
+    this.executeJob(baseUrl, job, abortController)
       .catch((error) => {
         this.logger.error(`Job ${job.job_id} failed`, { error: String(error) });
       })
@@ -534,12 +541,13 @@ class IronflowWorker implements Worker {
   private async executeJob(
     baseUrl: string,
     job: ValidatedJobAssignment,
-    signal: AbortSignal
+    abortController: AbortController
   ): Promise<void> {
+    const signal = abortController.signal;
     // Capture the fence up front (#1206, T9): every update echoes it directly,
     // never via an activeJobs lookup that a cancel-race could blank. Empty for
     // legacy (non-capacity) assignments.
-    const fence = { executionSeq: job.execution_seq, leaseToken: job.lease_token };
+    const fence = { executionSeq: job.execution_seq, leaseToken: job.lease_token, onStale: () => abortController.abort() };
 
     const fn = this.functionMap.get(job.function_id);
     if (!fn) {
@@ -586,6 +594,7 @@ class IronflowWorker implements Worker {
     // terminal update below reports only what the checkpointer has NOT
     // durably flushed — re-reporting a flushed step would double its audit
     // record and step event.
+    ctx.signal = signal;
     const checkpointer = this.startCheckpointer(baseUrl, job, ctx, fence);
     ctx.onStepRecorded = checkpointer.schedule;
     signal.addEventListener("abort", checkpointer.cancel, { once: true });
@@ -624,6 +633,7 @@ class IronflowWorker implements Worker {
 
       if (isYieldSignal(error)) {
         const tail = await checkpointer.finish();
+        if (signal.aborted) return;
         await this.sendStepYielded(baseUrl, job.job_id, error.yieldInfo, tail.steps, fence, tail.offset);
         return;
       }
@@ -638,6 +648,7 @@ class IronflowWorker implements Worker {
       // Send failure with the steps not already checkpointed (includes
       // compensation steps).
       const failTail = await checkpointer.finish();
+      if (signal.aborted) return;
       await this.sendJobFailed(baseUrl, job.job_id, {
         message: error instanceof Error ? error.message : String(error),
         code: error instanceof IronflowError ? error.code : "ERROR",
@@ -653,6 +664,7 @@ class IronflowWorker implements Worker {
 
     // Handler succeeded — send completion with the steps not already checkpointed.
     const tail = await checkpointer.finish();
+    if (signal.aborted) return;
     await this.sendJobCompleted(
       baseUrl,
       job.job_id,
@@ -680,7 +692,7 @@ class IronflowWorker implements Worker {
     baseUrl: string,
     job: ValidatedJobAssignment,
     ctx: ExecutionContext,
-    fence?: { executionSeq?: number; leaseToken?: string }
+    fence?: JobFence
   ): {
     schedule: () => void;
     flush: () => Promise<void>;
@@ -734,11 +746,11 @@ class IronflowWorker implements Worker {
           failures = 0;
           return;
         }
-        // A 4xx other than the run-state conflict is permanent for this job:
-        // either this execution is fenced out (409 STALE_EXECUTION), or the
-        // server does not implement checkpointing at all (400 "invalid status"
+        if (await this.abandonIfStale(response, fence)) return;
+        // Other 4xx responses disable checkpoints without abandoning the job.
+        // The server may not implement checkpointing (400 "invalid status"
         // on a pre-#1670 server, which a rolling upgrade can route us to).
-        // Retrying either every window for the life of the job is pure noise.
+        // Retrying every window for the life of the job is pure noise.
         // A 409 RUN_NOT_RUNNING is NOT permanent-by-protocol, but the run is
         // gone as far as this worker is concerned, so it stops too.
         if (response.status >= 400 && response.status < 500) {
@@ -836,7 +848,7 @@ class IronflowWorker implements Worker {
    */
   private stampFence(
     body: Record<string, unknown>,
-    fence?: { executionSeq?: number; leaseToken?: string }
+    fence?: JobFence
   ): void {
     if (!fence?.leaseToken) {
       return;
@@ -853,7 +865,7 @@ class IronflowWorker implements Worker {
     jobId: string,
     output: unknown,
     steps: StepResult[],
-    fence?: { executionSeq?: number; leaseToken?: string },
+    fence?: JobFence,
     stepOffset = 0
   ): Promise<void> {
     const body: Record<string, unknown> = {
@@ -863,7 +875,7 @@ class IronflowWorker implements Worker {
       step_offset: stepOffset,
     };
     this.stampFence(body, fence);
-    await this.putJobUpdate(baseUrl, jobId, body);
+    await this.putJobUpdate(baseUrl, jobId, body, fence);
   }
 
   /**
@@ -876,7 +888,8 @@ class IronflowWorker implements Worker {
   private async putJobUpdate(
     baseUrl: string,
     jobId: string,
-    body: Record<string, unknown>
+    body: Record<string, unknown>,
+    fence?: JobFence
   ): Promise<void> {
     const response = await fetch(
       `${baseUrl}/api/v1/workers/${this.workerId}/jobs/${jobId}`,
@@ -886,11 +899,21 @@ class IronflowWorker implements Worker {
         body: JSON.stringify(body),
       }
     );
+    if (await this.abandonIfStale(response, fence)) return;
     if (!response.ok) {
       this.logger.warn(
         `Job ${jobId} update rejected by server (status ${response.status}) — likely a stale/superseded execution`
       );
     }
+  }
+
+  private async abandonIfStale(response: Response, fence?: JobFence): Promise<boolean> {
+    if (response.status !== 409) return false;
+    const body: unknown = await response.json().catch(() => undefined);
+    if (typeof body !== "object" || body === null || !("error" in body) || body.error !== "STALE_EXECUTION") return false;
+    fence?.onStale?.();
+    this.logger.warn("Job execution is stale; abandoning its result");
+    return true;
   }
 
   /**
@@ -901,7 +924,7 @@ class IronflowWorker implements Worker {
     jobId: string,
     error: { message: string; code: string; retryable: boolean },
     steps?: StepResult[],
-    fence?: { executionSeq?: number; leaseToken?: string },
+    fence?: JobFence,
     stepOffset = 0
   ): Promise<void> {
     const body: Record<string, unknown> = {
@@ -913,7 +936,7 @@ class IronflowWorker implements Worker {
       body.step_offset = stepOffset;
     }
     this.stampFence(body, fence);
-    await this.putJobUpdate(baseUrl, jobId, body);
+    await this.putJobUpdate(baseUrl, jobId, body, fence);
   }
 
   /**
@@ -924,7 +947,7 @@ class IronflowWorker implements Worker {
     jobId: string,
     yieldInfo: YieldInfo,
     steps: StepResult[],
-    fence?: { executionSeq?: number; leaseToken?: string },
+    fence?: JobFence,
     stepOffset = 0
   ): Promise<void> {
     const body: Record<string, unknown> = {
@@ -934,7 +957,7 @@ class IronflowWorker implements Worker {
       step_offset: stepOffset,
     };
     this.stampFence(body, fence);
-    await this.putJobUpdate(baseUrl, jobId, body);
+    await this.putJobUpdate(baseUrl, jobId, body, fence);
   }
 
   /**

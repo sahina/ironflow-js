@@ -132,4 +132,77 @@ describe("client retry", () => {
     await expect(settle(createClient({ serverUrl }).emit("order.placed", {}))).rejects.toThrow("fetch failed");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  describe("server retry signal", () => {
+    it("does not retry a 501 on a safe call", async () => {
+      const fetchMock = stubFetch(() => json(501, { error: "unimplemented", retryable: false }));
+
+      await expect(settle(createClient({ serverUrl }).apiKeys.list())).rejects.toMatchObject({ retryable: false });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry a 501 on a safe RPC", async () => {
+      const fetchMock = stubFetch(() => json(501, { code: "unimplemented", message: "no such rpc" }));
+
+      await expect(settle(createClient({ serverUrl }).listFunctions())).rejects.toThrow("no such rpc");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not retry a safe call whose 503 body says retryable false", async () => {
+      const fetchMock = stubFetch(() => json(503, { error: "disk full", message: "disk full", retryable: false }));
+
+      await expect(settle(createClient({ serverUrl }).apiKeys.list())).rejects.toMatchObject({ retryable: false, status: 503 });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("still retries a safe 503 whose body says retryable true", async () => {
+      const fetchMock = stubFetch(() => json(503, { error: "busy", retryable: true }), () => json(200, []));
+
+      await expect(settle(createClient({ serverUrl }).apiKeys.list())).resolves.toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it("reads retryable from a REST error body", async () => {
+      stubFetch(() => json(400, { error: "later", retryable: true }));
+      await expect(settle(createClient({ serverUrl }).apiKeys.create({ name: "ci" }))).rejects.toMatchObject({ retryable: true, status: 400 });
+
+      stubFetch(() => json(409, { error: "busy", retryable: true }));
+      await expect(settle(createClient({ serverUrl }).apiKeys.create({ name: "ci" }))).rejects.toMatchObject({ retryable: true });
+    });
+
+    it("falls back to the status rule when the body has no retryable", async () => {
+      stubFetch(() => json(500, { error: "boom" }));
+      await expect(settle(createClient({ serverUrl, retry: { maxAttempts: 1 } }).apiKeys.list())).rejects.toMatchObject({ retryable: true });
+
+      stubFetch(() => json(404, { error: "gone" }));
+      await expect(settle(createClient({ serverUrl }).apiKeys.list())).rejects.toMatchObject({ retryable: false });
+    });
+
+    it("waits for the body retry_after when there is no Retry-After header", async () => {
+      stubFetch(() => json(429, { error: "slow down", retryable: true, retry_after: 3 }), () => json(200, []));
+      const events: RetryEvent[] = [];
+
+      await settle(createClient({ serverUrl, retry: { onRetry: (e) => events.push(e) } }).apiKeys.list());
+      expect(events.map((e) => e.delayMs)).toEqual([3000]);
+    });
+
+    it("prefers the Retry-After header and clamps the body retry_after to maxDelayMs", async () => {
+      stubFetch(() => json(429, { error: "slow", retry_after: 3 }, { "Retry-After": "5" }), () => json(200, []));
+      const header: RetryEvent[] = [];
+      await settle(createClient({ serverUrl, retry: { onRetry: (e) => header.push(e) } }).apiKeys.list());
+      expect(header.map((e) => e.delayMs)).toEqual([5000]);
+
+      stubFetch(() => json(429, { error: "slow", retry_after: 86400 }), () => json(200, []));
+      const clamped: RetryEvent[] = [];
+      await settle(createClient({ serverUrl, retry: { onRetry: (e) => clamped.push(e) } }).apiKeys.list());
+      expect(clamped.map((e) => e.delayMs)).toEqual([10_000]);
+    });
+
+    it("still resends a write only on 429", async () => {
+      const fetchMock = stubFetch(() => json(503, { error: "busy", retryable: true }));
+
+      await expect(settle(createClient({ serverUrl }).apiKeys.create({ name: "ci" }))).rejects.toThrow();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });

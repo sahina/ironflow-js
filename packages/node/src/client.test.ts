@@ -28,6 +28,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     validate: actual.validate,
     getServerUrl: () => undefined,
     IronflowError: actual.IronflowError,
+    restRetryable: actual.restRetryable,
     connectHTTPError: actual.connectHTTPError,
     AUTH_HELP: actual.AUTH_HELP,
     waitResultFromWire: actual.waitResultFromWire,

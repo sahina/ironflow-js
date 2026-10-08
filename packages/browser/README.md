@@ -17,6 +17,7 @@ This README is the sole reference for coding agents integrating with the browser
 - [Entity Streams (Event Sourcing)](#entity-streams-event-sourcing)
 - [Projections](#projections)
 - [KV Store](#kv-store)
+- [File Storage](#file-storage)
 - [Config Management](#config-management)
 - [Auth Management](#auth-management)
 - [Event Schema Registry](#event-schema-registry)
@@ -1118,6 +1119,52 @@ const watcher = bucket.watch(
 // Stop watching
 watcher.stop();
 ```
+
+## File Storage
+
+### ironflow.files()
+
+Get a files client. It has the same methods as the Node `files()` client, with browser
+bodies (`Blob`, `File`, `ArrayBuffer`, `Uint8Array`, string). A browser body is always
+replayable, so `contentLength` is not needed.
+
+```typescript
+const files = ironflow.files();
+const inbox = files.bucket("inbox");
+
+await inbox.put("avatars/me.png", fileFromInput, { contentType: fileFromInput.type });
+const file = await inbox.get("avatars/me.png");
+const blob = new Blob([await file.arrayBuffer()], { type: file.contentType });
+```
+
+The browser client retries an upload after a retryable failure (a network error, `408`, `429`
+or `5xx`). Every browser body can be sent again, so every upload is eligible. Set `retry` in the
+client config to change the policy. The two sign calls are retried too: they only create a
+URL. No other files call is retried. An upload has no fixed
+timeout, because a timer would cancel a large upload.
+
+### uploadToSignedUrl / downloadFromSignedUrl
+
+An end user has no Ironflow credentials. Your backend calls `signUpload()` or
+`signDownload()` and sends the URL to the browser. These two helpers use a plain `fetch` and
+send no credentials. They do not need `configure()`.
+
+```typescript
+import { uploadToSignedUrl, downloadFromSignedUrl } from "@ironflow/browser";
+
+const info = await uploadToSignedUrl(url, file);             // (url, body, contentType?)
+const res = await downloadFromSignedUrl(downloadUrl);        // a fetch Response
+```
+
+`uploadToSignedUrl` takes the content type from a `Blob` or `File`. For an `ArrayBuffer` or
+`Uint8Array`, pass `contentType` as the third argument. If the content type does not match the
+URL, the server returns `415`.
+
+Errors: `PreconditionFailedError` (412), `PayloadTooLargeError` (413),
+`UnsupportedMediaTypeError` (415) and `ConflictError` (409), all from `@ironflow/browser`.
+A bad or expired token throws `UnauthorizedError` with the server message and no API-key
+advice. A bucket with signed URLs off throws an `IronflowError` with code
+`SIGNED_URLS_DISABLED`.
 
 ## Config Management
 

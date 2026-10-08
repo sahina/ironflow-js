@@ -14,7 +14,7 @@ import type {
   Subscription,
   SubscriptionCallbacks,
 } from "@ironflow/core";
-import { IronflowError, DEFAULT_TIMEOUTS, HEADERS } from "@ironflow/core";
+import { IronflowError, DEFAULT_TIMEOUTS, HEADERS, restRetryable } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
 
 /**
@@ -103,15 +103,16 @@ export class BrowserConfigClient {
       if (!response.ok) {
         const errorBody = await response.text();
         let errorMessage = `Config request failed: ${response.status}`;
+        let errorJson: { error?: string; retryable?: unknown } | undefined;
         try {
-          const errorJson = JSON.parse(errorBody);
-          if (errorJson.error) errorMessage = errorJson.error;
+          errorJson = JSON.parse(errorBody);
+          if (errorJson?.error) errorMessage = errorJson.error;
         } catch {
           if (errorBody) errorMessage = errorBody;
         }
         throw new IronflowError(errorMessage, {
           code: `HTTP_${response.status}`,
-          retryable: response.status >= 500,
+          retryable: restRetryable(response.status, errorJson),
         });
       }
 

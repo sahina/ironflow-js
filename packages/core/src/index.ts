@@ -323,6 +323,7 @@ export {
   PayloadTooLargeError,
   UnsupportedMediaTypeError,
   fileErrorFor,
+  restRetryable,
   encodeFilePath,
   encodeBucketName,
   InjectionUnverifiedError,

@@ -75,7 +75,7 @@ async function runOneJob(opts: {
         updates.push(body);
         if (body.status === "progress") {
           const status = opts.progressStatus ?? 200;
-          return { ok: status < 400, status };
+          return { ok: status < 400, status, json: async () => ({}) };
         }
         resolveDone();
         return { ok: true, status: 200 };
@@ -123,7 +123,9 @@ async function runOneJob(opts: {
 }
 
 describe("pull worker step checkpointing (#1670)", () => {
-  beforeEach(() => mockFetch.mockReset());
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("checkpoints steps mid-run and reports each step exactly once", async () => {
@@ -175,11 +177,10 @@ describe("pull worker step checkpointing (#1670)", () => {
     expect(terminal[0]!.steps).toHaveLength(3);
   });
 
-  it("stops checkpointing once the fence is rejected (409)", async () => {
+  it("disables checkpoints on an unclassified 409 without abandoning the handler", async () => {
     const updates = await runOneJob({ checkpointInterval: 5, progressStatus: 409 });
 
-    // One rejection is enough: the execution is superseded, so no further
-    // checkpoints are attempted. The handler still runs to completion.
+    // An unclassified conflict disables checkpoints but does not abandon the handler.
     expect(updates.filter((u) => u.status === "progress")).toHaveLength(1);
     const terminal = updates.filter((u) => u.status !== "progress");
     expect(terminal).toHaveLength(1);
@@ -188,7 +189,9 @@ describe("pull worker step checkpointing (#1670)", () => {
 });
 
 describe("checkpoint offsets and failure handling (#1670)", () => {
-  beforeEach(() => mockFetch.mockReset());
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("starts the offset at the server's sequence base, not the memoized count", async () => {
@@ -255,7 +258,9 @@ describe("checkpoint offsets and failure handling (#1670)", () => {
 });
 
 describe("yield checkpoint tails (#2380)", () => {
-  beforeEach(() => mockFetch.mockReset());
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
   afterEach(() => vi.restoreAllMocks());
 
   it("sends rejected checkpoint steps on yield and skips their bodies on replay", async () => {

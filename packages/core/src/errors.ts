@@ -491,10 +491,11 @@ export class UnauthorizedError extends IronflowError {
  * every REST route — still lands here, which is the pre-#2074 behavior.
  */
 export class ConflictError extends IronflowError {
-  constructor(message = "Conflicts with an operation already in flight") {
+  // `retryable` carries the server's flag from a REST error body; absent, a conflict is permanent.
+  constructor(message = "Conflicts with an operation already in flight", retryable = false) {
     super(message, {
       code: "CONFLICT",
-      retryable: false,
+      retryable,
     });
     this.name = "ConflictError";
   }
@@ -630,8 +631,17 @@ export class UnsupportedMediaTypeError extends IronflowError {
   }
 }
 
+/**
+ * Whether a REST error is worth resending. The server's boolean `retryable` wins;
+ * an older server sends none, so the status rule applies. 501 never heals on retry.
+ */
+export function restRetryable(status: number, body?: { retryable?: unknown } | null): boolean {
+  if (typeof body?.retryable === "boolean") return body.retryable;
+  return (status >= 500 && status !== 501) || status === 429;
+}
+
 /** Typed error for a files-route failure; shared by the node and browser SDKs. */
-export function fileErrorFor(status: number, message: string, code?: string): IronflowError {
+export function fileErrorFor(status: number, message: string, code?: string, retryable?: boolean): IronflowError {
   switch (status) {
     case 412:
       return new PreconditionFailedError(message);
@@ -640,12 +650,12 @@ export function fileErrorFor(status: number, message: string, code?: string): Ir
     case 415:
       return new UnsupportedMediaTypeError(message);
     case 409:
-      return new ConflictError(message);
+      return new ConflictError(message, retryable);
   }
   return new IronflowError(message, {
     code: code ?? `HTTP_${status}`,
     status,
-    retryable: status >= 500 || status === 429,
+    retryable: retryable ?? restRetryable(status),
   });
 }
 

@@ -148,6 +148,22 @@ describe("FilesClient", () => {
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
   });
 
+  it("does not retry a 501, or a 5xx whose body says retryable false", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(json(501, { message: "no route" }));
+    await expect(client(3).bucket("b").put("x", "abc", { contentType: "text/plain" })).rejects.toMatchObject({ status: 501, retryable: false });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+
+    vi.mocked(fetch).mockReset();
+    vi.mocked(fetch).mockResolvedValueOnce(json(507, { message: "disk full", retryable: false }));
+    await expect(client(3).bucket("b").put("x", "abc", { contentType: "text/plain" })).rejects.toMatchObject({ status: 507, retryable: false });
+    expect(vi.mocked(fetch)).toHaveBeenCalledTimes(1);
+  });
+
+  it("carries the server retryable flag onto the parsed error", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(json(409, { message: "busy", retryable: true }));
+    await expect(client().bucket("b").delete("x")).rejects.toMatchObject({ status: undefined, retryable: true });
+  });
+
   it("says a failed stream upload cannot be replayed and keeps the error class", async () => {
     const stream = () => Readable.from([Buffer.from("abc")]);
     const opts = { contentType: "text/plain", contentLength: 3 };

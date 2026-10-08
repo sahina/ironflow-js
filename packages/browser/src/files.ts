@@ -29,10 +29,12 @@ async function errorFrom(res: Response, signedUrl = false): Promise<IronflowErro
   const text = await res.text().catch(() => "");
   let message = text || res.statusText;
   let code: string | undefined;
+  let retryable: boolean | undefined;
   try {
-    const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string };
+    const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string; retryable?: unknown };
     message = parsed.message ?? parsed.error ?? message;
     code = parsed.code;
+    if (typeof parsed.retryable === "boolean") retryable = parsed.retryable;
   } catch {
     // not JSON; keep the raw text
   }
@@ -43,7 +45,7 @@ async function errorFrom(res: Response, signedUrl = false): Promise<IronflowErro
     if (signedUrl && res.status === 403) return new UnauthorizedError(`files: 403 ${message}`);
     throwIfAuthError(res.status, "files");
   }
-  return fileErrorFor(res.status, message, code);
+  return fileErrorFor(res.status, message, code, retryable);
 }
 
 export class BrowserFilesClient {

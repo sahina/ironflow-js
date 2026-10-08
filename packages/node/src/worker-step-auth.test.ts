@@ -95,7 +95,9 @@ async function runPublishJob(apiKey?: string, environment?: string): Promise<Rec
 }
 
 describe("pull worker step callback auth (#1672)", () => {
-  beforeEach(() => mockFetch.mockReset());
+  beforeEach(() => {
+    mockFetch.mockReset();
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllEnvs();

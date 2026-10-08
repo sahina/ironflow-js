@@ -104,8 +104,8 @@ export class ExecutionContext {
    */
   onStepResult?: (step: StepResult) => void;
   /**
-   * Aborts when the worker cancels the job or loses its stream. step.run()
-   * checks it before the step function runs, so a cancelled job stops at the
+   * Aborts when the worker cancels the job, loses its stream, or is fenced out.
+   * Step primitives check it before starting work, so a cancelled job stops at the
    * next step (#2479). Unset in push mode.
    */
   signal?: AbortSignal;
@@ -165,6 +165,7 @@ export class ExecutionContext {
    * Generate a unique step ID
    */
   generateStepId(name: string): string {
+    this.signal?.throwIfAborted();
     const index = this.stepCounters.get(name) ?? 0;
     this.stepCounters.set(name, index + 1);
     return this.preferLegacyStepId(
@@ -421,6 +422,7 @@ export class BranchContext {
   }
 
   generateStepId(name: string): string {
+    this.signal?.throwIfAborted();
     this.scopedClientUsed = true;
     const index = this.stepCounters.get(name) ?? 0;
     this.stepCounters.set(name, index + 1);

@@ -166,6 +166,14 @@ export function serve(config: ServeConfig): UniversalHandler {
     );
 
     try {
+      // push-protocol.md: any method but POST gets 405. This runs before the
+      // signature check, which would otherwise answer an unsigned GET with 401.
+      if (request.method !== "POST") {
+        return sendResponse(405, {
+          error: { message: "only POST is allowed", code: "METHOD_NOT_ALLOWED" },
+        });
+      }
+
       // Check if this is an agent-tool dispatch from `ironflow serve` →
       // `exposeMcp()` callback. Discriminated by URL suffix so it works
       // alongside the existing /webhooks routes and the bare push path.
@@ -455,6 +463,7 @@ async function executeHandler(
  */
 interface NormalizedRequest {
   request: {
+    method: string;
     text(): Promise<string>;
     headers: {
       get(name: string): string | null;
@@ -482,6 +491,7 @@ function normalizeRequest(
   if (request instanceof Request) {
     return {
       request: {
+        method: request.method,
         text: () => request.text(),
         headers: {
           get: (name: string) => request.headers.get(name),
@@ -502,6 +512,9 @@ function normalizeRequest(
 
   return {
     request: {
+      // A framework may hand over a request with no method property; only an
+      // explicit non-POST is a 405.
+      method: nodeReq.method ?? "POST",
       text: async () => {
         // If body is already parsed (e.g., by express.json())
         if (typeof nodeReq.body === "string") {

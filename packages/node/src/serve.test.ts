@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from "vitest";
 import type { IronflowFunction, FunctionContext } from "@ironflow/core";
 import { NonRetryableError, IronflowError } from "@ironflow/core";
 import { assertDefined } from "./internal/assert-defined.js";
@@ -26,9 +26,9 @@ interface MockNodeRequest {
 
 interface MockNodeResponse {
   statusCode?: number;
-  setHeader?: ReturnType<typeof vi.fn>;
-  end?: ReturnType<typeof vi.fn>;
-  writeHead?: ReturnType<typeof vi.fn>;
+  setHeader?: Mock;
+  end?: Mock;
+  writeHead?: Mock;
 }
 
 // Valid push request body
@@ -670,6 +670,39 @@ describe("serve (real module)", () => {
     expect(response.status).toBe(401);
     const body = (await response.json()) as Record<string, any>;
     expect(body.error.code).toBe("SIGNATURE_INVALID");
+  });
+
+  // push-protocol.md: "Any other method must return 405". The check runs before the
+  // signature check, so an unsigned GET gets 405, not 401.
+  describe.each([
+    ["without a signing key", { skipVerification: true }],
+    ["with a signing key", { signingKey: "test-secret" }],
+  ])("non-POST request %s", (_label, auth) => {
+    it("returns 405 METHOD_NOT_ALLOWED for a Fetch GET", async () => {
+      const handler = realServe({ functions: [testFn], ...auth, logger: false });
+      const response = await handler(new Request("http://localhost/api/ironflow", { method: "GET" })) as Response;
+      expect(response.status).toBe(405);
+      const body = (await response.json()) as Record<string, any>;
+      expect(body.error.code).toBe("METHOD_NOT_ALLOWED");
+    });
+
+    it("returns 405 METHOD_NOT_ALLOWED for a node:http GET", async () => {
+      const handler = realServe({ functions: [testFn], ...auth, logger: false });
+      const res = { setHeader: vi.fn(), end: vi.fn(), statusCode: undefined as number | undefined };
+      await handler({ method: "GET", url: "/api/ironflow", headers: {}, body: "" }, res);
+      expect(res.statusCode).toBe(405);
+      expect(JSON.parse(res.end.mock.calls[0]![0]).error.code).toBe("METHOD_NOT_ALLOWED");
+    });
+  });
+
+  // Some frameworks hand over a request object with no method property. Only an
+  // explicit non-POST may get 405.
+  it("treats a node-style request with no method as POST", async () => {
+    const handler = realServe({ functions: [testFn], skipVerification: true, logger: false });
+    const res = { setHeader: vi.fn(), end: vi.fn(), statusCode: undefined as number | undefined };
+    await handler({ url: "/api/ironflow", headers: {}, body: JSON.stringify(createRealPushBody()) }, res);
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.end.mock.calls[0]![0]).status).toBe("completed");
   });
 
   // The engine's signPayload (internal/engine/executor_transport.go).

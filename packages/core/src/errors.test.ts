@@ -20,6 +20,9 @@ import {
   isIronflowError,
   toError,
   encodeFilePath,
+  fileErrorFor,
+  restRetryable,
+  ConflictError,
 } from "./errors.js";
 
 describe("IronflowError", () => {
@@ -407,5 +410,35 @@ describe("encodeFilePath", () => {
   // fetch normalizes "/.." away, so "../../b/objects/x" would reach another bucket.
   it.each(["..", "a/../b", "./a", "a/./b", "a//b", "/a", "a/", ""])("rejects %j", (p) => {
     expect(() => encodeFilePath(p)).toThrow(ValidationError);
+  });
+});
+
+describe("restRetryable", () => {
+  it("follows a boolean retryable in the body over the status", () => {
+    expect(restRetryable(503, { retryable: false })).toBe(false);
+    expect(restRetryable(507, { retryable: false })).toBe(false);
+    expect(restRetryable(409, { retryable: true })).toBe(true);
+  });
+  it("falls back to the status rule: 5xx and 429, never 501", () => {
+    expect(restRetryable(503, undefined)).toBe(true);
+    expect(restRetryable(429, {})).toBe(true);
+    expect(restRetryable(501, { retryable: "yes" })).toBe(false);
+    expect(restRetryable(400, null)).toBe(false);
+  });
+});
+
+describe("fileErrorFor retry flag", () => {
+  it("uses the status rule, with 501 not retryable", () => {
+    expect(fileErrorFor(503, "x").retryable).toBe(true);
+    expect(fileErrorFor(429, "x").retryable).toBe(true);
+    expect(fileErrorFor(501, "x").retryable).toBe(false);
+  });
+  it("lets the server flag win", () => {
+    expect(fileErrorFor(507, "full", undefined, false).retryable).toBe(false);
+    expect(fileErrorFor(400, "later", undefined, true).retryable).toBe(true);
+    const conflict = fileErrorFor(409, "busy", undefined, true);
+    expect(conflict).toBeInstanceOf(ConflictError);
+    expect(conflict.retryable).toBe(true);
+    expect(fileErrorFor(409, "busy").retryable).toBe(false);
   });
 });

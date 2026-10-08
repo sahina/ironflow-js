@@ -94,6 +94,17 @@ describe("BrowserFilesClient", () => {
       expect(onRetry).toHaveBeenCalledWith(expect.objectContaining({ attempt: 1, maxAttempts: 3 }));
     });
 
+    it("does not retry a 501 or a 5xx whose body says retryable false", async () => {
+      mockFetch.mockResolvedValueOnce(json(501, { message: "no route" }));
+      await expect(new BrowserFilesClient(retrying).bucket("b").put("x", "x", { contentType: "text/plain" })).rejects.toMatchObject({ retryable: false });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+
+      mockFetch.mockReset();
+      mockFetch.mockResolvedValueOnce(json(507, { message: "disk full", retryable: false }));
+      await expect(new BrowserFilesClient(retrying).bucket("b").put("x", "x", { contentType: "text/plain" })).rejects.toMatchObject({ retryable: false });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
     it("retries a network failure and gives up after maxAttempts", async () => {
       mockFetch.mockRejectedValue(new TypeError("Failed to fetch"));
       await expect(new BrowserFilesClient(retrying).bucket("b").put("x", "x", { contentType: "text/plain" })).rejects.toThrow(

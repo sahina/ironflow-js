@@ -101,6 +101,7 @@ function createStepClientInternal(ctx: StepContext): StepClient {
     ): Promise<R[]> => executeMap(ctx, name, items, fn, options),
 
     compensate: (stepName: string, fn: () => Promise<void>): void => {
+      ctx.signal?.throwIfAborted();
       ctx.registerCompensation(stepName, fn);
     },
 
@@ -474,6 +475,7 @@ async function executeParallel<T>(
   branches: ((step: StepClient) => Promise<T>)[],
   options: ParallelOptions = {}
 ): Promise<T[]> {
+  ctx.signal?.throwIfAborted();
   const { concurrency, onError = "failFast", expectScopedClient = true } = options;
 
   // Opening a nested parallel/map counts as using the enclosing branch's
@@ -500,6 +502,7 @@ async function executeParallel<T>(
     if (cancelled.value && onError === "failFast") return;
 
     try {
+      ctx.signal?.throwIfAborted();
       const scopedStep = branchStepClients[index]!;
       const branchFn = branches[index]!;
       const result = await branchFn(scopedStep);

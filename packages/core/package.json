@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/core",
-  "version": "0.42.0",
+  "version": "0.43.1",
   "description": "Core types, schemas, and protocol definitions for Ironflow SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -56,7 +56,7 @@
   "devDependencies": {
     "@types/node": "^22.20.1",
     "typescript": "^5.9.3",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.11"
   },
   "peerDependencies": {
     "typescript": ">=5.0.0"

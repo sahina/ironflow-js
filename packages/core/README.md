@@ -1797,6 +1797,7 @@ import {
   AgentInvokeTimeoutError, MemoryCatchupTimeoutError,
   UnauthenticatedError, EnterpriseRequiredError, UnauthorizedError,
   ConflictError, ContendedError, InjectionUnverifiedError, QueueFullError,
+  PreconditionFailedError, PayloadTooLargeError, UnsupportedMediaTypeError,
   isRetryable, isIronflowError, toError,
   AUTH_HELP, throwIfAuthError,
 } from '@ironflow/core';
@@ -1851,6 +1852,9 @@ class IronflowError extends Error {
 | `ContendedError` | `CONTENDED` | false | HTTP 409 from a lost CAS race (Connect `aborted`). Nothing was applied — re-read and reissue |
 | `InjectionUnverifiedError` | `INJECTION_UNVERIFIED` | false | Connect `aborted` + `Ironflow-Error-Reason: injection_unverified`. `injectStepOutput` wrote the step but could not confirm the run stood still. Unlike `ContendedError` the write **did** land — read the step and decide, do not reissue |
 | `QueueFullError` | `QUEUE_FULL` | false | `@ironflow/browser`'s offline write queue hit its 500-write / 5 MB cap |
+| `PreconditionFailedError` | `PRECONDITION_FAILED` | false | HTTP 412. An `If-Match` or `If-None-Match` precondition failed (file storage) |
+| `PayloadTooLargeError` | `PAYLOAD_TOO_LARGE` | false | HTTP 413. A file is larger than the server, bucket or token cap (file storage) |
+| `UnsupportedMediaTypeError` | `UNSUPPORTED_MEDIA_TYPE` | false | HTTP 415. The bucket or signed URL does not allow the content type (file storage) |
 
 ### Utility Functions
 

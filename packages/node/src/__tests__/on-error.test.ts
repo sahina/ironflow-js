@@ -13,6 +13,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
       REGISTER_FUNCTION: "/ironflow.v1.IronflowService/RegisterFunction",
       HEALTH: "/ironflow.v1.IronflowService/Health",
     },
+    restRetryable: actual.restRetryable,
     DEFAULT_SERVER_URL: "http://localhost:9123",
     DEFAULT_CLIENT_RETRY: actual.DEFAULT_CLIENT_RETRY,
     getServerUrl: () => undefined,

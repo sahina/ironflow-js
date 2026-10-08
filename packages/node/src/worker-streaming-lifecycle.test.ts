@@ -114,6 +114,23 @@ describe("streaming worker job lifecycle (#2479)", () => {
     expect(cases(1)).not.toContain("stepResult");
   });
 
+  it("stops when function re-registration is rejected after a dropped stream (#2686)", async () => {
+    const { worker } = makeWorker();
+    const requests: number[] = [];
+    vi.stubGlobal("fetch", async () => {
+      requests.push(requests.length + 1);
+      return new Response(JSON.stringify({ message: "invalid config" }), {
+        status: requests.length === 1 ? 200 : requests.length === 2 ? 400 : 401,
+      });
+    });
+    const failed = expect(worker.start()).rejects.toThrow(/fn.*invalid config/);
+    await vi.waitFor(() => expect(streams).toHaveLength(1));
+    streams[0]!.drop();
+    await failed;
+    expect(requests).toHaveLength(2);
+    expect(streams).toHaveLength(1);
+  });
+
   it("keeps the entry of a redelivered job when the old execution ends", async () => {
     const { worker, internals } = makeWorker();
     await startAndWaitForStream(worker);
