@@ -1,6 +1,6 @@
 ---
 name: ironflow-ops
-version: 0.44.0
+version: 0.44.1
 description: |
   Operate Ironflow — debug failed/stuck runs, migrate SDK versions with upcasters,
   deploy/scale/troubleshoot clusters, package an app with the engine into one container.
