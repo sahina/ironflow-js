@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createConnectRouter, ConnectError, Code } from "@connectrpc/connect";
 import { createFetchHandler } from "@connectrpc/connect/protocol";
-import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { timestampDate, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { EntityStreamService } from "../../core/src/gen/ironflow/v1/entity_stream_pb.js";
 import { IronflowClient } from "./client.js";
 afterEach(() => vi.unstubAllGlobals());
@@ -71,4 +71,51 @@ it("reads streams and arbitrary history data through generated handlers", async 
   await expect(client.streams.listStreams()).rejects.toMatchObject({
     retryable: false,
   });
+});
+
+it("follows next_cursor and sends the time window on every page", async () => {
+  const router = createConnectRouter();
+  const seen: Array<{ fromVersion: bigint; from?: string; to?: string }> = [];
+  router.service(EntityStreamService, {
+    getEntityHistory(req) {
+      seen.push({
+        fromVersion: req.fromVersion,
+        from: req.fromTimestamp && timestampDate(req.fromTimestamp).toISOString(),
+        to: req.toTimestamp && timestampDate(req.toTimestamp).toISOString(),
+      });
+      const page = (v: bigint) => ({ eventName: "order.updated", entityVersion: v });
+      return req.fromVersion === 2n
+        ? { entries: [page(2n), page(3n)], nextCursor: 4n }
+        : { entries: [page(4n)] };
+    },
+  });
+  vi.stubGlobal(
+    "fetch",
+    async (input: string | URL | Request, init?: RequestInit) => {
+      const request = new Request(input, { ...init, signal: undefined });
+      const handler = router.handlers.find(
+        (h) => h.requestPath === new URL(request.url).pathname,
+      );
+      return handler
+        ? createFetchHandler(handler)(request)
+        : new Response("not found", { status: 404 });
+    },
+  );
+  const client = new IronflowClient();
+  client.configure({
+    serverUrl: "http://localhost:9123",
+    auth: { apiKey: "key" },
+    logger: false,
+  });
+  const history = await client.streams.getEntityHistory("order/1", {
+    fromVersion: 2,
+    from: new Date("2026-09-01T00:00:00Z"),
+    to: "2026-09-06T12:00:00Z",
+  });
+  expect(history.map((e) => e.version)).toEqual([2, 3, 4]);
+  const window = { from: "2026-09-01T00:00:00.000Z", to: "2026-09-06T12:00:00.000Z" };
+  expect(seen).toEqual([
+    { fromVersion: 2n, ...window },
+    { fromVersion: 4n, ...window },
+  ]);
 });

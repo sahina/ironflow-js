@@ -6,6 +6,8 @@
 
 import type { RunStatus } from "./types.js";
 
+const IRONFLOW_ERROR = Symbol.for("ironflow.error");
+
 /**
  * Base error class for all Ironflow errors
  */
@@ -37,6 +39,8 @@ export class IronflowError extends Error {
     }
   ) {
     super(message, { cause: options?.cause });
+    // A runtime-only brand preserves type compatibility between SDK copies.
+    Object.defineProperty(this, IRONFLOW_ERROR, { value: true });
     this.name = "IronflowError";
     this.code = options?.code ?? "UNKNOWN_ERROR";
     this.status = options?.status;
@@ -300,14 +304,19 @@ export class StepTimeoutError extends IronflowError {
  * SDK (#2443).
  */
 export function isRetryable(error: unknown): boolean {
-  return error instanceof IronflowError ? error.retryable : true;
+  return isIronflowError(error) ? error.retryable : true;
 }
 
 /**
  * Type guard to check if an error is an IronflowError
  */
 export function isIronflowError(error: unknown): error is IronflowError {
-  return error instanceof IronflowError;
+  return error instanceof IronflowError || (
+    typeof error === "object" &&
+    error !== null &&
+    IRONFLOW_ERROR in error &&
+    error[IRONFLOW_ERROR] === true
+  );
 }
 
 /**
@@ -612,6 +621,43 @@ export class PreconditionFailedError extends IronflowError {
   constructor(message: string) {
     super(message, { code: "PRECONDITION_FAILED", status: 412, retryable: false });
     this.name = "PreconditionFailedError";
+  }
+}
+
+/**
+ * `IronflowError.code` values the policy-set routes return. A 400 validation
+ * failure names the offending files and lines in the message.
+ */
+export const POLICY_SET_ERROR_CODES = {
+  compileError: "policy_set_compile_error",
+  v0Syntax: "policy_set_v0_syntax",
+  reservedNamespace: "policy_set_reserved_namespace",
+  builtinForbidden: "policy_set_builtin_forbidden",
+  schemaError: "policy_set_schema_error",
+  entrypointType: "policy_set_entrypoint_type",
+  badFileName: "policy_set_bad_file_name",
+  tooLarge: "policy_set_too_large",
+  compileTimeout: "policy_set_compile_timeout",
+  badMode: "policy_set_bad_mode",
+  badDecision: "policy_set_bad_decision",
+  sprintfFormat: "policy_set_sprintf_format",
+  badRequest: "policy_set_bad_request",
+  forbidden: "policy_set_forbidden",
+  notFound: "policy_set_not_found",
+  versionConflict: "policy_set_version_conflict",
+  preconditionRequired: "policy_set_precondition_required",
+  selfLockout: "policy_set_self_lockout",
+  rateLimited: "policy_set_rate_limited",
+  busy: "policy_set_busy",
+  /** 503, not retryable: the write committed as the version in the message. To finish propagation send the same request again with ifVersion = that version (a no-op); never re-send with the old version. */
+  notPropagated: "policy_set_not_propagated",
+} as const;
+
+/** HTTP 428: the write needs If-Match (the version you read). */
+export class PreconditionRequiredError extends IronflowError {
+  constructor(message: string) {
+    super(message, { code: "PRECONDITION_REQUIRED", status: 428, retryable: false });
+    this.name = "PreconditionRequiredError";
   }
 }
 

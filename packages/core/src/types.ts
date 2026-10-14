@@ -1719,6 +1719,20 @@ export interface EntityHistoryEntry {
   timestamp: string;
 }
 
+/**
+ * Filters for `streams.getEntityHistory`. `from` and `to` are inclusive. A
+ * string bound must be RFC 3339 and is sent unchanged, so it keeps nanosecond
+ * precision; a `Date` has millisecond precision only.
+ */
+export interface EntityHistoryOptions {
+  /** Start at this entity version (inclusive). */
+  fromVersion?: number;
+  from?: Date | string;
+  to?: Date | string;
+  /** Return at most this many entries. Unset reads the whole history. */
+  limit?: number;
+}
+
 // ============================================================================
 // Agent Tool Discovery Types
 // ============================================================================

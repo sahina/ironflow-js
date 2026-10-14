@@ -1,0 +1,16 @@
+{
+  "id": "ironflow",
+  "name": "Ironflow",
+  "version": "0.43.1",
+  "description": "Writes Ironflow application code: workflows, durable steps, entity streams and projections",
+  "repository": "https://github.com/sahina/ironflow-js",
+  "website": "https://ironflow.run",
+  "authors": ["Ironflow"],
+  "license": "LicenseRef-Ironflow-EULA",
+  "license_url": "https://github.com/sahina/ironflow-releases/blob/main/LICENSE",
+  "distribution": {
+    "npx": {
+      "package": "@ironflow/agent@0.43.1"
+    }
+  }
+}

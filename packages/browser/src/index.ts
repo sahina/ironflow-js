@@ -161,6 +161,7 @@ export type {
   EntitySubscribeOptions,
   StreamListEntry,
   EntityHistoryEntry,
+  EntityHistoryOptions,
 
   // Projection types
   ProjectionStatusInfo,
@@ -197,6 +198,14 @@ export type {
   ConfigEntry,
   ConfigWatchCallbacks,
   ConfigWatchEvent,
+
+  // Policy set types
+  PolicySet,
+  PolicySetMode,
+  PolicySetInput,
+  PolicySetVersion,
+  PolicySetDryRunInput,
+  PolicySetDryRunResult,
 
   // Audit types
   AuditEvent,
@@ -247,6 +256,8 @@ export {
   // The bundle inlines @ironflow/core, so a class imported from core directly
   // fails instanceof; this re-export is the only reachable copy.
   PreconditionFailedError,
+  PreconditionRequiredError,
+  POLICY_SET_ERROR_CODES,
   PayloadTooLargeError,
   UnsupportedMediaTypeError,
   isRetryable,

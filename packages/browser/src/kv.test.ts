@@ -263,7 +263,7 @@ describe("BrowserKVBucketHandle", () => {
     it("sends GET and returns KVEntry", async () => {
       const entry: KVEntry = {
         key: "mykey",
-        value: "hello",
+        value: "aGVsbG8=",
         revision: 1,
         created_at: "2026-01-01T00:00:00Z",
         operation: "put",
@@ -278,6 +278,86 @@ describe("BrowserKVBucketHandle", () => {
         "http://localhost:9123/api/v1/kv/buckets/test-bucket/keys/mykey"
       );
       expect(options.method).toBe("GET");
+    });
+  });
+
+  describe("getJSON", () => {
+    it.each([
+      ["MQ==", 1],
+      ["MA==", 0],
+      ["ZmFsc2U=", false],
+      ["bnVsbA==", null],
+      ["IiI=", ""],
+      ["WzEsMl0=", [1, 2]],
+      ["eyJuYW1lIjoiQWxpY2UifQ==", { name: "Alice" }],
+      ["ImNhZsOpIPCfjI0i", "café 🌍"],
+    ])("decodes %s and preserves entry metadata", async (value, expected) => {
+      const entry = {
+        key: "mykey",
+        value,
+        revision: 3,
+        created_at: "2026-01-01T00:00:00Z",
+        operation: "put",
+      };
+      mockFetch.mockResolvedValueOnce(jsonResponse(entry));
+      expect(await handle.getJSON("mykey")).toEqual({ ...entry, value: expected });
+    });
+
+    it.each(["aGVsbG8=", "%", "MQ==%", "Iv8i", 42])("rejects invalid JSON encoding %s", async (value) => {
+      const entry = { key: "mykey", value, revision: 1, created_at: "", operation: "put" };
+      mockFetch.mockResolvedValueOnce(jsonResponse(entry));
+      await expect(handle.getJSON("mykey")).rejects.toMatchObject({
+        code: "INVALID_KV_JSON",
+        retryable: false,
+      });
+    });
+
+    it("preserves the JSON decoding cause", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({ value: "aGVsbG8=" }));
+
+      await expect(handle.getJSON("mykey")).rejects.toMatchObject({
+        code: "INVALID_KV_JSON",
+        cause: expect.any(SyntaxError),
+      });
+    });
+
+    it("decodes a large JSON value without dropping bytes", async () => {
+      const expected = { text: "x".repeat(1024 * 1024) };
+      const entry = { key: "mykey", value: btoa(JSON.stringify(expected)), revision: 1, created_at: "", operation: "put" };
+      mockFetch.mockResolvedValueOnce(jsonResponse(entry));
+
+      expect((await handle.getJSON("mykey")).value).toEqual(expected);
+    });
+
+    it("preserves HTTP errors", async () => {
+      mockFetch.mockResolvedValueOnce(jsonResponse({ error: "key not found" }, 404));
+      await expect(handle.getJSON("missing")).rejects.toMatchObject({ code: "HTTP_404", status: 404 });
+    });
+
+    it("round-trips a JSON counter through put and update while keeping get raw", async () => {
+      let stored = "";
+      let revision = 0;
+      mockFetch.mockImplementation(async (_url, init) => {
+        if (init?.method === "PUT") {
+          if (typeof init.body !== "string") throw new Error("Expected a serialized value");
+          stored = init.body;
+          revision += 1;
+          return jsonResponse({ revision });
+        }
+        const entry = {
+          key: "counter",
+          value: btoa(stored),
+          revision,
+          created_at: "",
+          operation: "put",
+        };
+        return jsonResponse(entry);
+      });
+      await handle.put("counter", 1);
+      expect(await handle.getJSON("counter")).toMatchObject({ value: 1, revision: 1 });
+      expect(await handle.get("counter")).toMatchObject({ value: "MQ==", revision: 1 });
+      await handle.update("counter", 2, 1);
+      expect(await handle.getJSON("counter")).toMatchObject({ value: 2, revision: 2 });
     });
   });
 

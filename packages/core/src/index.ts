@@ -167,6 +167,7 @@ export type {
   // Entity stream extension types
   StreamListEntry,
   EntityHistoryEntry,
+  EntityHistoryOptions,
 
   // Agent tool discovery types
   VisibleAgentTool,
@@ -274,6 +275,7 @@ export {
   DEFAULT_RECONNECT,
   ENV_VARS,
   getServerUrl,
+  getConfiguredServerUrl,
   getWebSocketUrl,
   STEP_TYPES,
   STEP_STATUS,
@@ -320,6 +322,8 @@ export {
   ConflictError,
   ContendedError,
   PreconditionFailedError,
+  PreconditionRequiredError,
+  POLICY_SET_ERROR_CODES,
   PayloadTooLargeError,
   UnsupportedMediaTypeError,
   fileErrorFor,
@@ -547,9 +551,12 @@ export type {
   Role,
   CreateRoleInput,
   UpdateRoleInput,
-  Policy,
-  CreatePolicyInput,
-  UpdatePolicyInput,
+  PolicySet,
+  PolicySetMode,
+  PolicySetInput,
+  PolicySetVersion,
+  PolicySetDryRunInput,
+  PolicySetDryRunResult,
 } from "./auth-types.js";
 
 // ============================================================================
@@ -562,6 +569,8 @@ export type {
 export { connectHTTPError, ERROR_REASON_HEADER, ERROR_REASON } from "./connect-errors.js";
 
 export { waitResultFromWire, type WaitWireResult } from "./wait-wire.js";
+
+export { collectEntityHistory, ENTITY_HISTORY_PAGE_SIZE, type EntityHistoryPageWire } from "./entity-history-wire.js";
 
 export { schemaFromWire, type SchemaWire } from "./schema-wire.js";
 

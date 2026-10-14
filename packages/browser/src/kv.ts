@@ -31,13 +31,34 @@ export class BrowserKVBucketHandle {
   ) {}
 
   /**
-   * Get a value by key.
+   * Get an entry whose value is the stored bytes encoded as base64.
    */
   async get(key: string): Promise<KVEntry> {
     return this.restRequest<KVEntry>(
       "GET",
       `/api/v1/kv/buckets/${enc(this.bucketName)}/keys/${key}`
     );
+  }
+
+  /**
+   * Get an entry whose value is decoded UTF-8 JSON. Rejects non-JSON values.
+   */
+  async getJSON(key: string): Promise<KVEntry> {
+    const entry = await this.get(key);
+    try {
+      if (typeof entry.value !== "string") throw new Error("Expected base64");
+      const binary = atob(entry.value);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      const value: unknown = JSON.parse(text);
+      return { ...entry, value };
+    } catch (cause) {
+      throw new IronflowError(
+        `KV value for "${key}" is not valid base64-encoded UTF-8 JSON`,
+        { code: "INVALID_KV_JSON", cause: cause instanceof Error ? cause : undefined },
+      );
+    }
   }
 
   /**
@@ -226,6 +247,7 @@ export class BrowserKVBucketHandle {
         }
         throw new IronflowError(errorMessage, {
           code: `HTTP_${response.status}`,
+          status: response.status,
           retryable: restRetryable(response.status, errorJson),
         });
       }
@@ -359,6 +381,7 @@ export class BrowserKVClient {
         }
         throw new IronflowError(errorMessage, {
           code: `HTTP_${response.status}`,
+          status: response.status,
           retryable: restRetryable(response.status, errorJson),
         });
       }

@@ -8,7 +8,7 @@ The Ironflow JS SDK source is maintained in a private engine repository. This mi
 
 Everything goes to one tracker: [sahina/ironflow-issues](https://github.com/sahina/ironflow-issues/issues/new/choose).
 
-- SDK bugs (in `@ironflow/{core,browser,node,langgraph}`) → file there and pick **JS SDK** as the component. Include version, repro steps, and minimal example.
+- SDK bugs (in `@ironflow/{core,browser,node,langgraph,agent}`) → file there and pick **JS SDK** as the component. Include version, repro steps, and minimal example.
 - Engine, CLI, dashboard, and desktop bugs → same tracker, pick the matching component.
 - Security issues → [private advisory](https://github.com/sahina/ironflow-issues/security/advisories/new) or see [SECURITY.md](SECURITY.md). Do **not** open a public issue.
 

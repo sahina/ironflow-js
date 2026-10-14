@@ -2,6 +2,7 @@ import { projectionStateFromWire, projectionStatusFromWire, rebuildJobFromWire }
 import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { stepInspectionFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
+import { collectEntityHistory, type EntityHistoryPageWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
 import { connectHTTPError, restRetryable, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
@@ -32,6 +33,7 @@ import {
   UnauthorizedError,
   ConflictError,
   PreconditionFailedError,
+  PreconditionRequiredError,
   PayloadTooLargeError,
   UnsupportedMediaTypeError,
   ContendedError,
@@ -84,9 +86,11 @@ import {
   type Role,
   type CreateRoleInput,
   type UpdateRoleInput,
-  type Policy,
-  type CreatePolicyInput,
-  type UpdatePolicyInput,
+  type PolicySet,
+  type PolicySetInput,
+  type PolicySetVersion,
+  type PolicySetDryRunInput,
+  type PolicySetDryRunResult,
   type ProjectionStateResult,
   type GetProjectionOptions,
   type ProjectionStatusInfo,
@@ -104,6 +108,7 @@ import {
   type PatchSecretInput,
   type StreamListEntry,
   type EntityHistoryEntry,
+  type EntityHistoryOptions,
   type Project,
   type Environment,
   type EventSchema,
@@ -201,7 +206,7 @@ const bodyRetryAfter = new WeakMap<Error, number>();
  * Configuration for the Ironflow client
  */
 export interface IronflowClientConfig {
-  /** Server URL (default: http://localhost:9123 or IRONFLOW_SERVER_URL env var) */
+  /** Server URL (default: IRONFLOW_SERVER_URL, then http://localhost:9123) */
   serverUrl?: string;
   /** API key for authentication. Empty or unset falls back to the IRONFLOW_API_KEY env var; optional for local dev. */
   apiKey?: string;
@@ -1462,26 +1467,28 @@ export class IronflowClient {
     },
 
     /**
-     * Get the full event history for an entity.
+     * Get the full event history for an entity, oldest first. Follows the
+     * server's page cursor until the history is complete. `from` and `to`
+     * limit it to events in that time window (both inclusive), so
+     * `{ to: t }` gives the events that make up the entity's state at `t`.
+     * `limit` caps the number of entries returned.
      */
     getEntityHistory: async (
       entityId: string,
+      options: EntityHistoryOptions = {},
     ): Promise<EntityHistoryEntry[]> => {
-      const response = await this.request<{
-        entries?: Array<Record<string, unknown>>;
-      }>(
-        "/ironflow.v1.EntityStreamService/GetEntityHistory",
-        { entityId },
-        "streams.getEntityHistory",
-        undefined,
-        true,
+      return collectEntityHistory(
+        (body) =>
+          this.request<EntityHistoryPageWire>(
+            "/ironflow.v1.EntityStreamService/GetEntityHistory",
+            body,
+            "streams.getEntityHistory",
+            undefined,
+            true,
+          ),
+        entityId,
+        options,
       );
-      return (response.entries ?? []).map((entry) => ({
-        eventName: String(entry.eventName ?? ""),
-        data: Object.hasOwn(entry, "eventDataValue") ? entry.eventDataValue : entry.eventData,
-        version: Number(entry.entityVersion ?? 0),
-        timestamp: String(entry.timestamp ?? ""),
-      }));
     },
 
     /**
@@ -1653,7 +1660,6 @@ export class IronflowClient {
    * @example
    * ```typescript
    * const role = await client.roles.create({ name: "deployer", org_id: orgId });
-   * await client.roles.assignPolicy(role.id, policyId);
    * const roles = await client.roles.list(orgId);
    * ```
    */
@@ -1679,73 +1685,48 @@ export class IronflowClient {
     delete: async (id: string): Promise<void> => {
       await this.restRequest<void>("DELETE", `/api/v1/roles/${id}`, undefined, "roles.delete");
     },
-    /** Assign a policy to a role */
-    assignPolicy: async (roleId: string, policyId: string): Promise<void> => {
-      await this.restRequest<void>("POST", `/api/v1/roles/${roleId}/policies`, {
-        policy_id: policyId,
-      }, "roles.assignPolicy");
-    },
-    /** Remove a policy from a role */
-    removePolicy: async (roleId: string, policyId: string): Promise<void> => {
-      await this.restRequest<void>(
-        "DELETE",
-        `/api/v1/roles/${roleId}/policies/${policyId}`,
-        undefined,
-        "roles.removePolicy"
-      );
-    },
-    /** List policies assigned to a role. */
-    listPolicies: async (roleId: string): Promise<Policy[]> => {
-      const response = await this.restRequest<{ policies?: Policy[] }>(
-        "GET",
-        `/api/v1/roles/${encodeURIComponent(roleId)}/policies`,
-        undefined,
-        "roles.listPolicies"
-      );
-      return response.policies ?? [];
-    },
   };
 
   /**
-   * Policy management (enterprise)
+   * Rego policy set (enterprise): the org's authorization policy.
    *
    * @example
    * ```typescript
-   * // #943: effect="allow" is rejected at write. Use deny + CEL condition,
-   * // or grant capabilities via RBAC role assignment (Layer 1).
-   * const policy = await client.policies.create({
-   *   name: "deny-prod-emit",
-   *   effect: "deny",
-   *   actions: "emit:*",
-   *   resources: "irn:ironflow:*:*:*:env_prod:*",
-   *   condition: 'request.environment == "production"',
-   *   org_id: orgId,
-   * });
-   * const policies = await client.policies.list(orgId);
+   * const current = await client.policySet.get();
+   * await client.policySet.put({ modules: { "authz.rego": rego }, mode: "monitor" }, current.version);
    * ```
    */
-  readonly policies = {
-    /** Create a new policy */
-    create: async (input: CreatePolicyInput): Promise<Policy> => {
-      return this.restRequest<Policy>("POST", "/api/v1/policies", input, "policies.create");
+  readonly policySet = {
+    /** The org's Rego policy set (version 0 when there is none). */
+    get: async (): Promise<PolicySet> =>
+      this.restRequest<PolicySet>("GET", "/api/v1/policy-set", undefined, "policySet.get"),
+    /**
+     * Replace the set if its version is ifVersion (0 when none). A 412 throws
+     * PreconditionFailedError. A 503 `policy_set_not_propagated` is not retryable: the write
+     * committed as the version named in the message. To finish propagation send the same
+     * request again with ifVersion = that version (a no-op); never re-send with the old version.
+     */
+    put: async (input: PolicySetInput, ifVersion: number): Promise<PolicySet> =>
+      this.restRequest<PolicySet>("PUT", "/api/v1/policy-set", input, "policySet.put", { "If-Match": String(ifVersion) }),
+    /** Compile the set without storing it. Rejects with the per-file errors when it is invalid. */
+    validate: async (input: PolicySetInput): Promise<void> => {
+      await this.restRequest<unknown>("POST", "/api/v1/policy-set/validate", input, "policySet.validate");
     },
-    /** List policies, optionally filtered by organization */
-    list: async (orgId?: string): Promise<Policy[]> => {
-      const query = orgId ? `?org_id=${encodeURIComponent(orgId)}` : "";
-      return this.restRequest<Policy[]>("GET", `/api/v1/policies${query}`, undefined, "policies.list");
-    },
-    /** Get a policy by ID */
-    get: async (id: string): Promise<Policy> => {
-      return this.restRequest<Policy>("GET", `/api/v1/policies/${id}`, undefined, "policies.get");
-    },
-    /** Update a policy */
-    update: async (id: string, input: UpdatePolicyInput): Promise<Policy> => {
-      return this.restRequest<Policy>("PATCH", `/api/v1/policies/${id}`, input, "policies.update");
-    },
-    /** Delete a policy */
-    delete: async (id: string): Promise<void> => {
-      await this.restRequest<void>("DELETE", `/api/v1/policies/${id}`, undefined, "policies.delete");
-    },
+    /** Evaluate an input against a candidate set, or the active one when `set` is omitted. */
+    dryRun: async (input: PolicySetDryRunInput): Promise<PolicySetDryRunResult> =>
+      this.restRequest<PolicySetDryRunResult>("POST", "/api/v1/policy-set/dry-run", input, "policySet.dryRun"),
+    versions: async (): Promise<PolicySetVersion[]> =>
+      (await this.restRequest<{ versions: PolicySetVersion[] }>("GET", "/api/v1/policy-set/versions", undefined, "policySet.versions")).versions,
+    /** One stored version, modules included. */
+    version: async (version: number): Promise<PolicySet> =>
+      this.restRequest<PolicySet>("GET", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}`, undefined, "policySet.version"),
+    /**
+     * Store an earlier version's modules as a new version. The active mode is kept, not restored.
+     * A 503 `policy_set_not_propagated` means the rollback committed: send it again with
+     * ifVersion = the saved version (a no-op that finishes propagation).
+     */
+    rollback: async (version: number, ifVersion: number): Promise<PolicySet> =>
+      this.restRequest<PolicySet>("POST", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}/rollback`, undefined, "policySet.rollback", { "If-Match": String(ifVersion) }),
   };
 
   /**
@@ -2691,17 +2672,24 @@ export class IronflowClient {
    *
    * @example
    * ```typescript
-   * const dedup = client.commandDedup<OrderResult>("order-commands");
-   * const prior = await dedup.tryClaim(commandId, { orderId, claimedAt: new Date().toISOString() });
-   * if (prior !== null) return prior;
+   * type Entry<T> = { status: 'claimed' } | { status: 'done'; result: T };
+   * const dedup = client.commandDedup<Entry<OrderResult>>('order-commands');
+   *
+   * const prior = await dedup.tryClaim(commandId, { status: 'claimed' });
+   * if (prior !== null) {
+   *   if (prior.status === 'done') return prior.result;
+   *   throw new Error('Command is pending; reconcile its effects before retrying');
+   * }
+   *
+   * let result: OrderResult;
    * try {
-   *   const result = await runOrderHandler();
-   *   await dedup.finalize(commandId, result);
-   *   return result;
+   *   result = await runHandler(); // Effects must support idempotent retries.
    * } catch (err) {
-   *   await dedup.release(commandId).catch(() => {}); // swallow — don't mask the original error
+   *   await dedup.release(commandId).catch(() => {}); // Only the claim winner reaches here.
    *   throw err;
    * }
+   * await dedup.finalize(commandId, { status: 'done', result });
+   * return result;
    * ```
    */
   commandDedup<T>(bucketName: string, options?: CommandDedupOptions): CommandDedup<T> {
@@ -3042,12 +3030,16 @@ export class IronflowClient {
         throw new ConflictError(message, body?.retryable === true);
       case 412:
         throw new PreconditionFailedError(message);
+      case 428:
+        throw new PreconditionRequiredError(message);
       case 413:
         throw new PayloadTooLargeError(message);
       case 415:
         throw new UnsupportedMediaTypeError(message);
       default: {
-        const error = new IronflowError(message, { status, retryable: restRetryable(status, body) });
+        // The server's code (policy_set_not_propagated, ...) is what callers branch on.
+        const code = typeof body?.code === "string" ? body.code : undefined;
+        const error = new IronflowError(message, { status, code, retryable: restRetryable(status, body) });
         if (typeof body?.retry_after === "number") bodyRetryAfter.set(error, body.retry_after);
         throw error;
       }
@@ -3061,10 +3053,11 @@ export class IronflowClient {
     httpMethod: string,
     path: string,
     body?: unknown,
-    method?: string
+    method?: string,
+    extraHeaders?: Record<string, string>
   ): Promise<T> {
     const url = `${this.serverUrl}${path}`;
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = { ...extraHeaders };
     if (this.apiKey) {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
@@ -3086,7 +3079,10 @@ export class IronflowClient {
     let status: number | undefined;
 
     try {
-      return await this.send(url, options, this.timeout, SAFE_REST_METHODS.has(httpMethod), async (response) => {
+      // A conditional write is not safe to resend after a 5xx: the first attempt
+      // may have committed, and the resend then fails with a misleading 412.
+      const safe = SAFE_REST_METHODS.has(httpMethod) && !extraHeaders?.["If-Match"];
+      return await this.send(url, options, this.timeout, safe, async (response) => {
         status = response.status;
 
         if (!response.ok) {

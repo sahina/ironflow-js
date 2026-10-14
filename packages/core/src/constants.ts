@@ -108,14 +108,19 @@ export const DEFAULT_RECONNECT = {
 } as const;
 
 /**
- * Get the server URL from environment variable or return the default.
+ * Get the server URL from IRONFLOW_SERVER_URL, or return the default.
  * Works in both Node.js and browser environments.
  */
 export function getServerUrl(): string {
-  if (typeof process !== "undefined" && process.env?.[ENV_VARS.SERVER_URL]) {
-    return process.env[ENV_VARS.SERVER_URL]!;
-  }
-  return DEFAULT_SERVER_URL;
+  return getConfiguredServerUrl() ?? DEFAULT_SERVER_URL;
+}
+
+/**
+ * IRONFLOW_SERVER_URL, or undefined when it is unset or blank.
+ */
+export function getConfiguredServerUrl(): string | undefined {
+  if (typeof process === "undefined") return undefined;
+  return process.env?.[ENV_VARS.SERVER_URL]?.trim() || undefined;
 }
 
 /**

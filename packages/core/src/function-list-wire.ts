@@ -12,6 +12,7 @@ export function functionListFromWire(raw: Record<string, unknown>) {
     retry_attempts: fn.retry?.maxAttempts ?? 0,
     retry_delay_ms: fn.retry?.initialDelayMs ?? 0,
     retry_backoff: fn.retry?.backoffFactor ?? 0,
+    retry_max_delay_ms: fn.retry?.maxDelayMs ?? 0,
     timeout_ms: fn.timeoutMs ?? 0,
     ...(fn.concurrency
       ? {
@@ -28,6 +29,8 @@ export function functionListFromWire(raw: Record<string, unknown>) {
     version: fn.version,
     created_at: fn.createdAt,
     updated_at: fn.updatedAt,
+    recording: fn.recording,
+    recording_profile: fn.recordingProfile ?? "",
     ...(typeof raw.nextRun === "string" ? { next_run: raw.nextRun } : {}),
     ...(raw.metadata ? { metadata: raw.metadata } : {}),
     ...(fn.debounce

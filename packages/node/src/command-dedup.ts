@@ -34,20 +34,29 @@ function decodeKVValue<T>(base64: string): T {
  *
  * Uses the claim-first pattern: TryClaim atomically reserves the commandId
  * before any handler work is done. The winner returns null and proceeds.
- * Losers receive the prior entry immediately without re-running the handler.
+ * Later callers receive the prior entry, which may still be pending. Reconcile
+ * pending claims against idempotent effects before reporting completion.
  *
  * Typical usage:
  * ```typescript
- * const prior = await dedup.tryClaim(commandId, { orderId, claimedAt: new Date().toISOString() });
- * if (prior !== null) return prior; // duplicate — return cached result
+ * type Entry<T> = { status: 'claimed' } | { status: 'done'; result: T };
+ * const dedup = client.commandDedup<Entry<OrderResult>>('order-commands');
+ *
+ * const prior = await dedup.tryClaim(commandId, { status: 'claimed' });
+ * if (prior !== null) {
+ *   if (prior.status === 'done') return prior.result;
+ *   throw new Error('Command is pending; reconcile its effects before retrying');
+ * }
+ *
+ * let result: OrderResult;
  * try {
- *   const result = await runHandler();
- *   await dedup.finalize(commandId, result);
- *   return result;
+ *   result = await runHandler(); // Effects must support idempotent retries.
  * } catch (err) {
- *   await dedup.release(commandId).catch(() => {});
+ *   await dedup.release(commandId).catch(() => {}); // Only the claim winner reaches here.
  *   throw err;
  * }
+ * await dedup.finalize(commandId, { status: 'done', result });
+ * return result;
  * ```
  */
 export class CommandDedup<T> {
@@ -85,7 +94,7 @@ export class CommandDedup<T> {
   /**
    * Atomically claim commandId. Returns null if this caller wins the race
    * (proceed to run the handler). Returns the prior T if another caller
-   * already claimed this commandId (return it as the deduplicated response).
+   * already claimed this commandId. A prior claim is not necessarily a result.
    *
    * If the winner releases between the create and the read-back (404), the claim is
    * tried again, up to 3 times. After 3 lost rounds this throws an IronflowError with

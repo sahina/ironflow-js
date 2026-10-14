@@ -101,11 +101,11 @@ All fields on the config object:
 | `description` | `string` | Human-readable description shown in the dashboard. |
 | `triggers` | `Trigger[]` | **Required.** Array of event triggers (can be empty for invoke-only functions). |
 | `retry` | `RetryConfig` | Retry policy for failed steps. |
-| `timeout` | `number` | Function timeout in milliseconds (default: 600000 = 10 min). |
+| `timeout` | `number` | Function timeout in milliseconds. Unset means no per-function budget; a push request then uses the engine push timeout (10 s). |
 | `concurrency` | `ConcurrencyConfig` | Concurrency control. |
-| `debounce` | `DebounceConfig` | Debounce configuration — collapses rapid-fire events into a single invocation. |
+| `debounce` | `DebounceConfig` | Debounce configuration — collapses rapid-fire events into a single invocation. Fields: `periodMs`, `key?`, `maxWaitMs?`. |
 | `mode` | `"push" \| "pull"` | Preferred execution mode. |
-| `actorKey` | `string` | JSON path for actor-based sticky routing (e.g., `"event.data.customerId"`). |
+| `actorKey` | `string` | JSON path for an actor key (e.g., `"event.data.customerId"`). The server stores and returns it. Dispatch does not use it for routing yet. |
 | `schema` | `ZodType` | Zod schema for event data validation and type inference. |
 | `secrets` | `string[]` | Secret names this function requires (resolved by the engine). |
 | `stepTimeout` | `string` | Default timeout for all `step.run()` calls (e.g., `"30s"`, `"5m"`). |
@@ -252,6 +252,14 @@ const scheduledTask = createFunction(
 ### step.waitForEvent(name, filter)
 
 Wait for an external event to arrive. The workflow pauses durably until a matching event is emitted.
+
+An event stored after the run was created can satisfy this wait even if it
+arrives before the step parks. Ironflow checks retained events in the same
+environment, oldest first by server storage time, up to the wait deadline.
+An event consumed by an earlier completed wait in this run cannot satisfy a
+later gate. Neither can a same-name event stored before an earlier completed
+wait for that name ended. The event that started the run cannot satisfy its own
+wait. Events deleted by retention are unavailable to this check.
 
 ```typescript
 const approvalWorkflow = createFunction(
@@ -601,13 +609,14 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `eventDefinitions` | `EventDefinitionRegistry` | -- | Registry for automatic event upcasting. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `checkpointInterval` | `number` | `1000` | Debounce window in ms for checkpointing completed steps to the server while a job is still running; `0` disables. Without it a killed worker loses all in-flight progress and the reclaimed run re-executes every step. REST polling worker only -- `createStreamingWorker` ignores it. |
+| `drainTimeout` | `number` | `30000` | How long `drain()` waits in ms for active jobs before it cancels them. `0` or less uses the default. On an engine shutdown message, `createStreamingWorker` uses the drain timeout in the message when the message has one. |
 
 ### Worker interface
 
 | Method | Description |
 |--------|-------------|
 | `start()` | Start the worker. Blocks until stopped. Auto-reconnects on failure. |
-| `drain()` | Stop polling, wait up to `drainTimeout` (default 30 seconds) for active jobs, then cancel the remainder. Pull workers also drain on SIGINT and SIGTERM. When all workers in the process have drained, the process exits unless your app also listens for that signal. |
+| `drain()` | Stop polling, wait up to `drainTimeout` (default 30 seconds) for active jobs, then cancel the remainder. Then wait, with no time limit, for projection runners to save the events they accepted. Pull workers also drain on SIGINT and SIGTERM. When all workers in the process have drained, the process exits unless your app also listens for that signal. |
 | `stop()` | Force stop immediately. Cancels all active jobs. |
 
 ```typescript
@@ -662,8 +671,9 @@ The HTTP client for interacting with the Ironflow server from your backend code.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `serverUrl` | `string` | `http://localhost:9123` or `IRONFLOW_SERVER_URL` | Server URL. |
+| `serverUrl` | `string` | `IRONFLOW_SERVER_URL`, then `http://localhost:9123` | Server URL. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
+| `environment` | `string` | -- | Sent as `X-Ironflow-Environment` on REST and Connect requests. KV, config and secrets requests do not send it. Unset sends no header: the server uses the API key's environment, or the default one when auth is off. The client does not read `IRONFLOW_ENV`. |
 | `timeout` | `number` | `30000` | Request timeout in ms. |
 | `onError` | `OnErrorHandler` | -- | Global error handler (optional). |
 | `retry` | `ClientRetryConfig` | 3 attempts, 100 ms, factor 2, max 10 s | Retry with backoff. A call that changes nothing is retried on a network error, timeout, `408`, `429` or `5xx`; all other calls on `429` only. Honors `Retry-After`. `maxAttempts: 1` disables. |
@@ -1179,26 +1189,32 @@ const tenants = await client.tenants.list();
 
 ### Command idempotency (`client.commandDedup`)
 
-Atomic claim-first dedup backed by NATS KV. Store and reuse the instance — do not allocate per request.
+Atomic command reservation and result caching backed by NATS KV. Reuse one instance across requests. A reservation does not prove that the command completed.
 
 ```typescript
-const dedup = client.commandDedup<OrderResult>('order-commands');
+type Entry<T> = { status: 'claimed' } | { status: 'done'; result: T };
+const dedup = client.commandDedup<Entry<OrderResult>>('order-commands');
 
-const commandId = 'cmd_123';
-const orderId = 'order_456';
+const prior = await dedup.tryClaim(commandId, { status: 'claimed' });
+if (prior !== null) {
+  if (prior.status === 'done') return prior.result;
+  throw new Error('Command is pending; reconcile its effects before retrying');
+}
 
-const prior = await dedup.tryClaim(commandId, { orderId, claimedAt: new Date().toISOString() });
-if (prior !== null) return prior;
-
+let result: OrderResult;
 try {
-  const result = await runOrderHandler();
-  await dedup.finalize(commandId, result);
-  return result;
+  result = await runHandler(); // Effects must support idempotent retries.
 } catch (err) {
-  await dedup.release(commandId).catch(() => {});
+  await dedup.release(commandId).catch(() => {}); // Only the claim winner reaches here.
   throw err;
 }
+await dedup.finalize(commandId, { status: 'done', result });
+return result;
 ```
+
+A prior entry can be pending. This example rejects pending entries instead of
+reporting success. Recover them through application-specific reconciliation and
+idempotent effects. For entity streams, see the [CQRS walkthrough](https://docs.ironflow.run/tutorials/cqrs-walkthrough/).
 
 `tryClaim` retries up to 3 times when the winner releases between your write and read, then throws `IronflowError` with code `COMMAND_DEDUP_RACE`.
 
@@ -1326,6 +1342,9 @@ const old  = await client.streams.getSnapshot('order-123', { beforeVersion: 500 
 ```typescript
 const streams = await client.streams.listStreams();
 const events  = await client.streams.getEntityHistory('order-123');
+
+// All pages, oldest first; `from` / `to` are inclusive time bounds, `limit` caps the entries
+const asOf = await client.streams.getEntityHistory('order-123', { to: '2026-10-06T23:59:59.999999999Z' });
 ```
 
 ### streams.delete(entityId, options?)
@@ -1385,9 +1404,9 @@ const bucket = kv.bucket('sessions');
 // Put a value (unconditional write)
 const { revision } = await bucket.put('user-123', { token: 'abc', role: 'admin' });
 
-// Get a value
-const entry = await bucket.get('user-123');
-console.log(entry.value);    // the stored value
+// Read decoded JSON with the revision for CAS
+const entry = await bucket.getJSON('user-123');
+console.log(entry.value);    // The stored JSON object, typed as unknown
 console.log(entry.revision); // revision number for CAS
 
 // Create only if key doesn't exist (throws HTTP 412 on conflict)
@@ -1410,6 +1429,8 @@ const allKeys = await bucket.listKeys();
 const watcher = bucket.watch({ onUpdate: (e) => console.log(e.key, e.revision) }, { key: 'user-123' });
 watcher.stop();
 ```
+
+`getJSON()` decodes base64 as UTF-8 JSON and preserves the entry metadata. Use `get()` for the raw base64 value. Decoded values are typed as `unknown`; validate their shape before use. Invalid base64, UTF-8, or JSON throws `IronflowError` with code `INVALID_KV_JSON`. Plain string writes are raw text and are not automatically JSON-quoted.
 
 ---
 
@@ -1467,7 +1488,7 @@ code `NOT_FOUND`. Import the three file error classes from `@ironflow/node`.
 
 ## Config Management
 
-Centralized configuration store with set, get, patch (shallow merge), list, and delete.
+Centralized configuration store with set, create, get, patch (shallow merge), list, and delete. `update`, `patchIf` and `deleteIf` are compare-and-swap variants.
 
 ```typescript
 const client = createClient({ serverUrl: 'http://localhost:9123' });
@@ -1483,6 +1504,14 @@ console.log(settings.data); // { theme: 'dark', locale: 'en', maxRetries: 3 }
 // Patch a config (shallow merge)
 await config.patch('app-settings', { locale: 'fr' });
 // Result: { theme: 'dark', locale: 'fr', maxRetries: 3 }
+
+// Create only if the name does not exist (throws HTTP 412 on conflict)
+await config.create('feature-flags', { darkMode: true });
+
+// Compare-and-swap with the revision from a prior get() (throws HTTP 412 on mismatch)
+await config.update('app-settings', { theme: 'light' }, settings.revision);
+await config.patchIf('app-settings', { locale: 'de' }, settings.revision);
+await config.deleteIf('app-settings', settings.revision);
 
 // List all configs
 const all = await config.list();
@@ -1551,29 +1580,35 @@ const roles = await client.roles.list(orgId);  // optional org filter
 const fetched = await client.roles.get(role.id);
 await client.roles.update(role.id, { name: 'senior-deployer' });
 
-// Assign/remove policies
-await client.roles.assignPolicy(role.id, policyId);
-await client.roles.removePolicy(role.id, policyId);
-const assignedPolicies = await client.roles.listPolicies(role.id);
-
 await client.roles.delete(role.id);
 ```
 
-### Policies
+### Policy set
+
+The Rego policy set of the organization (authorization Layer 2, deny only). A new set starts in `monitor` mode.
 
 ```typescript
-const policy = await client.policies.create({
-  name: 'allow-emit',
-  effect: 'deny',
-  actions: 'emit:*',
-  resources: '*',
-  org_id: orgId,
+import { POLICY_SET_ERROR_CODES, PreconditionFailedError } from '@ironflow/node';
+
+const current = await client.policySet.get(); // version 0 when the org has no set
+const saved = await client.policySet.put(
+  { modules: { 'authz.rego': rego }, mode: 'monitor' }, // omit mode to keep the current mode
+  current.version,                                      // ifVersion: the version you read
+);
+
+await client.policySet.validate({ modules: { 'authz.rego': rego } });
+const result = await client.policySet.dryRun({
+  set: { modules: { 'authz.rego': rego } },             // omit to evaluate the active set
+  input: { request: { action: 'runs:delete' }, subject: { roles: ['member'] } },
 });
-const policies = await client.policies.list(orgId);  // optional org filter
-const fetched = await client.policies.get(policy.id);
-await client.policies.update(policy.id, { name: 'allow-all-emit' });
-await client.policies.delete(policy.id);
+const versions = await client.policySet.versions();
+const v3 = await client.policySet.version(3);
+await client.policySet.rollback(3, saved.version);      // keeps the active mode
 ```
+
+A 412 throws `PreconditionFailedError`. `IronflowError.code` is one of `POLICY_SET_ERROR_CODES`. `enforcement_active` on the result is `false` when the server stores the set but does not enforce it.
+
+A 503 with the code `POLICY_SET_ERROR_CODES.notPropagated` is not retryable. The write committed as the version in the message. Send the same request again with `ifVersion` set to that version (a no-op that finishes propagation). Never send it again with the old version.
 
 ### Administrative Discovery
 
@@ -1680,6 +1715,8 @@ const subscription = await sub.subscribe('events:order.*', {
 await subscription.term(eventId);
 ```
 
+`sub.joinConsumerGroup(groupName, pattern, options)` is shorthand for `subscribe` with `consumerGroup` set to `groupName` and `ackMode: 'manual'`. It returns an ackable subscription.
+
 ### Connection monitoring
 
 ```typescript
@@ -1697,6 +1734,10 @@ const unsubErr = sub.onError((error) => {
 // Remove listeners
 unsubscribe();
 unsubErr();
+
+// Current state
+console.log(sub.isConnected);     // boolean
+console.log(sub.connectionState); // ConnectionState
 ```
 
 ---
@@ -1716,7 +1757,7 @@ Projections build derived state from event streams. Two modes: **managed** (pure
 | `handler` | Function | Event handler (signature varies by mode). |
 | `maxRetries` | `number` | Maximum retries per event (default: 3). |
 | `batchSize` | `number` | Events per batch (default: 100). |
-| `partitionKey` | `string` | JSONPath for partition key extraction (e.g., `"$.data.customerId"`). State is maintained per-partition when set. |
+| `partitionKey` | `string` | JSONPath for partition key extraction (e.g., `"$.customerId"`). State is maintained per-partition when set. |
 
 ### Managed projection (pure reducer)
 
@@ -1786,8 +1827,8 @@ Receive and transform external HTTP events from third-party services.
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | `string` | Webhook source identifier (used in URL path). |
-| `verify` | `(req) => unknown \| Promise<unknown>` | Verify the request and return the parsed payload (or throw to reject). |
-| `transform` | `(payload) => WebhookEvent \| Promise<WebhookEvent>` | Transform the verified payload to an Ironflow event. |
+| `verify` | `(req) => unknown \| Promise<unknown>` | Verify the request. Throw to reject (HTTP 401). The return value is ignored. `req` has `body` (raw string) and `headers`. |
+| `transform` | `(payload) => WebhookEvent \| Promise<WebhookEvent>` | Transform the JSON-parsed request body to an Ironflow event. |
 
 ### Stripe webhook example
 
@@ -1953,14 +1994,18 @@ throw new NonRetryableError('Payment declined - do not retry');
 
 ## Environment Variables
 
+A nonempty explicit `serverUrl` overrides both URL variables. Empty URL values are treated as unset.
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `IRONFLOW_URL` | Ironflow server URL, checked before `IRONFLOW_SERVER_URL` by `serve()`'s emit path and by the agent primitives (`agent()`, `exposeMcp()`, `memory`) | -- |
 | `IRONFLOW_SERVER_URL` | Ironflow server URL | `http://localhost:9123` |
 | `IRONFLOW_SIGNING_KEY` | The Node SDK does not read this variable. Your code reads it and passes it to `serve` as `signingKey`. With no key, the handler does not verify requests. | -- |
 | `IRONFLOW_API_KEY` | API key for authentication (worker and client) | -- |
-| `IRONFLOW_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error` | `info` |
+| `IRONFLOW_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error`, `silent` | `info` |
 | `IRONFLOW_ENV` | Target environment name | `default` |
+| `IRONFLOW_NO_DISCOVERY` | Set to `1` to turn off the engine discovery file (ADR 0098). | -- |
+
+When none of `IRONFLOW_SERVER_URL` and `IRONFLOW_API_KEY` is set, the SDK reads the nearest `.ironflow/engine.json` (loopback `http` URLs only) to fill the unset variables. Environment values always win.
 
 ---
 
@@ -2034,6 +2079,13 @@ const supportAgent = agent(
 );
 ```
 
+### Early approvals
+
+An approval can arrive before the run reaches `approve()`. The engine checks
+retained events stored since the run was created, matching the approval name
+and `data.runId`. An early approval does not need to be resent. The same
+history and retention rules as `step.waitForEvent()` apply.
+
 ### Approval request payloads
 
 `approve(name, { ttl, payload })` stores the request payload in the waiting step's
@@ -2092,7 +2144,7 @@ const handle = await exposeMcp({
     { name: 'fetch-order', description: '…', input: z.object({ orderId: z.string() }), handler: async ({ orderId }) => fetchFromDb(orderId) },
   ],
   callbackUrl: 'https://api.example.com/api/ironflow',
-  // serverUrl defaults to IRONFLOW_URL, then IRONFLOW_SERVER_URL;
+  // serverUrl defaults to IRONFLOW_SERVER_URL;
   // apiKey defaults to IRONFLOW_API_KEY
 });
 
@@ -2223,12 +2275,13 @@ describe('transferFunds', () => {
 | `createWorker(config)` | Create pull mode worker (REST polling). |
 | `createStreamingWorker(config)` | Create pull mode worker (ConnectRPC streaming). Import from `@ironflow/node/worker-streaming`. |
 | `createProjection(config)` | Define a projection. |
-| `createProjectionRunner(config)` / `ProjectionRunner` / `StreamingUnsupportedError` | Lower-level projection runner (advanced); the error signals a server without `StreamProjectionEvents`, so the caller can fall back to polling. |
+| `createProjectionRunner(config)` / `ProjectionRunner` / `StreamingUnsupportedError` | Lower-level projection runner (advanced). `run()` streams and polls when the server cannot stream, under one lease. `startStreaming()` only streams and `start()` only polls; the error signals a server without `StreamProjectionEvents`, so the caller can fall back to polling. `stop()` permanently closes intake and waits for accepted events to finish saving. Create a new runner to resume. |
 | `createClient(config)` / `IronflowClient` | Create server-side HTTP client. |
 | `createSubscriptionClient(config)` / `SubscriptionClient` | Create WebSocket subscription client. |
 | `createWebhook(config)` | Define a webhook source for `serve()`. |
 | `createTestClient(config)` | Create test client. Import from `@ironflow/node/test`. |
 | `createSecretsClient(secrets)` | Create a read-only secrets accessor. |
+| `FilesClient` / `FileBucketHandle` | Direct files client (advanced — prefer `client.files()`). |
 | `KVClient` / `KVBucketHandle` | Direct KV client constructors (advanced — prefer `client.kv()`). |
 | `ConfigClient` | Direct config client (advanced — prefer `client.config()`). |
 | `CommandDedup` / `DEFAULT_COMMAND_DEDUP_TTL_SECONDS` | Command-level idempotency primitive. |

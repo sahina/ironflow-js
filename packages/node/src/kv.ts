@@ -46,16 +46,39 @@ export class KVBucketHandle {
   ) {}
 
   /**
-   * Get a value by key.
+   * Get an entry whose value is the stored bytes encoded as base64.
    */
   async get(key: string): Promise<KVEntry> {
-    return this.restRequest<KVEntry>(
-      "GET",
-      `/api/v1/kv/buckets/${enc(this.bucketName)}/keys/${key}`,
-      undefined,
-      undefined,
-      "kv.bucket.get"
-    );
+    return this.getEntry(key, "kv.bucket.get");
+  }
+
+  /**
+   * Get an entry whose value is decoded UTF-8 JSON. Rejects non-JSON values.
+   */
+  async getJSON(key: string): Promise<KVEntry> {
+    const entry = await this.getEntry(key, "kv.bucket.getJSON");
+    try {
+      if (typeof entry.value !== "string") throw new Error("Expected base64");
+      const bytes = Buffer.from(atob(entry.value), "latin1");
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      const value: unknown = JSON.parse(text);
+      return { ...entry, value };
+    } catch (cause) {
+      const error = new IronflowError(
+        `KV value for "${key}" is not valid base64-encoded UTF-8 JSON`,
+        { code: "INVALID_KV_JSON", cause: cause instanceof Error ? cause : undefined },
+      );
+      await this.callOnError(error, {
+        method: "kv.bucket.getJSON",
+        endpoint: `/api/v1/kv/buckets/${enc(this.bucketName)}/keys/${key}`,
+      });
+      throw error;
+    }
+  }
+
+  // The path stays a literal at the restRequest call: scripts/sdkcoverage reads it from there.
+  private getEntry(key: string, clientMethod: string): Promise<KVEntry> {
+    return this.restRequest<KVEntry>("GET", `/api/v1/kv/buckets/${enc(this.bucketName)}/keys/${key}`, undefined, undefined, clientMethod);
   }
 
   /**
@@ -401,6 +424,6 @@ function throwTypedError(status: number, message: string): never {
     case 403:
       throw new UnauthorizedError(`${message} — ${AUTH_HELP}`);
     default:
-      throw new IronflowError(message, { code: `HTTP_${status}` });
+      throw new IronflowError(message, { code: `HTTP_${status}`, status });
   }
 }

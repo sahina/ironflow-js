@@ -70,46 +70,58 @@ export interface UpdateRoleInput {
 }
 
 // ============================================================================
-// Policy Types
+// Policy Set Types (Rego)
 // ============================================================================
 
-// #943 (ADR 0016 T2): write surfaces accept effect="deny" only.
-// The Policy READ type keeps "allow" in the union so legacy rows fetched
-// during the upgrade window (Release N to migration-030 sweep) can be
-// rendered without type assertions. CREATE + UPDATE input types are
-// narrowed to "deny" so callers cannot send the deprecated value.
-// Server still rejects effect=allow with HTTP 400; this narrowing catches
-// the mistake at TypeScript compile time.
-export interface Policy {
-  id: string;
-  org_id: string;
-  name: string;
-  effect: "allow" | "deny";
-  actions: string;
-  resources: string;
-  condition?: string;
-  created_at: string;
-  updated_at: string;
+export type PolicySetMode = "enforce" | "monitor";
+
+export interface PolicySet {
+  /** 0 when the org has no set. */
+  version: number;
+  modules: Record<string, string>;
+  decision?: string;
+  mode: PolicySetMode | "";
+  updated_at?: string;
+  updated_by?: string;
   /**
-   * #2284: false when `resources` has the wrong IRN arity and can never match
-   * a real resource. Absent means the server did not say — treat as valid.
+   * False when the server runs with policy enforcement off, so an "enforce"
+   * set is stored but not applied. Absent from a server that does not say.
    */
-  resources_valid?: boolean;
+  enforcement_active?: boolean;
 }
 
-export interface CreatePolicyInput {
-  name: string;
-  effect: "deny";
-  actions: string;
-  resources: string;
-  condition?: string;
-  org_id: string;
+export interface PolicySetInput {
+  modules: Record<string, string>;
+  /** Omitted: keep the current rule; "" clears it. */
+  decision?: string;
+  /** Omitted: keep the current mode; a new set starts in "monitor". */
+  mode?: PolicySetMode;
 }
 
-export interface UpdatePolicyInput {
-  name?: string;
-  effect?: "deny";
-  actions?: string;
-  resources?: string;
-  condition?: string;
+export interface PolicySetVersion {
+  version: number;
+  mode: PolicySetMode;
+  decision?: string;
+  created_at: string;
+  created_by?: string;
+}
+
+export interface PolicySetDryRunInput {
+  /** Omitted: evaluate against the active set. */
+  set?: PolicySetInput;
+  input: { request: Record<string, unknown>; subject: Record<string, unknown>; [key: string]: unknown };
+  explain?: boolean;
+}
+
+export interface PolicySetDryRunResult {
+  /** The set's own verdict, whatever its mode. */
+  decision: "allow" | "deny";
+  mode: PolicySetMode;
+  version?: number;
+  reasons?: string[];
+  /** Reasons dropped beyond the first 100. */
+  reasons_omitted?: number;
+  entrypoint?: string;
+  error?: string;
+  explain?: string;
 }

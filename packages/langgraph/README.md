@@ -50,7 +50,7 @@ import { IronflowClient } from "@ironflow/node";
 import { IronflowSaver } from "@ironflow/langgraph";
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 
-const client = new IronflowClient({ serverUrl: process.env.IRONFLOW_URL! });
+const client = new IronflowClient({ serverUrl: process.env.IRONFLOW_SERVER_URL! });
 const saver = new IronflowSaver({ client });
 
 const State = Annotation.Root({

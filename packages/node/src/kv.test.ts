@@ -184,7 +184,7 @@ describe("KVBucketHandle", () => {
     it("should GET the key and return a KVEntry", async () => {
       const entry = {
         key: "user:1",
-        value: { name: "Alice" },
+        value: "eyJuYW1lIjoiQWxpY2UifQ==",
         revision: 3,
         created_at: "2026-01-01T00:00:00Z",
         operation: "put",
@@ -198,6 +198,119 @@ describe("KVBucketHandle", () => {
       const { url, init } = lastFetchCall();
       expect(url).toBe(`${BASE_URL}/api/v1/kv/buckets/my-bucket/keys/user:1`);
       expect(init.method).toBe("GET");
+    });
+  });
+
+  describe("getJSON", () => {
+    it.each([
+      ["MQ==", 1],
+      ["MA==", 0],
+      ["ZmFsc2U=", false],
+      ["bnVsbA==", null],
+      ["IiI=", ""],
+      ["WzEsMl0=", [1, 2]],
+      ["eyJuYW1lIjoiQWxpY2UifQ==", { name: "Alice" }],
+      ["ImNhZsOpIPCfjI0i", "café 🌍"],
+    ])("decodes %s and preserves entry metadata", async (value, expected) => {
+      const entry = {
+        key: "mykey",
+        value,
+        revision: 3,
+        created_at: "2026-01-01T00:00:00Z",
+        operation: "put",
+      };
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, entry));
+      const bucket = new KVBucketHandle("my-bucket", config);
+
+      expect(await bucket.getJSON("mykey")).toEqual({ ...entry, value: expected });
+    });
+
+    it.each(["aGVsbG8=", "%", "MQ==%", "Iv8i", 42])("rejects invalid JSON encoding %s", async (value) => {
+      const entry = { key: "mykey", value, revision: 1, created_at: "", operation: "put" };
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, entry));
+      const bucket = new KVBucketHandle("my-bucket", config);
+
+      await expect(bucket.getJSON("mykey")).rejects.toMatchObject({
+        code: "INVALID_KV_JSON",
+        retryable: false,
+      });
+    });
+
+    it("preserves the JSON decoding cause", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { value: "aGVsbG8=" }));
+      const bucket = new KVBucketHandle("my-bucket", config);
+      await expect(bucket.getJSON("mykey")).rejects.toMatchObject({
+        code: "INVALID_KV_JSON",
+        cause: expect.any(SyntaxError),
+      });
+    });
+
+    it("decodes a large JSON value without dropping bytes", async () => {
+      const expected = { text: "x".repeat(1024 * 1024) };
+      const entry = { key: "mykey", value: btoa(JSON.stringify(expected)), revision: 1, created_at: "", operation: "put" };
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, entry));
+      const bucket = new KVBucketHandle("my-bucket", config);
+      expect((await bucket.getJSON("mykey")).value).toEqual(expected);
+    });
+
+    it("preserves HTTP errors", async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(404, { error: "key not found" }));
+      const bucket = new KVBucketHandle("my-bucket", config);
+
+      await expect(bucket.getJSON("missing")).rejects.toMatchObject({ code: "HTTP_404", status: 404 });
+    });
+
+    it("reports decoding errors to onError", async () => {
+      const onError = vi.fn();
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { value: "%" }));
+      const bucket = new KVBucketHandle("my-bucket", { ...config, onError });
+
+      await expect(bucket.getJSON("mykey")).rejects.toMatchObject({ code: "INVALID_KV_JSON" });
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "INVALID_KV_JSON" }),
+        { method: "kv.bucket.getJSON", endpoint: "/api/v1/kv/buckets/my-bucket/keys/mykey" },
+      );
+    });
+
+    it("reports getJSON HTTP errors once with the getJSON method label", async () => {
+      const onError = vi.fn();
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(404, { error: "key not found" }));
+      const bucket = new KVBucketHandle("my-bucket", { ...config, onError });
+
+      await expect(bucket.getJSON("mykey")).rejects.toMatchObject({ code: "HTTP_404" });
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(onError).toHaveBeenCalledWith(
+        expect.objectContaining({ code: "HTTP_404" }),
+        { method: "kv.bucket.getJSON", endpoint: "/api/v1/kv/buckets/my-bucket/keys/mykey", statusCode: 404 },
+      );
+    });
+
+    it("round-trips a JSON counter through put and update while keeping get raw", async () => {
+      let stored = "";
+      let revision = 0;
+      vi.mocked(fetch).mockImplementation(async (_url, init) => {
+        if (init?.method === "PUT") {
+          if (typeof init.body !== "string") throw new Error("Expected a serialized value");
+          stored = init.body;
+          revision += 1;
+          return createMockResponse(200, { revision });
+        }
+        const entry = {
+          key: "counter",
+          value: btoa(stored),
+          revision,
+          created_at: "",
+          operation: "put",
+        };
+        return createMockResponse(200, entry);
+      });
+      const bucket = new KVBucketHandle("my-bucket", config);
+
+      await bucket.put("counter", 1);
+      expect(await bucket.getJSON("counter")).toMatchObject({ value: 1, revision: 1 });
+      expect(await bucket.get("counter")).toMatchObject({ value: "MQ==", revision: 1 });
+      await bucket.update("counter", 2, 1);
+      expect(await bucket.getJSON("counter")).toMatchObject({ value: 2, revision: 2 });
     });
   });
 

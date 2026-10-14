@@ -4991,21 +4991,57 @@ describe("IronflowClient (real module)", () => {
       );
     });
 
-    it("lists role policies", async () => {
-      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ policies: [{ id: "p1" }] }),
+    describe("policySet (K01, K02, K03)", () => {
+      const json = (status: number, body: unknown) => ({
+        ok: status < 400,
+        status,
+        text: () => Promise.resolve(JSON.stringify(body)),
+        json: () => Promise.resolve(body),
       });
-      vi.stubGlobal("fetch", mockFetch);
 
-      const policies = await ironflow.roles.listPolicies("role/1");
-      expect(policies[0]?.id).toBe("p1");
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/roles/role%2F1/policies"),
-        expect.objectContaining({ method: "GET" })
-      );
+      it("K01 sends the right method, path, If-Match and body", async () => {
+        ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+        const calls: Array<{ method: string; url: string; headers: Record<string, string>; body?: string }> = [];
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (url: string, init: RequestInit) => {
+            calls.push({ method: init.method as string, url, headers: init.headers as Record<string, string>, body: init.body as string });
+            return json(200, { version: 2, modules: {}, mode: "monitor", versions: [] });
+          })
+        );
+        await ironflow.policySet.get();
+        await ironflow.policySet.put({ modules: { "a.rego": "package p\n" }, mode: "enforce" }, 1);
+        await ironflow.policySet.rollback(1, 2);
+        expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+          "GET /api/v1/policy-set",
+          "PUT /api/v1/policy-set",
+          "POST /api/v1/policy-set/versions/1/rollback",
+        ]);
+        expect(calls[1]?.headers["If-Match"]).toBe("1");
+        expect(JSON.parse(calls[1]?.body ?? "{}").mode).toBe("enforce");
+        expect(calls[2]?.headers["If-Match"]).toBe("2");
+      });
+
+      it("K02 maps 412 and 428 to typed errors, and keeps a 503 code", async () => {
+        ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+        const { PreconditionFailedError, PreconditionRequiredError } = await import("@ironflow/core");
+        vi.stubGlobal("fetch", vi.fn(async () => json(412, { error: "changed", code: "policy_set_version_conflict" })));
+        await expect(ironflow.policySet.put({ modules: {} }, 0)).rejects.toBeInstanceOf(PreconditionFailedError);
+        vi.stubGlobal("fetch", vi.fn(async () => json(428, { error: "send If-Match", code: "policy_set_precondition_required" })));
+        await expect(ironflow.policySet.put({ modules: {} }, 0)).rejects.toBeInstanceOf(PreconditionRequiredError);
+        vi.stubGlobal("fetch", vi.fn(async () => json(503, { error: "saved as version 3", code: "policy_set_not_propagated", retryable: false })));
+        await expect(ironflow.policySet.put({ modules: {} }, 2)).rejects.toMatchObject({
+          code: "policy_set_not_propagated",
+          message: "saved as version 3",
+          retryable: false,
+        });
+      });
+
+      it("K03 has no CEL policy or role-policy methods", () => {
+        const client = ironflow as unknown as Record<string, unknown>;
+        expect(client.policies).toBeUndefined();
+        expect((client.roles as Record<string, unknown>).assignPolicy).toBeUndefined();
+      });
     });
 
   });

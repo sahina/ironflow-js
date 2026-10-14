@@ -56,7 +56,7 @@ export interface KVBucketInfo {
 export interface KVEntry {
   /** The key */
   key: string;
-  /** The value (raw bytes as base64 or string depending on content type) */
+  /** Stored bytes as base64 from get(), or parsed JSON from getJSON(). */
   value: unknown;
   /** Revision number */
   revision: number;

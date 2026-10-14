@@ -340,8 +340,7 @@ export interface ExposeMcpConfig {
    */
   callbackUrl: string;
   /**
-   * Ironflow control-plane URL. Defaults to `IRONFLOW_URL` then
-   * `IRONFLOW_SERVER_URL` env vars.
+   * Ironflow control-plane URL. Defaults to the `IRONFLOW_SERVER_URL` env var.
    */
   serverUrl?: string;
   /**

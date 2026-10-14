@@ -14,7 +14,6 @@ describe("exposeMcp() — runtime", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    delete process.env.IRONFLOW_URL;
     delete process.env.IRONFLOW_SERVER_URL;
     delete process.env.IRONFLOW_API_KEY;
   });
@@ -137,8 +136,8 @@ describe("exposeMcp() — runtime", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to IRONFLOW_URL + IRONFLOW_API_KEY env vars", async () => {
-    process.env.IRONFLOW_URL = SERVER_URL;
+  it("falls back to IRONFLOW_SERVER_URL + IRONFLOW_API_KEY env vars", async () => {
+    process.env.IRONFLOW_SERVER_URL = SERVER_URL;
     process.env.IRONFLOW_API_KEY = API_KEY;
     vi.stubGlobal(
       "fetch",

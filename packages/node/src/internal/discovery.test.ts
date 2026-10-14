@@ -15,7 +15,6 @@ const F = "/a/b/c/.ironflow/engine.json";
 describe("resolveDiscovery", () => {
   it("fills URL vars and optional key/env", () => {
     expect(run({ [F]: doc({ api_key: "ifkey_x", environment: "dev" }) })).toEqual({
-      IRONFLOW_URL: "http://127.0.0.1:52431",
       IRONFLOW_SERVER_URL: "http://127.0.0.1:52431",
       IRONFLOW_API_KEY: "ifkey_x",
       IRONFLOW_ENV: "dev",
@@ -26,12 +25,12 @@ describe("resolveDiscovery", () => {
     expect(run({ [F]: doc() })).not.toHaveProperty("IRONFLOW_API_KEY");
   });
 
-  it.each(["IRONFLOW_URL", "IRONFLOW_SERVER_URL", "IRONFLOW_API_KEY"])("no-op when %s is set", (name) => {
+  it.each(["IRONFLOW_SERVER_URL", "IRONFLOW_API_KEY"])("no-op when %s is set", (name) => {
     expect(run({ [F]: doc({ api_key: "k" }) }, { [name]: "x" })).toBeUndefined();
   });
 
   it("treats empty variables as unset", () => {
-    expect(run({ [F]: doc() }, { IRONFLOW_URL: "", IRONFLOW_API_KEY: "" })).toBeDefined();
+    expect(run({ [F]: doc() }, { IRONFLOW_SERVER_URL: "", IRONFLOW_API_KEY: "" })).toBeDefined();
   });
 
   it("IRONFLOW_NO_DISCOVERY=1 disables", () => {
@@ -43,7 +42,7 @@ describe("resolveDiscovery", () => {
       "/a/.ironflow/engine.json": doc({ url: "http://127.0.0.1:1" }),
       "/a/b/.ironflow/engine.json": doc({ url: "http://127.0.0.1:2" }),
     };
-    expect(run(files)?.IRONFLOW_URL).toBe("http://127.0.0.1:2");
+    expect(run(files)?.IRONFLOW_SERVER_URL).toBe("http://127.0.0.1:2");
     // An invalid nearer file hides a valid farther one.
     expect(run({ ...files, "/a/b/.ironflow/engine.json": "{" })).toBeUndefined();
   });
@@ -57,7 +56,7 @@ describe("resolveDiscovery", () => {
     "http://127.1.2.3:1",
     "http://[::1]:1",
   ])("accepts loopback %s", (url) => {
-    expect(run({ [F]: doc({ url }) })?.IRONFLOW_URL).toBe(url);
+    expect(run({ [F]: doc({ url }) })?.IRONFLOW_SERVER_URL).toBe(url);
   });
 
   it.each([
@@ -99,7 +98,7 @@ describe("constructors pick up the discovery file", () => {
     dir = mkdtempSync(join(tmpdir(), "ironflow-discovery-"));
     mkdirSync(join(dir, ".ironflow"));
     writeFileSync(join(dir, ".ironflow", "engine.json"), doc({ url: "http://127.0.0.1:52431", api_key: "ifkey_t" }));
-    for (const k of ["IRONFLOW_URL", "IRONFLOW_SERVER_URL", "IRONFLOW_API_KEY", "IRONFLOW_ENV", "IRONFLOW_NO_DISCOVERY"]) {
+    for (const k of ["IRONFLOW_SERVER_URL", "IRONFLOW_API_KEY", "IRONFLOW_ENV", "IRONFLOW_NO_DISCOVERY"]) {
       delete process.env[k];
     }
     process.chdir(dir);

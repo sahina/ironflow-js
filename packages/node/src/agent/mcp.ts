@@ -20,7 +20,7 @@
  */
 
 import { hydrateEnvFromDiscovery } from "../internal/discovery.js";
-import { IronflowError } from "@ironflow/core";
+import { IronflowError, getConfiguredServerUrl } from "@ironflow/core";
 import { z } from "zod";
 import {
   registerLocal,
@@ -81,13 +81,10 @@ export async function exposeMcp(config: ExposeMcpConfig): Promise<ExposeMcpHandl
   }
 
   hydrateEnvFromDiscovery();
-  const serverUrl =
-    config.serverUrl ??
-    process.env.IRONFLOW_URL ??
-    process.env.IRONFLOW_SERVER_URL;
+  const serverUrl = config.serverUrl || getConfiguredServerUrl();
   if (!serverUrl) {
     throw new IronflowError(
-      "exposeMcp() requires serverUrl (or IRONFLOW_URL / IRONFLOW_SERVER_URL env)",
+      "exposeMcp() requires serverUrl (or IRONFLOW_SERVER_URL env)",
       { code: "AGENT_MCP_MISSING_SERVER_URL", retryable: false }
     );
   }

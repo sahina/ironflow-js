@@ -12,7 +12,7 @@
  * import { IronflowSaver } from "@ironflow/langgraph";
  * import { StateGraph } from "@langchain/langgraph";
  *
- * const client = new IronflowClient({ serverUrl: process.env.IRONFLOW_URL! });
+ * const client = new IronflowClient({ serverUrl: process.env.IRONFLOW_SERVER_URL! });
  * const saver = new IronflowSaver({ client });
  * const graph = new StateGraph(...).compile({ checkpointer: saver });
  * await graph.invoke(input, { configurable: { thread_id: "thread-1" } });

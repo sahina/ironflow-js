@@ -17,6 +17,7 @@
  * crash-resume, replay, and audit semantics from the existing runtime.
  */
 
+import { getConfiguredServerUrl } from "@ironflow/core";
 import { hydrateEnvFromDiscovery } from "../internal/discovery.js";
 import type { z } from "zod";
 import { IronflowClient } from "../client.js";
@@ -47,7 +48,7 @@ const DEFAULT_MAX_TURNS = 20;
  * Define a durable agent.
  *
  * When `config.memory` is set, the runtime constructs an IronflowClient
- * from `process.env.IRONFLOW_URL` (or `IRONFLOW_SERVER_URL`) plus
+ * from `process.env.IRONFLOW_SERVER_URL` plus
  * `IRONFLOW_API_KEY` for the memory backend. Workers that pass
  * `serverUrl` explicitly to `serve()` / `createWorker()` should also
  * export the matching env vars so memory operations resolve correctly.
@@ -130,14 +131,13 @@ export function agent<TEventSchema extends z.ZodType = z.ZodType<unknown>, TResu
  * the run's environment so the stream and the projection wait land where the
  * run's projections run (#2471).
  *
- * Reads IRONFLOW_URL / IRONFLOW_SERVER_URL for the server endpoint and
+ * Reads IRONFLOW_SERVER_URL for the server endpoint and
  * IRONFLOW_API_KEY for auth. Returns undefined when no URL is set so
  * makeMemory() can surface a clear "no backend" error on first use.
  */
 export function createDefaultMemoryBackend(environment?: string): MemoryBackend | undefined {
   hydrateEnvFromDiscovery();
-  const serverUrl =
-    process.env.IRONFLOW_URL ?? process.env.IRONFLOW_SERVER_URL;
+  const serverUrl = getConfiguredServerUrl();
   if (!serverUrl) return undefined;
 
   const client = new IronflowClient({

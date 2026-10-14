@@ -48,6 +48,7 @@ ironflow.configure({
   transport: 'connectrpc',              // Default: 'connectrpc'. Options: 'connectrpc' | 'websocket'
   environment: 'default',               // Default: 'default'. Target environment for isolation.
   timeout: 30000,                       // Request timeout in ms (default: 30000)
+  retry: { maxAttempts: 3 },            // Optional. Retry policy for file uploads and sign calls only (see File Storage).
   auth: {
     token: 'short-lived-session-token', // Preferred for browser applications
     // apiKey: 'ifkey_...',              // Development only; never ship in a browser bundle
@@ -687,7 +688,7 @@ await ironflow.resumeRun("run_abc123");
 
 ### Time-Travel Debugging (DVR Playback)
 
-Replay and inspect workflow execution at any point in time. Requires the function to have `recording: true` enabled.
+Replay and inspect workflow execution at any point in time. Requires `recordingProfile: "all"` (or legacy `recording: true`) on the function.
 
 #### Get Run State at Timestamp
 
@@ -773,6 +774,10 @@ const sub = await ironflow.agents.subscribe(runId, {
 // Unsubscribe is idempotent.
 sub.unsubscribe();
 ```
+
+The promise resolves when the subscription attaches, before any replayed event arrives. The caller owns the subscription's lifetime: do not unsubscribe as soon as the await returns, or the replay is lost. To stop after the run settles, call `unsubscribe()` from `onComplete`, `onFailed` or `onCancelled`. The SDK does not close the subscription on a terminal event, because `ResumeRun` can move a failed run back to running under the same runId.
+
+A terminal event can arrive before the `await` returns, so set a flag in the callback and unsubscribe after the `await` when the flag is set. `watchSteps` in `examples/agents/doc-processor-agent/web/app/page.tsx` shows the pattern.
 
 ### `agents.readMemory(projection, opts?)`
 
@@ -880,6 +885,9 @@ if (info) {
 ```typescript
 const streams = await ironflow.streams.listStreams();
 const history = await ironflow.streams.getEntityHistory('order-123');
+
+// All pages, oldest first; `from` / `to` are inclusive time bounds, `limit` caps the entries
+const asOf = await ironflow.streams.getEntityHistory('order-123', { to: '2026-10-06T23:59:59.999999999Z' });
 ```
 
 ### Snapshots
@@ -1016,7 +1024,7 @@ await ironflow.waitForProjectionCatchup('order-detail-view', {
 
 ### Query a SQL Projection
 
-For projections materialized into relational tables (PostgreSQL backend).
+For projections materialized into relational tables.
 
 ```typescript
 const result = await ironflow.querySQLProjection('board', {
@@ -1071,9 +1079,9 @@ const bucket = kv.bucket('sessions');
 // Put a value (unconditional write)
 const { revision } = await bucket.put('user-123', { token: 'abc', expiresAt: '...' });
 
-// Get a value
-const entry = await bucket.get('user-123');
-console.log(entry.value);     // The stored value
+// Read decoded JSON with the revision for CAS
+const entry = await bucket.getJSON('user-123');
+console.log(entry.value);     // The stored JSON object, typed as unknown
 console.log(entry.revision);  // Revision number for CAS
 
 // Create only if key does not exist (if-not-exists)
@@ -1092,6 +1100,8 @@ await bucket.purge('user-123');
 const allKeys = await bucket.listKeys();
 const userKeys = await bucket.listKeys('user-*');
 ```
+
+`getJSON()` decodes base64 as UTF-8 JSON and preserves the entry metadata. Use `get()` for the raw base64 value. Decoded values are typed as `unknown`; validate their shape before use. Invalid base64, UTF-8, or JSON throws `IronflowError` with code `INVALID_KV_JSON`. Plain string writes are raw text and are not automatically JSON-quoted.
 
 ### Watch for Changes
 
@@ -1160,10 +1170,10 @@ const res = await downloadFromSignedUrl(downloadUrl);        // a fetch Response
 `Uint8Array`, pass `contentType` as the third argument. If the content type does not match the
 URL, the server returns `415`.
 
-Errors: `PreconditionFailedError` (412), `PayloadTooLargeError` (413),
-`UnsupportedMediaTypeError` (415) and `ConflictError` (409), all from `@ironflow/browser`.
-A bad or expired token throws `UnauthorizedError` with the server message and no API-key
-advice. A bucket with signed URLs off throws an `IronflowError` with code
+Errors: `PreconditionFailedError` (412), `PayloadTooLargeError` (413) and
+`UnsupportedMediaTypeError` (415) come from `@ironflow/browser`. `ConflictError` (409) and
+`UnauthorizedError` come from `@ironflow/core`. A bad or expired token throws
+`UnauthorizedError` with the server message and no API-key advice. A bucket with signed URLs off throws an `IronflowError` with code
 `SIGNED_URLS_DISABLED`.
 
 ## Config Management
@@ -1280,46 +1290,36 @@ const role = await ironflow.roles.get('role_xyz789');
 // Update a role
 const updated = await ironflow.roles.update('role_xyz789', { name: 'senior-editor' });
 
-// Assign a policy to a role
-await ironflow.roles.assignPolicy('role_xyz789', 'policy_abc');
-
-// Remove a policy from a role
-await ironflow.roles.removePolicy('role_xyz789', 'policy_abc');
-
-// List policies assigned to a role
-const assignedPolicies = await ironflow.roles.listPolicies('role_xyz789');
-
 // Delete a role
 await ironflow.roles.delete('role_xyz789');
 ```
 
-### Policies
+### Policy set
+
+The Rego policy set of the organization (authorization Layer 2, deny only). A new set starts in `monitor` mode.
 
 ```typescript
-// Create a policy
-const policy = await ironflow.policies.create({
-  name: 'allow-read',
-  effect: 'deny',
-  actions: 'read',
-  resources: '*',
-  org_id: 'org_abc123',
+import { POLICY_SET_ERROR_CODES, PreconditionFailedError } from '@ironflow/browser';
+
+const current = await ironflow.policySet.get(); // version 0 when the org has no set
+const saved = await ironflow.policySet.put(
+  { modules: { 'authz.rego': rego }, mode: 'monitor' }, // omit mode to keep the current mode
+  current.version,                                      // ifVersion: the version you read
+);
+
+await ironflow.policySet.validate({ modules: { 'authz.rego': rego } });
+const result = await ironflow.policySet.dryRun({
+  set: { modules: { 'authz.rego': rego } },             // omit to evaluate the active set
+  input: { request: { action: 'runs:delete' }, subject: { roles: ['member'] } },
 });
-
-// List policies (optionally filtered by org)
-const policies = await ironflow.policies.list('org_abc123');
-
-// Get a specific policy
-const policy = await ironflow.policies.get('policy_abc');
-
-// Update a policy
-const updated = await ironflow.policies.update('policy_abc', {
-  name: 'allow-read-write',
-  actions: 'read,write',
-});
-
-// Delete a policy
-await ironflow.policies.delete('policy_abc');
+const versions = await ironflow.policySet.versions();
+const v3 = await ironflow.policySet.version(3);
+await ironflow.policySet.rollback(3, saved.version);      // keeps the active mode
 ```
+
+A 412 throws `PreconditionFailedError`. `IronflowError.code` is one of `POLICY_SET_ERROR_CODES`. `enforcement_active` on the result is `false` when the server stores the set but does not enforce it.
+
+A 503 with the code `POLICY_SET_ERROR_CODES.notPropagated` is not retryable. The write committed as the version in the message. Send the same request again with `ifVersion` set to that version (a no-op that finishes propagation). Never send it again with the old version.
 
 ### Rotating Credentials at Runtime
 
@@ -1594,7 +1594,7 @@ function ConnectionStatus() {
 import { ironflow } from '@ironflow/browser';
 
 ironflow.configure({
-  serverUrl: process.env.NEXT_PUBLIC_IRONFLOW_URL ?? 'http://localhost:9123',
+  serverUrl: process.env.NEXT_PUBLIC_IRONFLOW_SERVER_URL ?? 'http://localhost:9123',
   auth: {
     token: session.accessToken,
   },
@@ -1773,6 +1773,8 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Config types:** `ConfigResponse`, `ConfigEntry`, `ConfigWatchCallbacks`, `ConfigWatchEvent`
 
+**File storage types:** `FileBucketConfig`, `FileBucketInfo`, `FileInfo`, `FileObject`, `ListFilesOptions`, `ListFilesResult`, `PutFileOptions`, `GetFileOptions`, `MoveFileOptions`, `CopyFileOptions`, `SignUploadOptions`, `SignedUrl`, `BrowserFileBody`
+
 **Browser-specific types:** `IronflowClient` (type only — construct through `ironflow` or `createClient()`), `IronflowConfig`, `IronflowConfigOptions`, `ReconnectConfig`, `VisibilityConfig`, `AuthConfig`, `BrowserSubscribeOptions`, `SubscriptionGroup`, `Transport`, `TransportCallbacks`, `TransportFactory`, `TransportOptions`
 
 **Agent types:** `AgentsNamespace`, `AgentInvokeOptions`, `AgentInvokeResult`, `AgentProgressEvent`, `AgentStepEvent`, `AgentSubscribeCallbacks`
@@ -1783,7 +1785,9 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`, `DEFAULT_CONFIG`, `mergeConfig`, `createWebSocketTransport`, `createConnectRPCTransport`, `queueDbName`
 
-**Classes:** `BrowserKVClient`, `BrowserKVBucketHandle`, `BrowserConfigClient`, `SubscriptionManager`, `OfflineClient`, `createClient`
+**Classes:** `BrowserKVClient`, `BrowserKVBucketHandle`, `BrowserFilesClient`, `BrowserFileBucketHandle`, `BrowserConfigClient`, `SubscriptionManager`, `OfflineClient`, `createClient`
+
+**Signed URL helpers:** `uploadToSignedUrl`, `downloadFromSignedUrl`
 
 ## Links
 

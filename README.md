@@ -10,12 +10,14 @@ This repository hosts the **public source** of the [Ironflow](https://ironflow.r
 | [`@ironflow/browser`](https://www.npmjs.com/package/@ironflow/browser) | [`packages/browser/`](packages/browser) |
 | [`@ironflow/node`](https://www.npmjs.com/package/@ironflow/node) | [`packages/node/`](packages/node) |
 | [`@ironflow/langgraph`](https://www.npmjs.com/package/@ironflow/langgraph) | [`packages/langgraph/`](packages/langgraph) |
+| [`@ironflow/agent`](https://www.npmjs.com/package/@ironflow/agent) | [`packages/agent/`](packages/agent) |
 
-All four packages version in lockstep.
+All five packages version in lockstep.
 
 ## What lives here
 
 - `.ts` source for the SDK packages above
+- `.agents/skills/`: the Ironflow skills that `@ironflow/agent` bundles into its `dist/skills` at build time
 - Generated protocol code (`packages/core/src/gen/`) vendored from the engine repo
 - `pnpm-workspace.yaml`, root `package.json`, and per-package configs needed to build locally
 - `LICENSE` and security policy

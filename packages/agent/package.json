@@ -1,0 +1,31 @@
+{
+  "name": "@ironflow/agent",
+  "version": "0.44.0",
+  "description": "Ironflow agent for ACP editors (Zed, JetBrains): writes Ironflow application code",
+  "type": "module",
+  "bin": { "ironflow-agent": "./dist/cli.js" },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc --build tsconfig.build.json && node scripts/copy-skills.mjs",
+    "test": "pnpm typecheck && vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.8.0",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@flue/runtime": "2.2.2",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.5",
+    "@vitest/coverage-v8": "5.0.3",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  },
+  "engines": { "node": ">=22.19.0" },
+  "license": "LicenseRef-Ironflow-EULA"
+}

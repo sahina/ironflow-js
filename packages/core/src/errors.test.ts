@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   IronflowError,
   ConnectionError,
@@ -342,6 +342,34 @@ describe("isRetryable", () => {
     expect(isRetryable(123)).toBe(true);
     expect(isRetryable({})).toBe(true);
   });
+
+  it.each([
+    { retryable: false },
+    Object.assign(new Error("unrelated"), { retryable: false }),
+  ])("ignores retryable on unrelated thrown values: %j", (error) => {
+    expect(isIronflowError(error)).toBe(false);
+    expect(isRetryable(error)).toBe(true);
+  });
+});
+
+describe("errors from another module instance", () => {
+  it("recognizes the base class and preserves both subclass retry flags", async () => {
+    vi.resetModules();
+    const second = await import("./errors.js");
+    expect(second.IronflowError).not.toBe(IronflowError);
+
+    const errors = [
+      [new second.IronflowError("base"), false],
+      [new second.NonRetryableError("permanent failure"), false],
+      [new second.ConnectionError("connection lost"), true],
+    ] as const;
+
+    for (const [error, retryable] of errors) {
+      expect(error).not.toBeInstanceOf(IronflowError);
+      expect(isIronflowError(error)).toBe(true);
+      expect(isRetryable(error)).toBe(retryable);
+    }
+  });
 });
 
 describe("isIronflowError", () => {
@@ -440,5 +468,36 @@ describe("fileErrorFor retry flag", () => {
     expect(conflict).toBeInstanceOf(ConflictError);
     expect(conflict.retryable).toBe(true);
     expect(fileErrorFor(409, "busy").retryable).toBe(false);
+  });
+});
+
+describe("POLICY_SET_ERROR_CODES", () => {
+  it("equals the server's code strings", async () => {
+    const { POLICY_SET_ERROR_CODES } = await import("./errors.js");
+    expect(Object.values(POLICY_SET_ERROR_CODES).sort()).toEqual(
+      [
+        "policy_set_compile_error",
+        "policy_set_v0_syntax",
+        "policy_set_reserved_namespace",
+        "policy_set_builtin_forbidden",
+        "policy_set_schema_error",
+        "policy_set_entrypoint_type",
+        "policy_set_bad_file_name",
+        "policy_set_too_large",
+        "policy_set_compile_timeout",
+        "policy_set_bad_mode",
+        "policy_set_bad_decision",
+        "policy_set_sprintf_format",
+        "policy_set_bad_request",
+        "policy_set_forbidden",
+        "policy_set_not_found",
+        "policy_set_version_conflict",
+        "policy_set_precondition_required",
+        "policy_set_self_lockout",
+        "policy_set_rate_limited",
+        "policy_set_busy",
+        "policy_set_not_propagated",
+      ].sort()
+    );
   });
 });

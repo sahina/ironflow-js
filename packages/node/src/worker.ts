@@ -30,7 +30,7 @@ import type { WorkerConfig, Worker } from "./types.js";
 import { ExecutionContext } from "./internal/context.js";
 import { createStepClient, executeCompensations } from "./step.js";
 import { isYieldSignal, type YieldInfo } from "./internal/errors.js";
-import { startProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
+import { startProjectionRunners, stopProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
@@ -118,6 +118,7 @@ class IronflowWorker implements Worker {
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private abortController?: AbortController;
   private projectionRunners: ProjectionRunner[] = [];
+  private projectionsStopped: Promise<void> = Promise.resolve();
   private drainPromise?: Promise<void>;
   private removeSignalDrain?: () => void;
 
@@ -211,6 +212,7 @@ class IronflowWorker implements Worker {
     }
 
     await this.drainPromise;
+    await this.projectionsStopped;
 
     this.logger.info("Worker stopped");
   }
@@ -237,6 +239,7 @@ class IronflowWorker implements Worker {
         this.logger.warn(`Drain deadline reached; cancelling ${this.activeJobs.size} active jobs`);
       }
       this.stop();
+      await this.projectionsStopped;
     })();
     return this.drainPromise;
   }
@@ -255,11 +258,7 @@ class IronflowWorker implements Worker {
       this.heartbeatTimer = undefined;
     }
 
-    // Stop projection runners
-    for (const runner of this.projectionRunners) {
-      runner.stop().catch(() => {});
-    }
-    this.projectionRunners = [];
+    this.stopProjectionRunners();
 
     // Cancel all active jobs
     for (const job of this.activeJobs.values()) {
@@ -287,10 +286,7 @@ class IronflowWorker implements Worker {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = undefined;
     }
-    for (const runner of this.projectionRunners) {
-      runner.stop().catch(() => {});
-    }
-    this.projectionRunners = [];
+    this.stopProjectionRunners();
 
     const baseUrl = this.config.serverUrl!.replace(/\/$/, "");
 
@@ -366,7 +362,15 @@ class IronflowWorker implements Worker {
       headers: this.buildHeaders(),
       logger: this.logger,
       signal: this.abortController?.signal,
+      after: this.projectionsStopped,
     });
+  }
+
+  // Not awaited: replacements wait via `after`, so a slow projection save
+  // delays only its own replacement, not job polling.
+  private stopProjectionRunners(): void {
+    this.projectionsStopped = stopProjectionRunners(this.projectionRunners, this.logger, this.projectionsStopped);
+    this.projectionRunners = [];
   }
 
   /**

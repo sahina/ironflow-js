@@ -2,7 +2,7 @@
   "name": "@ironflow/js-sdk-mirror",
   "private": true,
   "version": "0.0.0",
-  "description": "Public source mirror for Ironflow JS SDK packages (@ironflow/core, @ironflow/browser, @ironflow/node, @ironflow/langgraph)",
+  "description": "Public source mirror for Ironflow JS SDK packages (@ironflow/core, @ironflow/browser, @ironflow/node, @ironflow/langgraph, @ironflow/agent)",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=1 build",
     "test": "pnpm -r test",

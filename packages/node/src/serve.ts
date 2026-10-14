@@ -26,6 +26,7 @@ import {
   createNoopLogger,
   HEADERS,
   DEFAULT_ENVIRONMENT,
+  getConfiguredServerUrl,
   type ValidatedPushRequest,
 } from "@ironflow/core";
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -239,7 +240,7 @@ export function serve(config: ServeConfig): UniversalHandler {
           const event = await wh.config.transform(payload);
 
           // Emit event to Ironflow server if configured
-          const emitUrl = config.serverUrl || process.env.IRONFLOW_URL;
+          const emitUrl = config.serverUrl || getConfiguredServerUrl();
           if (emitUrl) {
             const emitBody: Record<string, unknown> = {
               event: event.name,
@@ -342,7 +343,7 @@ export function serve(config: ServeConfig): UniversalHandler {
       }
 
       // Execute function
-      const serverUrl = config.serverUrl || process.env.IRONFLOW_URL || process.env.IRONFLOW_SERVER_URL;
+      const serverUrl = config.serverUrl || getConfiguredServerUrl();
       const response = await executeHandler(fn, pushRequest, config.eventDefinitions, serverUrl, runEnvironment);
       return sendResponse(200, response);
     } catch (error) {

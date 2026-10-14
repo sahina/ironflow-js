@@ -42,6 +42,8 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     UnauthorizedError: actual.UnauthorizedError,
     ConflictError: actual.ConflictError,
     ContendedError: actual.ContendedError,
+    PreconditionFailedError: actual.PreconditionFailedError,
+    PreconditionRequiredError: actual.PreconditionRequiredError,
     ValidationError: actual.ValidationError,
     TriggerSyncResponseSchema: actual.TriggerSyncResponseSchema,
     projectionStateFromWire: actual.projectionStateFromWire,
@@ -63,7 +65,7 @@ vi.mock("@ironflow/core", async (importOriginal) => {
 
 // Import after mocking
 const { createClient } = await import("./client.js");
-const { ConflictError, ContendedError } = await import("@ironflow/core");
+const { ConflictError, ContendedError, PreconditionFailedError, PreconditionRequiredError } = await import("@ironflow/core");
 
 describe("IronflowClient", () => {
   afterEach(() => {
@@ -3780,20 +3782,65 @@ describe("IronflowClient", () => {
       );
     });
 
-    it("lists role policies", async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ policies: [{ id: "policy-1" }] }),
+    describe("policySet (K01, K02, K03)", () => {
+      const json = (status: number, body: unknown) => ({
+        ok: status < 400,
+        status,
+        statusText: "",
+        headers: new Headers(),
+        json: () => Promise.resolve(body),
       });
-      vi.stubGlobal("fetch", mockFetch);
 
-      const policies = await createClient().roles.listPolicies("role/1");
-      expect(policies[0]?.id).toBe("policy-1");
-      expect(mockFetch).toHaveBeenCalledWith(
-        expect.stringContaining("/api/v1/roles/role%2F1/policies"),
-        expect.objectContaining({ method: "GET" })
-      );
+      it("K01 sends the right method, path, If-Match and body", async () => {
+        const calls: Array<{ method: string; url: string; headers: Record<string, string>; body?: string }> = [];
+        vi.stubGlobal(
+          "fetch",
+          vi.fn(async (url: string, init: RequestInit) => {
+            calls.push({ method: init.method as string, url, headers: init.headers as Record<string, string>, body: init.body as string });
+            return json(200, { version: 2, modules: {}, mode: "monitor", enforcement_active: true, versions: [] });
+          })
+        );
+        const client = createClient();
+        await client.policySet.get();
+        await client.policySet.put({ modules: { "a.rego": "package p\n" }, mode: "enforce" }, 1);
+        await client.policySet.rollback(1, 2);
+        await client.policySet.version(1);
+        expect(calls.map((c) => `${c.method} ${new URL(c.url).pathname}`)).toEqual([
+          "GET /api/v1/policy-set",
+          "PUT /api/v1/policy-set",
+          "POST /api/v1/policy-set/versions/1/rollback",
+          "GET /api/v1/policy-set/versions/1",
+        ]);
+        expect(calls[1]?.headers["If-Match"]).toBe("1");
+        expect(JSON.parse(calls[1]?.body ?? "{}").mode).toBe("enforce");
+        expect(calls[2]?.headers["If-Match"]).toBe("2");
+      });
+
+      it("K02 maps 412 and 428 to typed errors", async () => {
+        vi.stubGlobal("fetch", vi.fn(async () => json(412, { error: "changed", code: "policy_set_version_conflict" })));
+        await expect(createClient().policySet.put({ modules: {} }, 0)).rejects.toBeInstanceOf(PreconditionFailedError);
+        vi.stubGlobal("fetch", vi.fn(async () => json(428, { error: "send If-Match", code: "policy_set_precondition_required" })));
+        await expect(createClient().policySet.put({ modules: {} }, 0)).rejects.toBeInstanceOf(PreconditionRequiredError);
+      });
+
+      it("K02 a 503 policy_set_not_propagated keeps its code and the PUT is not resent", async () => {
+        const mockFetch = vi.fn(async () =>
+          json(503, { error: "saved as version 3 but not yet active", code: "policy_set_not_propagated", retryable: false })
+        );
+        vi.stubGlobal("fetch", mockFetch);
+        await expect(createClient().policySet.put({ modules: {} }, 2)).rejects.toMatchObject({
+          code: "policy_set_not_propagated",
+          status: 503,
+          retryable: false,
+        });
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+
+      it("K03 has no CEL policy or role-policy methods", () => {
+        const client = createClient() as unknown as Record<string, unknown>;
+        expect(client.policies).toBeUndefined();
+        expect((client.roles as Record<string, unknown>).assignPolicy).toBeUndefined();
+      });
     });
 
     it("changes the authenticated user's password", async () => {

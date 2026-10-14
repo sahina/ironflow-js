@@ -159,6 +159,11 @@ describe("getServerUrl", () => {
     process.env.IRONFLOW_SERVER_URL = "https://custom.example.com";
     expect(getServerUrl()).toBe("https://custom.example.com");
   });
+
+  it("treats a blank env var as unset", () => {
+    process.env.IRONFLOW_SERVER_URL = "  ";
+    expect(getServerUrl()).toBe(DEFAULT_SERVER_URL);
+  });
 });
 
 describe("getWebSocketUrl", () => {

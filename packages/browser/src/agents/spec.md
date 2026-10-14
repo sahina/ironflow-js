@@ -174,6 +174,8 @@ function subscribe(client, runId, callbacks): Subscription {
 - `onCancelled?()`
 - `onError?(err)` — transport / parse errors
 
+The promise resolves when the subscription attaches, before any replayed event arrives. The caller owns the subscription's lifetime: do not unsubscribe as soon as the await returns, or the replay is lost. To stop after the run settles, call `unsubscribe()` from `onComplete`, `onFailed` or `onCancelled`. The SDK does not close the subscription on a terminal event, because `ResumeRun` can move a failed run back to running under the same runId.
+
 ## `readMemory` (S2)
 
 Typed read of agent memory projection state, with optional read-your-writes catchup.

@@ -76,7 +76,7 @@ jobs:
           VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           set -eu
-          for pkg in core node browser langgraph; do
+          for pkg in core node browser langgraph agent; do
             file="packages/${pkg}/package.json"
             pkg_version=$(node -p "require('./${file}').version")
             if [ "$pkg_version" != "$VERSION" ]; then
@@ -91,7 +91,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/packs"
-          for pkg in core node browser langgraph; do
+          for pkg in core node browser langgraph agent; do
             (cd "packages/$pkg" && pnpm pack --pack-destination "$RUNNER_TEMP/packs")
             # The publish job finds each tarball by this name and cannot repack it.
             tarball="$RUNNER_TEMP/packs/ironflow-${pkg}-${VERSION}.tgz"
@@ -142,7 +142,7 @@ jobs:
           # Cost a full v0.30.0 release: all four packages 404'd on auth, job
           # went green in 36s, npm stayed on 0.29.0.
           set -euo pipefail
-          for pkg in core node browser langgraph; do
+          for pkg in core node browser langgraph agent; do
             tarball="$RUNNER_TEMP/packs/ironflow-${pkg}-${VERSION}.tgz"
             echo "==> Publishing @ironflow/${pkg} from ${tarball}"
             log=$(mktemp)

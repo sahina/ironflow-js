@@ -24,7 +24,7 @@ function isLoopback(hostname: string): boolean {
 /** Pure ADR 0098 reader: returns the variables to set, or undefined for "do nothing". */
 export function resolveDiscovery({ env, cwd, readFile }: DiscoveryInput): Record<string, string> | undefined {
   if (env.IRONFLOW_NO_DISCOVERY === "1") return undefined;
-  if (env.IRONFLOW_URL || env.IRONFLOW_SERVER_URL || env.IRONFLOW_API_KEY) return undefined;
+  if (env.IRONFLOW_SERVER_URL || env.IRONFLOW_API_KEY) return undefined;
 
   let text: string | null = null;
   for (let dir = cwd; ; dir = dirname(dir)) {
@@ -49,7 +49,7 @@ export function resolveDiscovery({ env, cwd, readFile }: DiscoveryInput): Record
     return undefined;
   }
 
-  const out: Record<string, string> = { IRONFLOW_URL: url, IRONFLOW_SERVER_URL: url };
+  const out: Record<string, string> = { IRONFLOW_SERVER_URL: url };
   if (typeof apiKey === "string" && apiKey) out.IRONFLOW_API_KEY = apiKey;
   if (typeof environment === "string" && environment && !env.IRONFLOW_ENV) out.IRONFLOW_ENV = environment;
   return out;

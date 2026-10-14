@@ -20,7 +20,7 @@ import {
   isRetryable,
   createLogger,
   createNoopLogger,
-  DEFAULT_SERVER_URL,
+  getServerUrl,
   DEFAULT_WORKER,
   HEADERS,
   UnauthenticatedError,
@@ -60,7 +60,7 @@ import {
   registerFunctions,
   resolveEnvironment,
 } from "./internal/register-functions.js";
-import { startProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
+import { startProjectionRunners, stopProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
 import { drainOnSignal } from "./internal/drain-on-signal.js";
 import { SDK_VERSION } from "./version.js";
 
@@ -130,6 +130,7 @@ class StreamingWorker implements Worker {
   private activeJobs: Map<string, ActiveJob> = new Map();
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private projectionRunners: ProjectionRunner[] = [];
+  private projectionsStopped: Promise<void> = Promise.resolve();
   private abortController?: AbortController;
   private sendMessage?: (msg: WorkerMessage) => void;
   private drainPromise?: Promise<void>;
@@ -141,7 +142,7 @@ class StreamingWorker implements Worker {
     hydrateEnvFromDiscovery();
     this.config = {
       ...config,
-      serverUrl: config.serverUrl || DEFAULT_SERVER_URL,
+      serverUrl: config.serverUrl || getServerUrl(),
     };
     this.workerId = generateWorkerId();
     this.maxConcurrentJobs =
@@ -246,6 +247,7 @@ class StreamingWorker implements Worker {
       }
     }
 
+    await this.projectionsStopped;
     this.logger.info("Streaming worker stopped");
   }
 
@@ -286,6 +288,7 @@ class StreamingWorker implements Worker {
         }
       }
       this.stop();
+      await this.projectionsStopped;
     })();
     return this.drainPromise;
   }
@@ -313,10 +316,10 @@ class StreamingWorker implements Worker {
     this.activeJobs.clear();
   }
 
+  // Not awaited: replacements wait via `after`, so a slow projection save
+  // delays only its own replacement, not the job stream.
   private stopProjectionRunners(): void {
-    for (const runner of this.projectionRunners) {
-      runner.stop().catch(() => {});
-    }
+    this.projectionsStopped = stopProjectionRunners(this.projectionRunners, this.logger, this.projectionsStopped);
     this.projectionRunners = [];
   }
 
@@ -331,6 +334,7 @@ class StreamingWorker implements Worker {
    * Connect to the server via ConnectRPC bidirectional streaming
    */
   private async connect(): Promise<void> {
+    if (this.state === "draining" || this.state === "stopped") return;
     this.state = "connecting";
 
     // Clean up from a previous connection (e.g. after a server restart).
@@ -439,6 +443,7 @@ class StreamingWorker implements Worker {
       headers: this.buildHeaders(),
       logger: this.logger,
       signal: this.abortController?.signal,
+      after: this.projectionsStopped,
     });
 
     // Start heartbeat

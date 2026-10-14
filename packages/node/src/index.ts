@@ -168,6 +168,7 @@ export type {
   StreamInfo,
   StreamListEntry,
   EntityHistoryEntry,
+  EntityHistoryOptions,
 
   // Secrets
   SecretsClient,
@@ -253,9 +254,12 @@ export type {
   Role,
   CreateRoleInput,
   UpdateRoleInput,
-  Policy,
-  CreatePolicyInput,
-  UpdatePolicyInput,
+  PolicySet,
+  PolicySetMode,
+  PolicySetInput,
+  PolicySetVersion,
+  PolicySetDryRunInput,
+  PolicySetDryRunResult,
 
   // Webhook management types
   WebhookSource,
@@ -312,6 +316,8 @@ export {
   ConflictError,
   ContendedError,
   PreconditionFailedError,
+  PreconditionRequiredError,
+  POLICY_SET_ERROR_CODES,
   PayloadTooLargeError,
   UnsupportedMediaTypeError,
   isRetryable,

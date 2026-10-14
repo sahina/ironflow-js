@@ -16,7 +16,7 @@ export function IronflowProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Configure once at app startup
     ironflow.configure({
-      serverUrl: import.meta.env.VITE_IRONFLOW_URL || "http://localhost:9123",
+      serverUrl: import.meta.env.VITE_IRONFLOW_SERVER_URL || "http://localhost:9123",
       transport: "connectrpc",
       reconnect: { enabled: true },
       visibility: { pauseOnHidden: true, reconnectOnVisible: true },

@@ -68,7 +68,7 @@ export interface ProjectionConfig<TState = unknown, TEvent = unknown> {
   handler: ManagedProjectionHandler<TState, TEvent> | ExternalProjectionHandler<TEvent>;
   /** Initial state factory (required for managed, absent for external) */
   initialState?: () => TState;
-  /** JSONPath for partition key extraction (e.g., "$.data.customerId") */
+  /** JSONPath for partition key extraction (e.g., "$.customerId") */
   partitionKey?: string;
   /** Max retries per event (default 3) */
   maxRetries?: number;

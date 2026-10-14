@@ -53,6 +53,11 @@ interface RunEventData {
  * Promise-returning wrapper. Returns a Subscription whose `unsubscribe()`
  * is idempotent.
  *
+ * The promise resolves when the subscription attaches, before any replayed
+ * event arrives, so the caller owns the lifetime: unsubscribe from a
+ * terminal callback, not right after the await. The SDK does not close on a
+ * terminal event, because ResumeRun can reopen a failed run under the same runId.
+ *
  * Topic dispatch:
  *   system.run.{runId}.completed             → onComplete
  *   system.run.{runId}.failed                → onFailed
@@ -71,8 +76,8 @@ export async function subscribe(
   const sub = await client.subscribe<RunEventData>(
     `system.run.${runId}.>`,
     {
-      // Default replay 1000 covers events emitted between `agents.invoke`
-      // returning a runId via `onRunStarted` and this subscribe attaching.
+      // Default replay 1000 matches the server's ReplayMaxEvents cap, so a
+      // settled run that fits within the cap replays all of its events.
       replay: opts.replay ?? 1000,
       onEvent: (event: SubscriptionEvent<RunEventData>) =>
         dispatch(event, runId, callbacks),

@@ -48,8 +48,9 @@ Docs: <https://docs.ironflow.run>
 31. [Webhook Management Types](#webhook-management-types)
 32. [User and Tenant Types](#user-and-tenant-types)
 33. [AuditTrailEntry](#audittrailentry)
-34. [Convenience Aliases](#convenience-aliases)
-35. [Sub-Path Exports](#sub-path-exports)
+34. [File Storage Types](#file-storage-types)
+35. [Convenience Aliases](#convenience-aliases)
+36. [Sub-Path Exports](#sub-path-exports)
 
 ---
 
@@ -123,7 +124,7 @@ interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   triggers: Trigger[];
   /** Retry configuration for failed steps */
   retry?: RetryConfig;
-  /** Function timeout in milliseconds (default: 600000 = 10 minutes) */
+  /** Function timeout in milliseconds (unset: no per-function budget) */
   timeout?: number;
   /** Concurrency control configuration */
   concurrency?: ConcurrencyConfig;
@@ -131,7 +132,7 @@ interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   debounce?: DebounceConfig;
   /** Execution mode: "push" for serverless, "pull" for workers */
   mode?: ExecutionMode;
-  /** JSON path for actor-based sticky routing */
+  /** JSON path for an actor key; stored by the server, not used for routing yet */
   actorKey?: string;
   /** Zod schema; validated at runtime before the handler runs */
   schema?: TEventSchema;
@@ -753,7 +754,7 @@ interface ListRunsResult {
 ### InvokeResult, InvokeSyncOptions, InvokeSyncResult
 
 ```typescript
-/** Returned by emit() -- the runs the event created, no waiting. */
+/** Same shape as EmitResult, the return type of emit(). */
 interface InvokeResult {
   runIds: string[];
   eventId: string;
@@ -1339,7 +1340,7 @@ interface ConfigWatcher {
 
 ## Auth Types
 
-Types for API key, organization, role, and policy management.
+Types for API key, organization, role, and policy-set management.
 
 ### API Keys
 
@@ -1407,41 +1408,60 @@ interface UpdateRoleInput {
 }
 ```
 
-### Policies
+### Policy set
 
 ```typescript
-interface Policy {
-  id: string;
-  org_id: string;
-  name: string;
-  effect: "allow" | "deny";
-  actions: string;
-  resources: string;
-  condition?: string;
+type PolicySetMode = "enforce" | "monitor";
+
+interface PolicySet {
+  /** 0 when the org has no set. */
+  version: number;
+  modules: Record<string, string>;
+  decision?: string;
+  mode: PolicySetMode | "";
+  updated_at?: string;
+  updated_by?: string;
+  /** False when the server stores the set but does not enforce it. */
+  enforcement_active?: boolean;
+}
+
+interface PolicySetInput {
+  modules: Record<string, string>;
+  decision?: string;
+  /** Omitted: keep the current mode; a new set starts in "monitor". */
+  mode?: PolicySetMode;
+}
+
+interface PolicySetVersion {
+  version: number;
+  mode: PolicySetMode;
+  decision?: string;
   created_at: string;
-  updated_at: string;
+  created_by?: string;
 }
 
-// #943 (ADR 0016 T2): create/update inputs accept effect="deny" only.
-// The READ type Policy keeps "allow" in its union so legacy rows fetched
-// during the upgrade window can be rendered.
-interface CreatePolicyInput {
-  name: string;
-  effect: "deny";
-  actions: string;
-  resources: string;
-  condition?: string;
-  org_id: string;
+interface PolicySetDryRunInput {
+  /** Omitted: evaluate against the active set. */
+  set?: PolicySetInput;
+  input: { request: Record<string, unknown>; subject: Record<string, unknown>; [key: string]: unknown };
+  explain?: boolean;
 }
 
-interface UpdatePolicyInput {
-  name?: string;
-  effect?: "deny";
-  actions?: string;
-  resources?: string;
-  condition?: string;
+interface PolicySetDryRunResult {
+  decision: "allow" | "deny"; // the set's own verdict, whatever its mode
+  mode: PolicySetMode;
+  version?: number;
+  reasons?: string[];
+  reasons_omitted?: number;
+  entrypoint?: string;
+  error?: string;
+  explain?: string;
 }
 ```
+
+`POLICY_SET_ERROR_CODES` holds the values of `IronflowError.code` that the policy-set routes return: `compileError`, `v0Syntax`, `reservedNamespace`, `builtinForbidden`, `schemaError`, `entrypointType`, `badFileName`, `tooLarge`, `compileTimeout`, `badMode`, `badDecision`, `sprintfFormat`, `badRequest`, `forbidden`, `notFound`, `versionConflict`, `preconditionRequired`, `selfLockout`, `rateLimited`, `busy` and `notPropagated`.
+
+`notPropagated` (HTTP 503) is not retryable. The write committed as the version in the message. Send the same request again with `ifVersion` set to that version (a no-op that finishes propagation). Never send it again with the old version.
 
 ---
 
@@ -1502,9 +1522,9 @@ interface WebhookEvent {
 
 interface WebhookConfig {
   id: string;
-  /** Verify the webhook signature. Return the parsed payload or throw. */
+  /** Verify the webhook signature. Throw to reject (HTTP 401). The return value is ignored. */
   verify: (req: WebhookRequest) => unknown | Promise<unknown>;
-  /** Transform the verified payload into an Ironflow event. */
+  /** Transform the JSON-parsed request body into an Ironflow event. */
   transform: (payload: unknown) => WebhookEvent | Promise<WebhookEvent>;
 }
 
@@ -1543,7 +1563,7 @@ interface ProjectionConfig<TState = unknown, TEvent = unknown> {
   handler: ManagedProjectionHandler<TState, TEvent> | ExternalProjectionHandler<TEvent>;
   /** Initial state factory (required for managed, absent for external) */
   initialState?: () => TState;
-  /** JSONPath for partition key extraction (e.g., "$.data.customerId") */
+  /** JSONPath for partition key extraction (e.g., "$.customerId") */
   partitionKey?: string;
   /** Max retries per event (default 3) */
   maxRetries?: number;
@@ -2161,6 +2181,8 @@ import {
 } from '@ironflow/core';
 ```
 
+The wire types `SchemaWire` and `WaitWireResult` are exported with `schemaFromWire` and `waitResultFromWire`.
+
 ---
 
 ## Constants
@@ -2239,7 +2261,7 @@ import {
   JSON_HEADERS,
   // { "Content-Type": "application/json" }
 
-  getServerUrl,       // () => string  (reads IRONFLOW_SERVER_URL or returns default)
+  getServerUrl,       // () => string  (reads IRONFLOW_SERVER_URL, or returns default)
   getWebSocketUrl,    // (serverUrl?) => string  (converts http->ws, appends /ws)
 } from '@ironflow/core';
 ```
@@ -2931,6 +2953,108 @@ interface AuditTrailEntry {
 
 ---
 
+## File Storage Types
+
+Types and helpers for the file storage API. `@ironflow/node` (`client.files()`) and `@ironflow/browser` (`ironflow.files()`) share them.
+
+```typescript
+interface FileBucketConfig {
+  maxObjectBytes?: number;
+  allowedContentTypes?: string[];
+  emitEvents?: boolean;
+  allowSignedUrls?: boolean;
+}
+
+interface FileBucketInfo {
+  name: string;
+  maxObjectBytes: number;
+  allowedContentTypes: string[];
+  emitEvents: boolean;
+  allowSignedUrls: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface FileInfo {
+  bucket: string;
+  path: string;
+  size: number;
+  contentType: string;
+  sha256: string;
+  etag: string;
+  metadata: Record<string, string>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ListFilesOptions {
+  prefix?: string;
+  delimiter?: "/";
+  cursor?: string;
+  limit?: number;
+}
+
+interface ListFilesResult {
+  files: FileInfo[];
+  prefixes: string[];
+  nextCursor?: string;
+}
+
+interface PutFileOptions {
+  contentType: string;
+  contentLength?: number;
+  metadata?: Record<string, string>;
+  ifMatch?: string;
+  ifNoneMatch?: boolean;
+}
+
+interface GetFileOptions {
+  ifMatch?: string;
+  range?: string;
+}
+
+interface FileObject {
+  body: ReadableStream<Uint8Array>;
+  contentType: string;
+  etag: string;
+  size: number | undefined;
+  arrayBuffer(): Promise<ArrayBuffer>;
+  text(): Promise<string>;
+}
+
+interface MoveFileOptions {
+  toBucket?: string;
+  ifMatch?: string;
+}
+
+interface CopyFileOptions {
+  toBucket?: string;
+}
+
+interface SignUploadOptions {
+  ttlSeconds?: number;
+  maxBytes?: number;
+  contentType?: string;
+  createOnly?: boolean; // the PUT fails with 412 when the path already exists
+}
+
+interface SignedUrl {
+  url: string;
+  expiresAt: string;
+}
+```
+
+Helpers used by both SDKs:
+
+```typescript
+restRetryable(status, body?)             // boolean; the server's `retryable` wins, else 5xx (except 501) and 429
+fileErrorFor(status, message, code?, retryable?) // typed error: 412, 413, 415, 409 map to their classes
+encodeBucketName(name)                   // one URL segment; throws ValidationError on "", "." and ".."
+encodeFilePath(path)                     // percent-encodes each segment, keeps "/"; throws on empty, "." and ".." segments
+```
+
+---
+
 ## Convenience Aliases
 
 ```typescript
@@ -2949,7 +3073,7 @@ The package provides additional entry points for selective imports:
 | `@ironflow/core` | Everything (types, schemas, errors, constants, utils, protocol, patterns) |
 | `@ironflow/core/schemas` | Zod schemas and validation helpers only |
 | `@ironflow/core/protocol` | Protocol types and pattern helpers only |
-| `@ironflow/core/gen` | Generated protobuf/ConnectRPC code (requires optional deps) |
+| `@ironflow/core/gen` | Generated protobuf/ConnectRPC code (requires optional deps). `@ironflow/core/gen/*` imports a single generated file. |
 
 ---
 

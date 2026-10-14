@@ -5,6 +5,7 @@ import {
 import { stepInspectionFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
+import { collectEntityHistory, type EntityHistoryPageWire } from "@ironflow/core";
 import { connectHTTPError, restRetryable, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
  * Ironflow Browser Client
@@ -47,6 +48,7 @@ import type {
   StreamSnapshot,
   StreamListEntry,
   EntityHistoryEntry,
+  EntityHistoryOptions,
   EntitySubscribeOptions,
   GetProjectionOptions,
   ProjectionStatusInfo,
@@ -69,9 +71,11 @@ import type {
   Role,
   CreateRoleInput,
   UpdateRoleInput,
-  Policy,
-  CreatePolicyInput,
-  UpdatePolicyInput,
+  PolicySet,
+  PolicySetInput,
+  PolicySetVersion,
+  PolicySetDryRunInput,
+  PolicySetDryRunResult,
   EventSchema,
   RegisterSchemaInput,
   TestUpcastInput,
@@ -105,6 +109,8 @@ import {
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
+  PreconditionFailedError,
+  PreconditionRequiredError,
   ValidationError,
   createLogger,
   createNoopLogger,
@@ -1867,25 +1873,29 @@ class IronflowClient {
       }));
     },
 
-    /** Get the unified event history for an entity. */
+    /**
+     * Get the full event history for an entity, oldest first. Follows the
+     * server's page cursor until the history is complete. `from` and `to`
+     * limit it to events in that time window (both inclusive), so
+     * `{ to: t }` gives the events that make up the entity's state at `t`.
+     * `limit` caps the number of entries returned.
+     */
     getEntityHistory: async (
       entityId: string,
+      options: EntityHistoryOptions = {},
     ): Promise<EntityHistoryEntry[]> => {
       this.ensureConfigured();
-      const response = await this.streamRequest<{
-        entries?: Array<Record<string, unknown>>;
-      }>(
-        "/ironflow.v1.EntityStreamService/GetEntityHistory",
-        { entityId },
-        undefined,
-        true,
+      return collectEntityHistory(
+        (body) =>
+          this.streamRequest<EntityHistoryPageWire>(
+            "/ironflow.v1.EntityStreamService/GetEntityHistory",
+            body,
+            undefined,
+            true,
+          ),
+        entityId,
+        options,
       );
-      return (response.entries ?? []).map((entry) => ({
-        eventName: String(entry.eventName ?? ""),
-        data: Object.hasOwn(entry, "eventDataValue") ? entry.eventDataValue : entry.eventData,
-        version: Number(entry.entityVersion ?? 0),
-        timestamp: String(entry.timestamp ?? ""),
-      }));
     },
 
     /**
@@ -2433,9 +2443,6 @@ class IronflowClient {
    * // Create a role
    * const role = await ironflow.roles.create({ name: "editor", org_id: "org-1" });
    *
-   * // Assign a policy to the role
-   * await ironflow.roles.assignPolicy(role.id, policyId);
-   *
    * // List roles
    * const roles = await ironflow.roles.list();
    * ```
@@ -2485,104 +2492,71 @@ class IronflowClient {
       this.ensureConfigured();
       await this.restRequest<void>("DELETE", `/api/v1/roles/${encodeURIComponent(id)}`);
     },
-
-    /**
-     * Assign a policy to a role
-     */
-    assignPolicy: async (roleId: string, policyId: string): Promise<void> => {
-      this.ensureConfigured();
-      await this.restRequest<void>(
-        "POST",
-        `/api/v1/roles/${encodeURIComponent(roleId)}/policies`,
-        { policy_id: policyId }
-      );
-    },
-
-    /**
-     * Remove a policy from a role
-     */
-    removePolicy: async (roleId: string, policyId: string): Promise<void> => {
-      this.ensureConfigured();
-      await this.restRequest<void>(
-        "DELETE",
-        `/api/v1/roles/${encodeURIComponent(roleId)}/policies/${encodeURIComponent(policyId)}`
-      );
-    },
-
-    /** List policies assigned to a role. */
-    listPolicies: async (roleId: string): Promise<Policy[]> => {
-      this.ensureConfigured();
-      const response = await this.restRequest<{ policies?: Policy[] }>(
-        "GET",
-        `/api/v1/roles/${encodeURIComponent(roleId)}/policies`
-      );
-      return response.policies ?? [];
-    },
   };
 
   /**
-   * Policy management operations (enterprise-only)
+   * Rego policy set (enterprise-only): the org's authorization policy.
    *
    * @example
    * ```typescript
-   * // Create a deny policy (#943: effect="allow" is rejected at write).
-   * const policy = await ironflow.policies.create({
-   *   name: "deny-prod-delete",
-   *   effect: "deny",
-   *   actions: "delete",
-   *   resources: "irn:ironflow:*:*:*:env_prod:*",
-   *   condition: 'request.environment == "production"',
-   *   org_id: "org-1",
-   * });
-   *
-   * // List policies
-   * const policies = await ironflow.policies.list();
+   * const current = await ironflow.policySet.get();
+   * await ironflow.policySet.put({ modules: { "authz.rego": rego }, mode: "monitor" }, current.version);
    * ```
    */
-  readonly policies = {
-    /**
-     * Create a new policy
-     */
-    create: async (input: CreatePolicyInput): Promise<Policy> => {
+  readonly policySet = {
+    /** The org's Rego policy set (version 0 when there is none). */
+    get: async (): Promise<PolicySet> => {
       this.ensureConfigured();
-      return this.restRequest<Policy>("POST", "/api/v1/policies", input);
+      return this.restRequest<PolicySet>("GET", "/api/v1/policy-set");
     },
 
     /**
-     * List all policies
+     * Replace the set if its version is ifVersion (0 when none). A 412 throws
+     * PreconditionFailedError. A 503 `policy_set_not_propagated` is not retryable: the write
+     * committed as the version named in the message. To finish propagation send the same
+     * request again with ifVersion = that version (a no-op); never re-send with the old version.
      */
-    list: async (orgId?: string): Promise<Policy[]> => {
+    put: async (input: PolicySetInput, ifVersion: number): Promise<PolicySet> => {
       this.ensureConfigured();
-      const query = orgId ? `?org_id=${encodeURIComponent(orgId)}` : "";
-      return this.restRequest<Policy[]>("GET", `/api/v1/policies${query}`);
+      return this.restRequest<PolicySet>("PUT", "/api/v1/policy-set", input, { "If-Match": String(ifVersion) });
+    },
+
+    /** Compile the set without storing it. Rejects with the per-file errors when it is invalid. */
+    validate: async (input: PolicySetInput): Promise<void> => {
+      this.ensureConfigured();
+      await this.restRequest<unknown>("POST", "/api/v1/policy-set/validate", input);
+    },
+
+    /** Evaluate an input against a candidate set, or the active one when `set` is omitted. */
+    dryRun: async (input: PolicySetDryRunInput): Promise<PolicySetDryRunResult> => {
+      this.ensureConfigured();
+      return this.restRequest<PolicySetDryRunResult>("POST", "/api/v1/policy-set/dry-run", input);
+    },
+
+    versions: async (): Promise<PolicySetVersion[]> => {
+      this.ensureConfigured();
+      return (await this.restRequest<{ versions: PolicySetVersion[] }>("GET", "/api/v1/policy-set/versions")).versions;
+    },
+
+    /** One stored version, modules included. */
+    version: async (version: number): Promise<PolicySet> => {
+      this.ensureConfigured();
+      return this.restRequest<PolicySet>("GET", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}`);
     },
 
     /**
-     * Get a policy by ID
+     * Store an earlier version's modules as a new version. The active mode is kept, not restored.
+     * A 503 `policy_set_not_propagated` means the rollback committed: send it again with
+     * ifVersion = the saved version (a no-op that finishes propagation).
      */
-    get: async (id: string): Promise<Policy> => {
+    rollback: async (version: number, ifVersion: number): Promise<PolicySet> => {
       this.ensureConfigured();
-      return this.restRequest<Policy>("GET", `/api/v1/policies/${encodeURIComponent(id)}`);
-    },
-
-    /**
-     * Update a policy
-     */
-    update: async (id: string, input: UpdatePolicyInput): Promise<Policy> => {
-      this.ensureConfigured();
-      return this.restRequest<Policy>(
-        "PATCH",
-        `/api/v1/policies/${encodeURIComponent(id)}`,
-        input
+      return this.restRequest<PolicySet>(
+        "POST",
+        `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}/rollback`,
+        undefined,
+        { "If-Match": String(ifVersion) }
       );
-    },
-
-    /**
-     * Delete a policy
-     */
-    delete: async (id: string): Promise<void> => {
-      this.ensureConfigured();
-      await this.restRequest<void>("DELETE", `/api/v1/policies/${encodeURIComponent(id)}`);
     },
   };
 
@@ -3102,7 +3076,8 @@ class IronflowClient {
     body: unknown,
     handle: (response: Response) => Promise<T>,
     timeoutOverrideMs?: number,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    extraHeaders?: Record<string, string>
   ): Promise<T> {
     // An already-aborted signal fires no `abort` event, so it has to be read
     // rather than listened for — otherwise the request goes out and only the
@@ -3122,6 +3097,7 @@ class IronflowClient {
     try {
       const headers: Record<string, string> = {
         [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...extraHeaders,
       };
 
       if (body !== undefined) {
@@ -3353,9 +3329,10 @@ class IronflowClient {
    * pinned by tests, so pick deliberately if you ever unify them.
    */
   private async restRequest<T>(
-    method: "GET" | "POST" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     path: string,
-    body?: unknown
+    body?: unknown,
+    headers?: Record<string, string>
   ): Promise<T> {
     return this.send(method, path, body, async (response) => {
       // Handle 204 No Content
@@ -3366,13 +3343,12 @@ class IronflowClient {
       if (!response.ok) {
         const errorText = await response.text();
         let errorMessage = `Request failed with status ${response.status}`;
-        let errorJson: { message?: string; retryable?: unknown } | undefined;
+        let errorJson: { message?: string; error?: string; code?: string; retryable?: unknown } | undefined;
         if (errorText) {
-          errorJson = safeJsonParse(errorText) as
-            | { message?: string; code?: string; retryable?: unknown }
-            | undefined;
-          if (errorJson?.message) {
-            errorMessage = errorJson.message;
+          errorJson = safeJsonParse(errorText) as typeof errorJson;
+          // Most REST handlers write {"error": "..."}, not {"message": "..."}.
+          if (errorJson?.message ?? errorJson?.error) {
+            errorMessage = (errorJson.message ?? errorJson.error) as string;
           } else if (errorText) {
             errorMessage = errorText;
           }
@@ -3385,9 +3361,13 @@ class IronflowClient {
             throw new EnterpriseRequiredError(errorMessage);
           case 403:
             throw new UnauthorizedError(errorMessage);
+          case 412:
+            throw new PreconditionFailedError(errorMessage);
+          case 428:
+            throw new PreconditionRequiredError(errorMessage);
           default:
             throw new IronflowError(errorMessage, {
-              code: `HTTP_${response.status}`,
+              code: errorJson?.code ?? `HTTP_${response.status}`,
               status: response.status,
               retryable: isRetryableStatus(response.status, errorJson),
             });
@@ -3395,7 +3375,7 @@ class IronflowClient {
       }
 
       return response.json() as Promise<T>;
-    });
+    }, undefined, undefined, headers);
   }
 
   private mapRunResponse(response: z.infer<typeof RunResponseSchema>): Run {

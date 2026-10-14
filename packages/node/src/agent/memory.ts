@@ -187,7 +187,7 @@ function assertConfigured(config: MemoryConfig | undefined): asserts config {
 function assertBackend(backend: MemoryBackend | undefined): asserts backend {
   if (!backend) {
     throw new IronflowError(
-      "memory() requires a runtime backend — set IRONFLOW_URL (or IRONFLOW_SERVER_URL) so the agent can construct an IronflowClient, or inject a backend via test harness",
+      "memory() requires a runtime backend — set IRONFLOW_SERVER_URL so the agent can construct an IronflowClient, or inject a backend via test harness",
       { code: "AGENT_MEMORY_NO_BACKEND", retryable: false }
     );
   }

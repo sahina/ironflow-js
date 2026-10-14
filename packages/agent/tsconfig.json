@@ -1,0 +1,6 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true, "types": ["node"] },
+  "include": ["src", "test", "eval"],
+  "exclude": ["eval/starter-base", "eval/tasks/*/starter"]
+}

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ironflow fit — {{REPO_NAME}}</title>
+<style>
+  :root{
+    --ivory:#FAF9F5; --clay:#D97757; --oat:#E3DACC; --ink:#1A1915; --muted:#6B675E;
+    --green:#4F7A52; --amber:#C08A3E; --red:#B4503C; --rule:#DDD6C9;
+    --serif:"Iowan Old Style",Georgia,"Times New Roman",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;
+    --mono:"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ivory);color:var(--ink);font-family:var(--sans);
+       font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px;margin:0 auto;padding:48px 32px 96px}
+  header{border-bottom:2px solid var(--ink);padding-bottom:20px;margin-bottom:36px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+           color:var(--muted);margin:0 0 8px}
+  h1{font-family:var(--serif);font-size:40px;line-height:1.15;margin:0 0 6px;font-weight:600}
+  .sub{color:var(--muted);font-size:15px;margin:0}
+  h2{font-family:var(--serif);font-size:26px;margin:56px 0 6px;font-weight:600}
+  h2:first-of-type{margin-top:40px}
+  h3{font-size:17px;margin:26px 0 6px;font-weight:640}
+  .lede{color:var(--muted);font-size:14.5px;margin:0 0 18px}
+  p{margin:0 0 14px}
+  code{font-family:var(--mono);font-size:.88em;background:var(--oat);padding:1px 5px;border-radius:3px}
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.55;background:#FFFDF8;
+      border:1px solid var(--rule);border-left:3px solid var(--clay);border-radius:5px;
+      padding:14px 16px;overflow-x:auto;margin:0 0 14px}
+  pre code{background:none;padding:0;font-size:inherit}
+  .verdict{border:2px solid var(--ink);border-radius:8px;padding:22px 26px;background:#FFFDF8}
+  .verdict.no{border-color:var(--red)} .verdict.eda{border-color:var(--amber)}
+  .verdict-label{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;
+                 color:var(--clay);margin:0 0 8px;font-weight:600}
+  .verdict.no .verdict-label{color:var(--red)} .verdict.eda .verdict-label{color:var(--amber)}
+  .verdict p{font-size:17px;margin:0}
+  table{width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14.5px}
+  th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+     border-bottom:1px solid var(--ink);padding:0 12px 7px 0;font-weight:600}
+  td{border-bottom:1px solid var(--rule);padding:11px 12px 11px 0;vertical-align:top}
+  .swatch{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px}
+  .g{background:var(--green)} .a{background:var(--amber)} .r{background:var(--red)}
+  .cite{font-family:var(--mono);font-size:11.5px;color:var(--muted);word-break:break-all}
+  .card{border:1px solid var(--rule);border-radius:8px;padding:22px 26px;margin:0 0 20px;background:#FFFDF8}
+  .card-head{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
+             border-bottom:1px solid var(--rule);padding-bottom:11px;margin-bottom:16px}
+  .card-head h3{margin:0;font-family:var(--serif);font-size:21px}
+  .badge{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+         border:1px solid var(--rule);border-radius:20px;padding:3px 11px;color:var(--muted);white-space:nowrap}
+  .badge.low{border-color:var(--green);color:var(--green)}
+  .badge.med{border-color:var(--amber);color:var(--amber)}
+  .badge.high{border-color:var(--red);color:var(--red)}
+  .row{display:grid;grid-template-columns:118px 1fr;gap:6px 18px;margin:0 0 14px;font-size:14.5px}
+  .row dt{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding-top:3px}
+  .row dd{margin:0}
+  .snips{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .snip h4{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 7px;font-weight:600}
+  .note{border-left:3px solid var(--clay);padding:2px 0 2px 16px;color:var(--muted);font-size:14.5px;margin:0 0 16px}
+  .warn{border-left-color:var(--red)}
+  figure{margin:0 0 22px}
+  figcaption{font-size:13px;color:var(--muted);margin-top:10px}
+  ol.q{padding-left:20px} ol.q li{margin-bottom:9px}
+  footer{margin-top:64px;padding-top:18px;border-top:1px solid var(--rule);
+         font-size:12.5px;color:var(--muted)}
+  @media (max-width:760px){.snips{grid-template-columns:1fr}.wrap{padding:28px 18px 64px}h1{font-size:30px}}
+  @media print{
+    body{background:#fff;font-size:11.5pt}
+    .wrap{max-width:none;padding:0}
+    .card,.verdict,pre{break-inside:avoid}
+    h2{break-after:avoid;margin-top:28px}
+    a{text-decoration:none;color:inherit}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Ironflow fit analysis</p>
+  <h1>{{REPO_NAME}}</h1>
+  <p class="sub">{{PROJECT_COUNT}} · {{STACK_SUMMARY}} · {{DATE}}</p>
+</header>
+
+<!-- 1. VERDICT. class: "" strong | "no" not-a-fit | "eda" already-doing-EDA -->
+<div class="verdict {{VERDICT_CLASS}}">
+  <p class="verdict-label">{{VERDICT_LABEL}}</p>
+  <p>{{VERDICT_TEXT}}</p>
+</div>
+
+<!-- 2. SCOPE -->
+<h2>What was scanned</h2>
+<p class="lede">Grep and configuration files only. No code was executed and nothing was modified.</p>
+{{SCOPE_TABLE}}
+{{SKIPPED_NOTE}}
+
+<!-- 3. ADOPTION PATH — before the opportunities, always -->
+<h2>Your adoption path</h2>
+<p class="lede">What is available for {{PRIMARY_STACK}} today, stated in full.</p>
+{{ADOPTION_PATH}}
+
+<!-- 4. DIAGRAM. Structure/text use currentColor; accents literal hex. No blank lines inside svg. -->
+<h2>Your architecture today, and with Ironflow</h2>
+<figure>
+{{DIAGRAM_SVG}}
+<figcaption>{{DIAGRAM_CAPTION}}</figcaption>
+</figure>
+
+<!-- 5. READINESS — vendor-neutral, comes before the Ironflow mapping -->
+<h2>Event-driven readiness</h2>
+<p class="lede">Scored from evidence in the codebase, not from self-assessment. Rows 1 and 4 are blocking.</p>
+<table>
+  <thead><tr><th>Check</th><th>Score</th><th>Evidence</th></tr></thead>
+  <tbody>{{READINESS_ROWS}}</tbody>
+</table>
+{{READINESS_VERDICT}}
+
+<!-- 6. OPPORTUNITIES — max 5, ranked by pain evidence -->
+<h2>Where Ironflow helps most</h2>
+<p class="lede">Ranked by evidence of pain, not by architectural elegance. Every claim cites a file and line.</p>
+{{OPPORTUNITIES}}
+
+<!-- 7. ALSO NOTICED -->
+<h2>Also noticed</h2>
+<p class="lede">One signal each. Real, but not a place to start.</p>
+<table>
+  <thead><tr><th>Pattern</th><th>Where</th><th>Ironflow equivalent</th></tr></thead>
+  <tbody>{{ALSO_NOTICED_ROWS}}</tbody>
+</table>
+
+<!-- 8. WHERE IT DOESN'T HELP — mandatory, populated from real findings -->
+<h2>Where Ironflow does not help</h2>
+{{NOT_A_FIT}}
+
+<!-- 9. GOTCHAS -->
+<h2>Before you start</h2>
+{{GOTCHAS}}
+
+<!-- 10. THE INVERTED INTERVIEW -->
+<h2>Three questions that would sharpen this</h2>
+<p class="lede">This report was produced from the code alone. These are what it could not see.</p>
+<ol class="q">{{QUESTIONS}}</ol>
+
+<footer>
+  Generated by the <code>ironflow-fit</code> skill on {{DATE}} from a static scan of
+  <code>{{SCAN_ROOT}}</code>. Every finding cites a file and line — verify them.
+  This file is self-contained and safe to delete, forward, or print.
+</footer>
+
+</div>
+</body>
+</html>

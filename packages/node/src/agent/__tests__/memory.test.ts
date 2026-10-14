@@ -301,7 +301,7 @@ describe("default memory backend environment (#2471)", () => {
   });
 
   it("scopes append and the projection wait to the run environment", async () => {
-    vi.stubEnv("IRONFLOW_URL", "http://localhost:9123");
+    vi.stubEnv("IRONFLOW_SERVER_URL", "http://localhost:9123");
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => "{}" });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -317,7 +317,7 @@ describe("default memory backend environment (#2471)", () => {
   });
 
   it("agent() builds the backend from ctx.run.environment", async () => {
-    vi.stubEnv("IRONFLOW_URL", "http://localhost:9123");
+    vi.stubEnv("IRONFLOW_SERVER_URL", "http://localhost:9123");
     const mockFetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}), text: async () => "{}" });
     vi.stubGlobal("fetch", mockFetch);
 
