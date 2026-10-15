@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.45.1
+version: 0.45.2
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",

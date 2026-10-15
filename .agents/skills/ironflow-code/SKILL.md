@@ -1,6 +1,6 @@
 ---
 name: ironflow-code
-version: 0.45.1
+version: 0.45.2
 description: |
   Build Ironflow components — write functions, projections, workers, entity streams,
   webhooks, sagas, plus generate tests and audit existing code for anti-patterns.
