@@ -1691,6 +1691,8 @@ Additionally, the REST request helper maps HTTP status codes to specific error t
 - **401** -> `UnauthenticatedError` -- missing or invalid credentials
 - **402** -> `EnterpriseRequiredError` -- legacy. Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; the mapping is retained for compatibility
 - **403** -> `UnauthorizedError` -- insufficient permissions
+- **412** -> `PreconditionFailedError` -- an `If-Match` or `If-None-Match` precondition failed
+- **428** -> `PreconditionRequiredError` -- the write needs `If-Match` with the version you read (policy set)
 
 ### Error Utilities
 

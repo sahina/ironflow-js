@@ -9,6 +9,7 @@
  */
 
 import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
+import { dropUnencodable, encodeResponse, serializationError } from "./internal/encode-guard.js";
 import type {
   IronflowFunction,
   IronflowWebhook,
@@ -376,15 +377,31 @@ async function executeHandler(
   // Create execution context (with optional upcasting)
   // Step callbacks authenticate with the same env key the worker uses; serve()
   // has no apiKey config field (parity with the Go SDK's serve handler).
-  const ctx = new ExecutionContext(
-    request,
-    undefined,
-    eventDefinitions,
-    fn.config.stepTimeout,
-    serverUrl,
-    process.env.IRONFLOW_API_KEY,
-    environment
-  );
+  let ctx: ExecutionContext;
+  try {
+    ctx = new ExecutionContext(
+      request,
+      undefined,
+      eventDefinitions,
+      fn.config.stepTimeout,
+      serverUrl,
+      process.env.IRONFLOW_API_KEY,
+      environment
+    );
+  } catch (error) {
+    // The constructor upcasts the event. A broken upcaster fails every
+    // attempt the same way: a non-retryable failure, not a 500 the engine
+    // retries and counts against the circuit breaker (#2874).
+    return {
+      status: "failed",
+      steps: [],
+      error: {
+        message: error instanceof Error ? error.message : String(error),
+        code: error instanceof IronflowError ? error.code : "UPCAST_FAILED",
+        retryable: false,
+      },
+    };
+  }
 
   // Create step client
   const step = createStepClient(ctx);
@@ -404,20 +421,32 @@ async function executeHandler(
       fn.handler(functionContext)
     );
 
+    // A result or step output JSON cannot encode fails non-retryably below,
+    // running compensations, instead of a response that never arrives (#2874).
+    const encodeErr = serializationError(result, ctx.getExecutedSteps());
+    if (encodeErr) {
+      throw encodeErr;
+    }
+
     // Function completed successfully
     return {
       status: "completed",
       steps: ctx.getExecutedSteps(),
       result,
     };
-  } catch (error) {
+  } catch (caught) {
+    let error = caught;
     // Check if this is a yield signal (sleep/waitForEvent)
     if (isYieldSignal(error)) {
-      return {
-        status: "yielded",
-        steps: ctx.getExecutedSteps(),
-        yield: error.yieldInfo,
-      };
+      const encodeErr = serializationError(undefined, ctx.getExecutedSteps());
+      if (!encodeErr) {
+        return {
+          status: "yielded",
+          steps: ctx.getExecutedSteps(),
+          yield: error.yieldInfo,
+        };
+      }
+      error = encodeErr;
     }
 
     // Handle actual errors
@@ -447,7 +476,7 @@ async function executeHandler(
 
     return {
       status: "failed",
-      steps: ctx.getExecutedSteps(),
+      steps: dropUnencodable(ctx.getExecutedSteps()),
       error: {
         message: errorMessage,
         code: errorCode,
@@ -499,8 +528,9 @@ function normalizeRequest(
         },
       },
       sendResponse: (status: number, body: unknown) => {
-        return new Response(JSON.stringify(body), {
-          status,
+        const encoded = encodeResponse(status, body);
+        return new Response(encoded.text, {
+          status: encoded.status,
           headers: responseHeaders,
         });
       },
@@ -555,21 +585,24 @@ function normalizeRequest(
       },
     },
     sendResponse: (status: number, body: unknown) => {
+      // Encode before writeHead: a throw after it left the request hanging,
+      // since the error path could not write a second head (#2874).
+      const encoded = encodeResponse(status, body);
       if (nodeRes) {
         if (nodeRes.writeHead) {
-          nodeRes.writeHead(status, responseHeaders);
+          nodeRes.writeHead(encoded.status, responseHeaders);
         } else {
-          nodeRes.statusCode = status;
+          nodeRes.statusCode = encoded.status;
           for (const [key, value] of Object.entries(responseHeaders)) {
             nodeRes.setHeader?.(key, value);
           }
         }
-        nodeRes.end?.(JSON.stringify(body));
+        nodeRes.end?.(encoded.text);
         return;
       }
 
-      return new Response(JSON.stringify(body), {
-        status,
+      return new Response(encoded.text, {
+        status: encoded.status,
         headers: responseHeaders,
       });
     },

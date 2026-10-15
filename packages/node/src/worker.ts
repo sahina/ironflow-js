@@ -5,6 +5,7 @@
  */
 
 import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
+import { dropUnencodable, encodableSteps, serializationError } from "./internal/encode-guard.js";
 import type {
   IronflowFunction,
   Logger,
@@ -378,7 +379,10 @@ class IronflowWorker implements Worker {
    */
   private startHeartbeat(baseUrl: string): void {
     this.heartbeatTimer = setInterval(async () => {
-      if (this.state !== "connected") {
+      // Keep heartbeating while draining: the heartbeat is what refreshes the
+      // leases of the jobs still running, and a drain longer than the lease
+      // let the server hand the run to another worker (#2874).
+      if (this.state !== "connected" && this.state !== "draining") {
         return;
       }
 
@@ -449,7 +453,10 @@ class IronflowWorker implements Worker {
           this.logger.warn(
             "Worker not found on server (404) — will re-register"
           );
-          this.state = "connecting";
+          // Only a connected worker re-registers: a draining one must stay
+          // draining, or its heartbeats (which refresh running jobs' leases)
+          // stop and it starts polling again (#2874).
+          if (this.state === "connected") this.state = "connecting";
           return;
         }
 
@@ -576,8 +583,12 @@ class IronflowWorker implements Worker {
 
     this.logger.info(`Processing job ${job.job_id} for ${job.function_id}`);
 
-    // Build execution context from job assignment (with optional upcasting)
-    const ctx = new ExecutionContext({
+    // Build execution context from job assignment (with optional upcasting).
+    // A broken upcaster fails every attempt the same way, so it is a
+    // non-retryable failure (#2874).
+    let ctx: ExecutionContext;
+    try {
+      ctx = new ExecutionContext({
       run_id: job.run_id,
       function_id: job.function_id,
       attempt: job.attempt,
@@ -592,6 +603,15 @@ class IronflowWorker implements Worker {
       })),
       resume: undefined,
     }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
+    } catch (error) {
+      this.logger.error(`Event upcast failed for job ${job.job_id}`, { error: String(error) });
+      await this.sendJobFailed(baseUrl, job.job_id, {
+        message: error instanceof Error ? error.message : String(error),
+        code: error instanceof IronflowError ? error.code : "UPCAST_FAILED",
+        retryable: false,
+      }, undefined, fence);
+      return;
+    }
 
     // Checkpoint completed steps to the server as they finish (#1670) so a
     // killed worker does not take the whole run's progress with it. The
@@ -629,17 +649,29 @@ class IronflowWorker implements Worker {
       result = await withRunContext(ctx.runId, () =>
         fn.handler(functionContext)
       );
-    } catch (error) {
+      // A result or step output JSON cannot encode never reached the server:
+      // the update threw before sending and the lease expired into a full
+      // re-run (#2874). Fail it non-retryably below, running compensations.
+      const encodeErr = serializationError(result, ctx.getExecutedSteps());
+      if (encodeErr) {
+        throw encodeErr;
+      }
+    } catch (caught) {
+      let error = caught;
       if (signal.aborted) {
         await checkpointer.finish();
         return;
       }
 
       if (isYieldSignal(error)) {
-        const tail = await checkpointer.finish();
-        if (signal.aborted) return;
-        await this.sendStepYielded(baseUrl, job.job_id, error.yieldInfo, tail.steps, fence, tail.offset);
-        return;
+        const encodeErr = serializationError(undefined, ctx.getExecutedSteps());
+        if (!encodeErr) {
+          const tail = await checkpointer.finish();
+          if (signal.aborted) return;
+          await this.sendStepYielded(baseUrl, job.job_id, error.yieldInfo, tail.steps, fence, tail.offset);
+          return;
+        }
+        error = encodeErr;
       }
 
       const retryable = isRetryable(error);
@@ -657,7 +689,7 @@ class IronflowWorker implements Worker {
         message: error instanceof Error ? error.message : String(error),
         code: error instanceof IronflowError ? error.code : "ERROR",
         retryable,
-      }, failTail.steps, fence, failTail.offset);
+      }, dropUnencodable(failTail.steps), fence, failTail.offset);
       return;
     }
 
@@ -685,8 +717,8 @@ class IronflowWorker implements Worker {
    * A pull worker otherwise reports step results only in the terminal update
    * body, so `kill -9` (or a drain that hits its deadline) discards every
    * completed step and the reclaimed run re-executes all of them. Each flush PUTs `status: "progress"`, which the engine persists
-   * without transitioning the run or releasing the capacity lease — it doubles
-   * as a lease heartbeat.
+   * without transitioning the run or releasing the capacity lease. It does not
+   * refresh the lease; only the worker heartbeat does.
    *
    * A step counts as flushed only after a 2xx, so a rejected flush self-heals:
    * those steps stay in the tail and go out with the next checkpoint or in the
@@ -728,9 +760,11 @@ class IronflowWorker implements Worker {
       // Bounded batch: the server caps a checkpoint at MAX_CHECKPOINT_STEPS, and
       // an unbounded slice would also mean a rejected flush re-uploads an
       // ever-growing tail every window.
-      const pending = ctx
-        .getExecutedSteps()
-        .slice(cursor, cursor + DEFAULT_WORKER.MAX_CHECKPOINT_STEPS);
+      // Only steps JSON can encode: one that cannot would fail every later
+      // checkpoint, so no step after it would ever be saved (#2874).
+      const pending = encodableSteps(
+        ctx.getExecutedSteps().slice(cursor, cursor + DEFAULT_WORKER.MAX_CHECKPOINT_STEPS)
+      );
       if (pending.length === 0) {
         return;
       }

@@ -270,7 +270,7 @@ ironflow projection list --json                              # all projections
   failure first, or the entry dead-letters again.
 
   **`--dry-run` works.** The guard sits above every mutation
-  (`internal/projection/rebuild.go:415`), so a dry run is a pure query: it reports the
+  (`internal/projection/rebuild.go:440`), so a dry run is a pure query: it reports the
   start cursor, the target and the event count, registers no job and deletes nothing.
   It can still FAIL: with `IRONFLOW_EVENT_RETENTION_DAYS` set, a rebuild that would
   replay from before the retention horizon is refused — by the dry run as well as the

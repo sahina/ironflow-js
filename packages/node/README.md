@@ -1964,6 +1964,7 @@ These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. C
 | `ConflictError` | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun()`. Wait, do not retry. |
 | `ContendedError` | HTTP 409 from a lost compare-and-set race; nothing was applied, so re-read and reissue. |
 | `PreconditionFailedError` | HTTP 412. An `If-Match` or `If-None-Match` precondition failed (file storage). |
+| `PreconditionRequiredError` | HTTP 428. The write needs `If-Match` with the version you read (policy set). |
 | `PayloadTooLargeError` | HTTP 413. A file is larger than the server, bucket or token cap (file storage). |
 | `UnsupportedMediaTypeError` | HTTP 415. The bucket or signed URL does not allow the content type (file storage). |
 

@@ -16,7 +16,7 @@ ironflow serve --dev
 
 No server yet? `brew install sahina/tap/ironflow` installs the binary.
 
-Platforms: macOS and Linux. On Windows, use WSL.
+Platforms: macOS and Linux. On Windows, use WSL. The agent needs Node.js 22.19 or later.
 
 The agent starts one `ironflow mcp` process for each workspace, so it has the Ironflow MCP tools (the tools that list functions, runs and events) under `ironflow serve --dev`. `ironflow` must be on your PATH. The process stops when the agent stops.
 

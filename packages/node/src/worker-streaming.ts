@@ -7,7 +7,7 @@
 import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-node";
-import { create, type JsonObject } from "@bufbuild/protobuf";
+import { create } from "@bufbuild/protobuf";
 import type {
   IronflowFunction,
   Logger,
@@ -52,6 +52,7 @@ import { ExecutionContext } from "./internal/context.js";
 import { createStepClient, executeCompensations } from "./step.js";
 import { isYieldSignal } from "./internal/errors.js";
 import { stepYieldedMessage, memoSteps, jobOutputFields } from "./internal/stream-yield.js";
+import { dropUnencodable, serializationError } from "./internal/encode-guard.js";
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
@@ -681,15 +682,34 @@ class StreamingWorker implements Worker {
           timestamp: new Date().toISOString(),
         };
 
-    // Build execution context
-    const ctx = new ExecutionContext({
-      run_id: job.runId,
-      function_id: job.functionId,
-      attempt: job.attempt,
-      event,
-      steps: memoSteps(job.completedSteps),
-      resume: undefined,
-    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
+    // Build execution context. The constructor upcasts the event; a broken
+    // upcaster fails every attempt the same way, so report a non-retryable
+    // failure rather than drop the job into an endless lease-expiry loop (#2874).
+    let ctx: ExecutionContext;
+    try {
+      ctx = new ExecutionContext({
+        run_id: job.runId,
+        function_id: job.functionId,
+        attempt: job.attempt,
+        event,
+        steps: memoSteps(job.completedSteps),
+        resume: undefined,
+      }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
+    } catch (error) {
+      this.logger.error("Event upcast failed", { jobId: job.jobId, error: String(error) });
+      await this.sendJobFailed(
+        job.jobId,
+        {
+          message: error instanceof Error ? error.message : String(error),
+          code: error instanceof IronflowError ? error.code : "UPCAST_FAILED",
+          retryable: false,
+          durationMs: 0,
+        },
+        fence,
+        []
+      );
+      return;
+    }
 
     // Only step.run() rows are written here: sleep and wait-for-event reach the
     // engine as yields and compensations ride on JobFailed. The engine needs a
@@ -697,6 +717,10 @@ class StreamingWorker implements Worker {
     ctx.signal = signal;
     ctx.onStepResult = (s) => {
       if (s.type !== "invoke" || signal.reason === STREAM_CLOSED) return;
+      // A step JSON cannot encode is not sent: it could not be stored, and a
+      // value the proto encoder rejects would break the whole stream. The run
+      // fails with SERIALIZATION_ERROR when the handler returns (#2874).
+      if (dropUnencodable([s]).length === 0) return;
       this.sendStepResult(job.jobId, s, fence);
     };
 
@@ -719,13 +743,20 @@ class StreamingWorker implements Worker {
       const result = await withRunContext(ctx.runId, () =>
         fn.handler(functionContext)
       );
+      // A result or step output JSON cannot encode fails non-retryably below,
+      // running compensations, instead of a report that throws (#2874).
+      const encodeErr = serializationError(result, ctx.getExecutedSteps());
+      if (encodeErr) {
+        throw encodeErr;
+      }
       const durationMs = Date.now() - startTime;
 
       if (signal.reason === STREAM_CLOSED) return;
 
       // Send completion via stream
       await this.sendJobCompleted(job.jobId, result, durationMs, fence);
-    } catch (error) {
+    } catch (caught) {
+      let error = caught;
       if (signal.aborted) {
         return;
       }
@@ -733,9 +764,13 @@ class StreamingWorker implements Worker {
       const durationMs = Date.now() - startTime;
 
       if (isYieldSignal(error)) {
-        this.sendStepYielded(stepYieldedMessage(job.jobId, error.yieldInfo, fence));
-        this.logger.debug("Job yielded", { jobId: job.jobId, type: error.yieldInfo.type });
-        return;
+        const encodeErr = serializationError(undefined, ctx.getExecutedSteps());
+        if (!encodeErr) {
+          this.sendStepYielded(stepYieldedMessage(job.jobId, error.yieldInfo, fence));
+          this.logger.debug("Job yielded", { jobId: job.jobId, type: error.yieldInfo.type });
+          return;
+        }
+        error = encodeErr;
       }
 
       const retryable = isRetryable(error);
@@ -755,7 +790,7 @@ class StreamingWorker implements Worker {
           durationMs,
         },
         fence,
-        retryable ? [] : ctx.getExecutedSteps()
+        retryable ? [] : dropUnencodable(ctx.getExecutedSteps())
       );
     }
   }
@@ -867,7 +902,9 @@ class StreamingWorker implements Worker {
               status: s.status,
               compensationFor: s.compensation_for ?? "",
               durationMs: s.duration_ms ?? 0,
-              ...(s.output !== undefined ? { output: s.output as JsonObject } : {}),
+              // A non-object output goes in output_value; output only holds an
+              // object, so an array or scalar became {} (#2874).
+              ...jobOutputFields(s.output),
               ...(s.error !== undefined
                 ? {
                     error: create(ErrorSchema, {
@@ -889,7 +926,9 @@ class StreamingWorker implements Worker {
    */
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
-      if (this.state !== "connected" || !this.sendMessage) {
+      // Keep heartbeating while draining: the heartbeat refreshes the leases
+      // of the jobs still running (#2874).
+      if ((this.state !== "connected" && this.state !== "draining") || !this.sendMessage) {
         return;
       }
 

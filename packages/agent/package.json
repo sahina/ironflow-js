@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/agent",
-  "version": "0.44.1",
+  "version": "0.45.1",
   "description": "Ironflow agent for ACP editors (Zed, JetBrains): writes Ironflow application code",
   "type": "module",
   "bin": { "ironflow-agent": "./dist/cli.js" },

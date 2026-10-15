@@ -427,6 +427,8 @@ Used with `step.waitForEvent()`.
 
 ```typescript
 interface EventFilter {
+  /** Request payload stored as the waiting step input, visible via getRunSteps and the dashboard. */
+  payload?: unknown;
   /** Event name to wait for */
   event: string;
   /** JSON path for matching (e.g., "data.orderId"), not an expression. */
@@ -686,6 +688,8 @@ interface ParallelOptions {
   concurrency?: number;
   /** Error handling: "failFast" (default) or "allSettled" */
   onError?: "failFast" | "allSettled";
+  /** Set false to silence the warning when no branch uses the scoped step client (default: true). Durability is unchanged. */
+  expectScopedClient?: boolean;
 }
 ```
 
@@ -709,6 +713,7 @@ interface RunInfo {
   functionId: string;
   attempt: number;
   startedAt: Date;
+  environment?: string; // environment of the run's outbound calls
 }
 ```
 
@@ -1817,7 +1822,7 @@ import {
   AgentInvokeTimeoutError, MemoryCatchupTimeoutError,
   UnauthenticatedError, EnterpriseRequiredError, UnauthorizedError,
   ConflictError, ContendedError, InjectionUnverifiedError, QueueFullError,
-  PreconditionFailedError, PayloadTooLargeError, UnsupportedMediaTypeError,
+  PreconditionFailedError, PreconditionRequiredError, PayloadTooLargeError, UnsupportedMediaTypeError,
   isRetryable, isIronflowError, toError,
   AUTH_HELP, throwIfAuthError,
 } from '@ironflow/core';
@@ -1873,6 +1878,7 @@ class IronflowError extends Error {
 | `InjectionUnverifiedError` | `INJECTION_UNVERIFIED` | false | Connect `aborted` + `Ironflow-Error-Reason: injection_unverified`. `injectStepOutput` wrote the step but could not confirm the run stood still. Unlike `ContendedError` the write **did** land — read the step and decide, do not reissue |
 | `QueueFullError` | `QUEUE_FULL` | false | `@ironflow/browser`'s offline write queue hit its 500-write / 5 MB cap |
 | `PreconditionFailedError` | `PRECONDITION_FAILED` | false | HTTP 412. An `If-Match` or `If-None-Match` precondition failed (file storage) |
+| `PreconditionRequiredError` | `PRECONDITION_REQUIRED` | false | HTTP 428. The write needs `If-Match` with the version you read (policy set) |
 | `PayloadTooLargeError` | `PAYLOAD_TOO_LARGE` | false | HTTP 413. A file is larger than the server, bucket or token cap (file storage) |
 | `UnsupportedMediaTypeError` | `UNSUPPORTED_MEDIA_TYPE` | false | HTTP 415. The bucket or signed URL does not allow the content type (file storage) |
 
@@ -2090,7 +2096,7 @@ interface WSSubscribeRequest {
 }
 
 interface WSUnsubscribeRequest { type: "unsubscribe"; subscriptionId: string; }
-interface WSAckRequest { type: "ack"; eventId: string; ackType: AckType; redeliverDelay?: number; }
+interface WSAckRequest { type: "ack"; eventId: string; ackType: AckType; subscriptionId?: string; redeliverDelay?: number; }
 
 type WSClientMessage = WSSubscribeRequest | WSUnsubscribeRequest | WSAckRequest;
 ```
@@ -2262,6 +2268,7 @@ import {
   // { "Content-Type": "application/json" }
 
   getServerUrl,       // () => string  (reads IRONFLOW_SERVER_URL, or returns default)
+  getConfiguredServerUrl, // () => string | undefined  (IRONFLOW_SERVER_URL, or undefined when unset or blank)
   getWebSocketUrl,    // (serverUrl?) => string  (converts http->ws, appends /ws)
 } from '@ironflow/core';
 ```
@@ -2734,6 +2741,13 @@ interface EntityHistoryEntry {
   data: unknown;
   version: number;
   timestamp: string;
+}
+
+interface EntityHistoryOptions {
+  fromVersion?: number;   // start at this entity version (inclusive)
+  from?: Date | string;   // only events at or after this time
+  to?: Date | string;     // only events at or before this time
+  limit?: number;         // at most this many entries; unset reads the whole history
 }
 
 interface StreamSnapshot {

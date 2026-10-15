@@ -39,7 +39,8 @@ export const processOrder = createFunction(
   },
   async ({ event, step }) => {
     const order = await step.run("validate", async () => {
-      return { valid: true, orderId: (event.data as any).orderId };
+      const { orderId, total } = event.data as { orderId: string; total: number };
+      return { valid: true, orderId, total };
     });
 
     const charge = await step.run("charge", async () => {
