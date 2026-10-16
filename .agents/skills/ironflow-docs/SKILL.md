@@ -1,13 +1,12 @@
 ---
 name: ironflow-docs
-version: 0.45.2
+version: 0.46.0
 description: |
   Ironflow reference documentation — SDK syntax, CLI commands, MCP tools, and patterns.
   Use when looking up specific API signatures, CLI flags, MCP tool names, or canonical
   code patterns. Triggers on "how do I emit", "ironflow CLI command", "MCP tool reference",
   "SDK reference", "what's the syntax for", "show me the docs for".
-  Other Ironflow skills delegate here when they need reference content — read the relevant
-  topic file directly via Read instead of invoking this skill, when possible.
+  Other Ironflow skills delegate here when they need reference content.
   NOT for writing application workflows (use ironflow-code).
   NOT for debugging runtime issues (use ironflow-ops).
 user-invocable: true
@@ -17,43 +16,33 @@ allowed-tools: Read, Grep, WebFetch
 
 # Ironflow Reference
 
-Knowledge bundle for Ironflow SDK, CLI, MCP, and patterns. Each topic carries a minimal
-inline example for the common case + a URL to the full hosted docs for depth.
+The Ironflow docs site is the only source of reference facts. This skill tells you which
+page to fetch. Each URL returns one page as Markdown. Reference lookups need network access.
 
-> **Path convention.** Scripts are named relative to this skill's own directory — your
-> harness names that directory when it loads the skill, and a packaged skill serves them as
-> readable resources rather than executable files. Reference files in ANOTHER skill are
-> shown as `~/.agents/skills/<skill>/...` (global install); if that path does not resolve,
-> activate that skill by name instead of guessing at a prefix.
+## How to look something up
 
-## Topic Index
+1. Find the topic in the table below and fetch its URL. Use `WebFetch`; in Ironflow
+   Desktop's built-in agent, use `docs_fetch`; it takes the full URL or the path after the host.
+2. If no topic matches, fetch `https://docs.ironflow.run/llms.txt`. It lists every page
+   with a one-line description. Pick the page and fetch its `.md` URL.
+3. Fetch only the pages you need. Do not fetch `llms-full.txt` unless the user asks for
+   the whole site.
 
-| Topic | File | When to load |
-|-------|------|--------------|
-| TypeScript SDK | `sdk-typescript.md` | Writing TS functions, projections, workers, KV, config, files |
-| Go SDK | `sdk-go.md` | Writing Go functions, projections, workers, files |
-| Python SDK | `sdk-python.md` | Writing Python pull workers, push handlers, durable steps and files |
-| CLI commands | `cli.md` | `ironflow` binary commands and flags |
-| MCP tools | `mcp.md` | MCP tool names, parameters, read-only vs write modes |
-| Patterns | `patterns.md` | Canonical code patterns (sagas, webhooks, upcasters) |
-| Design diagrams | `diagrams.md` | Visual design proposals for component relationships, execution ordering, or lifecycles |
-| Anti-patterns | `anti-patterns.md` | Things to avoid — what breaks at runtime |
+## Topics
 
-## How to Use This Skill
+| Topic | URL | When |
+|-------|-----|------|
+| CLI commands | https://docs.ironflow.run/reference/cli.md | `ironflow` commands and flags; links to one page per command |
+| MCP tools | https://docs.ironflow.run/reference/mcp-tools.md | Tool names, modes, the flags that enable them |
+| TypeScript SDK (Node) | https://docs.ironflow.run/reference/js-sdk/node.md | TS functions, projections, workers, KV, config, files |
+| TypeScript SDK (shared types) | https://docs.ironflow.run/reference/js-sdk/core.md | Types and helpers shared by the Node and browser packages |
+| Go SDK | https://docs.ironflow.run/reference/api/go-sdk.md | Go functions, projections, workers, files |
+| Python SDK | https://docs.ironflow.run/reference/api/python-sdk.md | Python pull workers, push handlers, durable steps, files |
+| Design patterns | https://docs.ironflow.run/explanation/patterns.md | Push vs pull, CQRS, aggregates, sagas, concurrency, snapshots |
+| Pitfalls | https://docs.ironflow.run/explanation/ai-pitfalls.md | Things that break at runtime, with wrong/right code |
+| Design diagrams | `diagrams.md` (this skill) | Drawing a design proposal for the user |
 
-1. Identify which topic the user (or invoking skill) needs.
-2. Read the topic file: `Read <topic>.md`
-3. The topic gives you the inline happy-path example.
-4. For depth, edge cases, or full API coverage, follow the URL at the bottom of the topic
-   file via `WebFetch` to fetch the hosted docs.
+## Cross-skill use
 
-## Cross-Skill Reference Pattern
-
-Other Ironflow skills reference these topics by their full path under this skill's directory —
-`ironflow-code` and `ironflow-ops` both carry the form in their Reference Files block. A topic
-file is a resource of THIS skill's directory, not of the calling skill's, so a caller cannot
-reach it with a relative path.
-
-If the path does not resolve, activate `ironflow-docs` by name rather than guessing a prefix.
-
-Do not duplicate reference content in workflow skills. Always defer to docs.
+Other Ironflow skills link to the URLs above directly. Never copy reference content into a
+skill: link to the docs page.

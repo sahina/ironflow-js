@@ -1,6 +1,6 @@
 ---
 name: ironflow-ops
-version: 0.45.2
+version: 0.46.0
 description: |
   Operate Ironflow — debug failed/stuck runs, migrate SDK versions with upcasters,
   deploy/scale/troubleshoot clusters, package an app with the engine into one container.
@@ -32,9 +32,9 @@ Five sub-domains live in topic files (load on demand).
 ## Reference Files
 
 ```
-~/.agents/skills/ironflow-docs/cli.md            # CLI command reference
-~/.agents/skills/ironflow-docs/mcp.md            # MCP tool reference (if available)
-~/.agents/skills/ironflow-docs/anti-patterns.md  # for diagnosing root causes
+https://docs.ironflow.run/reference/cli.md   # CLI command reference
+https://docs.ironflow.run/reference/mcp-tools.md   # MCP tool reference
+https://docs.ironflow.run/explanation/ai-pitfalls.md   # for diagnosing root causes
 ```
 
 ## Sub-Topic Files

@@ -1745,7 +1745,7 @@ export class IronflowClient {
      *
      * Returns a flat `ProjectionStateResult<TState>` (see `@ironflow/core`).
      * The server returns a wrapped envelope and this method peels it via
-     * `peelProjectionEnvelope`. See issue #610 / CHANGELOG 0.20.0.
+     * `peelProjectionEnvelope`. See issue #610 (removed in v0.20.0).
      *
      * For a freshly registered projection with no events applied, returns
      * empty `state`, `lastEventTime: undefined`, `version: 0`.

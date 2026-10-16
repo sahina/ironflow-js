@@ -1549,7 +1549,7 @@ export interface TimeTravelStepOutputSnapshot {
 
 // `ProjectionState` (a lossy flat shape that lied about the runtime envelope)
 // was removed in v0.20.0. Use `ProjectionStateResult<TState>` from
-// `@ironflow/core/projection-types` instead. See CHANGELOG and issue #610.
+// `@ironflow/core/projection-types` instead. See issue #610.
 
 /**
  * Operational status information for a projection.

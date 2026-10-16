@@ -4,7 +4,7 @@ An Ironflow coding agent for editors that speak the [Agent Client Protocol](http
 
 You bring your own model key (Anthropic, OpenAI, Google Gemini or OpenRouter). The agent sends your prompts and the files it reads to that provider. Ironflow does not supply or pay for a model.
 
-The agent carries the Ironflow skills (`ironflow-start`, `ironflow-code`, `ironflow-docs`, `ironflow-ops`, `ironflow-fit`). It reads exact SDK signatures from them instead of guessing.
+The agent carries the Ironflow skills (`ironflow-start`, `ironflow-code`, `ironflow-docs`, `ironflow-ops`, `ironflow-fit`). For exact SDK signatures it fetches the pages that `ironflow-docs` lists from docs.ironflow.run with `curl` in its bash tool, instead of guessing.
 
 ## Before you start
 

@@ -25,12 +25,13 @@
  * tab that regains the network waits out the armed backoff (up to 60s) unless
  * the app calls `flush()` itself.
  *
- * ponytail: five behaviours here are verified by hand, not by CI — reload
- * survival, two-tab exclusion, real quota exhaustion, Safari eviction, and FIFO
- * under write-through. jsdom has no IndexedDB and no Web Locks, so the suite
- * runs on fakes. The checklist is OFFLINE-QA.md; the upgrade path is real
- * browser mode, blocked on a workspace-wide vitest 2 -> 4 bump (TODOS.md).
- * A green test run does NOT cover those five.
+ * ponytail: three behaviours here are verified by hand, not by CI — real
+ * quota exhaustion, Safari eviction, and FIFO under write-through. jsdom has
+ * no IndexedDB and no Web Locks, so the unit suite runs on fakes. The
+ * checklist is OFFLINE-QA.md (TODOS.md tracks automating it). Reload survival
+ * and two-tab exclusion, with and without Web Locks, are covered in real
+ * Chromium by apps/dashboard/e2e/sdk/offline-queue.spec.ts. A green unit run
+ * does NOT cover those three.
  */
 import { IronflowError, QueueFullError } from "@ironflow/core";
 import { QueueDb, QueueQuotaError, type NewQueuedWrite } from "./db.js";

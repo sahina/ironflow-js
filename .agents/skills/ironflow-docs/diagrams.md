@@ -26,7 +26,7 @@ precedence over these defaults.
   existing infrastructure. The example below is illustrative, not a required architecture.
 - Label edges to distinguish event publication, direct calls, and read-model queries.
   Show the relevant failure, retry, wait, or compensation path when it affects the design.
-- Preserve Ironflow semantics from `patterns.md` and the selected SDK reference:
+- Preserve Ironflow semantics from the patterns page (`https://docs.ironflow.run/explanation/patterns.md`) and the selected SDK reference:
   entity-stream append already publishes events, projections supply display reads,
   managed reducers are pure, and pull workers poll over HTTP. A diagram must not add
   a second emit for the same appended fact or imply synchronous projection updates.

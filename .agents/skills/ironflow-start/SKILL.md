@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.45.2
+version: 0.46.0
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",
@@ -29,11 +29,11 @@ Codebase fit analysis lives in `ironflow-fit`. SDK syntax lives in `ironflow-doc
 ## Reference Files
 
 ```
-~/.agents/skills/ironflow-docs/sdk-typescript.md   # for code shown during setup
-~/.agents/skills/ironflow-docs/sdk-go.md           # Go equivalent
-~/.agents/skills/ironflow-docs/sdk-python.md       # Python equivalent
-~/.agents/skills/ironflow-docs/patterns.md         # for arch decision matrices
-~/.agents/skills/ironflow-docs/cli.md              # for ironflow init / serve commands
+https://docs.ironflow.run/reference/js-sdk/node.md   # for code shown during setup
+https://docs.ironflow.run/reference/api/go-sdk.md   # Go equivalent
+https://docs.ironflow.run/reference/api/python-sdk.md   # Python equivalent
+https://docs.ironflow.run/explanation/patterns.md   # for arch decision matrices
+https://docs.ironflow.run/reference/cli.md   # for ironflow init / serve commands
 ```
 
 ## Mode Selection
@@ -236,8 +236,8 @@ app/api/ironflow/route.ts        # serve() handler (Next.js push)
 
 ### Step 6: Create entry point
 
-For SDK syntax, read `~/.agents/skills/ironflow-docs/sdk-typescript.md`, `sdk-go.md`,
-or `sdk-python.md` for the selected language.
+For SDK syntax, fetch `https://docs.ironflow.run/reference/js-sdk/node.md`, `https://docs.ironflow.run/reference/api/go-sdk.md`,
+or `https://docs.ironflow.run/reference/api/python-sdk.md` for the selected language.
 
 **Push mode (Next.js)** — `app/api/ironflow/route.ts`:
 
@@ -300,7 +300,7 @@ await worker.start();   // automatically registers all functions
 Python pull worker: `from ironflow.worker import Worker, function`, decorate
 an `async def` handler with `@function(id="hello", triggers=[{"event": "hello"}])`,
 then call `Worker(functions=[hello]).run()`. See
-`~/.agents/skills/ironflow-docs/sdk-python.md` for the complete form.
+`https://docs.ironflow.run/reference/api/python-sdk.md` for the complete form.
 
 **Sample function** — `src/functions/hello.ts`:
 
@@ -428,7 +428,7 @@ Read and follow `~/.agents/skills/ironflow-fit/SKILL.md`.
 Walk the user through the relevant decision. Don't dump all matrices at once — pick the
 2-3 that apply.
 
-For full decision matrices and examples: `Read ~/.agents/skills/ironflow-docs/patterns.md`.
+For full decision matrices and examples: fetch `https://docs.ironflow.run/explanation/patterns.md`.
 
 ### CQRS mental model (read this first if the app has a real domain)
 

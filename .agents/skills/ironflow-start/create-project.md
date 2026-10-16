@@ -81,8 +81,8 @@ an example contains them.
 
 ## 4. Create
 
-Read `ironflow-docs`'s `sdk-typescript.md`, `sdk-python.md`, or `sdk-go.md` for the
-selected language, using that skill's resource resolution convention.
+Fetch `https://docs.ironflow.run/reference/js-sdk/node.md`, `https://docs.ironflow.run/reference/api/python-sdk.md`, or `https://docs.ironflow.run/reference/api/go-sdk.md` for the
+selected language.
 
 Use `ironflow init` only when its quickstart matches the proposal and the destination
 is absent. It rejects even an empty existing directory. In Desktop, generate files

@@ -77,10 +77,13 @@ done
 If `gh` is unavailable, browse <https://github.com/sahina/ironflow-releases/releases>.
 `git log` against the engine repo is not an option for users — that repo is private.
 
+Each body holds that release's CHANGELOG section and ends with a link to its release post on
+docs.ironflow.run. Releases up to v0.45.2 hold only that link: open it for the notes.
+
 Look for:
-- **BREAKING** — requires code changes
+- **`**Breaking: ...**`** entries — require code changes
 - **Deprecated** — works but should update
-- **New** — features available after upgrade
+- **Added** — features available after upgrade
 
 ## Step 5: Update Dependencies
 
@@ -256,8 +259,8 @@ sequence. No need to write v1→v3 directly.
 ## Pre-Migration Checklist
 
 1. **Back up data.** SQLite: copy file. PostgreSQL: snapshot.
-2. **Fetch release notes.** `gh release view <tag>` for each version between current and
-   target. Note all breaking changes.
+2. **Fetch release notes.** `gh release view <tag> --repo sahina/ironflow-releases` for each
+   version between current and target. Note every `**Breaking: ...**` entry.
 3. **Plan to land server and SDK on the same version** (releases are lockstep). Nothing
    enforces this — the server never checks the SDK version a worker reports.
 4. **Update dependencies** with package manager.

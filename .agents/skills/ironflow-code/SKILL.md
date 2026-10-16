@@ -1,6 +1,6 @@
 ---
 name: ironflow-code
-version: 0.45.2
+version: 0.46.0
 description: |
   Build Ironflow components — write functions, projections, workers, entity streams,
   webhooks, sagas, plus generate tests and audit existing code for anti-patterns.
@@ -28,14 +28,14 @@ This skill encodes the *process*. SDK syntax lives in `ironflow-docs`.
 
 ## Reference Files
 
-When you need SDK syntax, read these files instead of guessing:
+When you need SDK syntax, fetch these pages instead of guessing:
 
 ```
-~/.agents/skills/ironflow-docs/sdk-typescript.md
-~/.agents/skills/ironflow-docs/sdk-go.md
-~/.agents/skills/ironflow-docs/sdk-python.md
-~/.agents/skills/ironflow-docs/patterns.md
-~/.agents/skills/ironflow-docs/anti-patterns.md
+https://docs.ironflow.run/reference/js-sdk/node.md
+https://docs.ironflow.run/reference/api/go-sdk.md
+https://docs.ironflow.run/reference/api/python-sdk.md
+https://docs.ironflow.run/explanation/patterns.md
+https://docs.ironflow.run/explanation/ai-pitfalls.md
 ```
 
 ## Workflow Selection
@@ -58,8 +58,8 @@ If ambiguous, ask once.
 
 - Read `package.json` for TS/JS, `go.mod` for Go, `pyproject.toml` or `requirements.txt` for Python.
 - If more than one, ask which language.
-- Read the relevant SDK reference: `Read ~/.agents/skills/ironflow-docs/sdk-typescript.md`,
-  `sdk-go.md` or `sdk-python.md`.
+- Fetch the relevant SDK reference: `https://docs.ironflow.run/reference/js-sdk/node.md`,
+  `https://docs.ironflow.run/reference/api/go-sdk.md` or `https://docs.ironflow.run/reference/api/python-sdk.md`.
 
 ### Step 2: Clarify component (if ambiguous)
 
@@ -88,7 +88,7 @@ invariant placement.
 | **Reactor** | Side effect in response to a fact (email, webhook out, external API) | A domain event | `react.` |
 | **Scheduler** | Cron-triggered work | Cron expression | `cron.` |
 
-Full descriptions: `Read ~/.agents/skills/ironflow-docs/patterns.md` (Function Roles
+Full descriptions: fetch `https://docs.ironflow.run/explanation/patterns.md` (Function Roles
 section). If the user is writing a command-side workflow, also read the Commands vs
 Events and Aggregate Design sections — they drive the decider/evolver shape.
 
@@ -117,7 +117,7 @@ path convention above. Present the proposed flow in Mermaid with a short explana
 so the user can review it, and update it when the design changes. Skip a new diagram
 when the conversation already contains one that matches the current design.
 
-Apply these non-negotiable rules (full list in `anti-patterns.md`):
+Apply these non-negotiable rules (full list: fetch `https://docs.ironflow.run/explanation/ai-pitfalls.md`):
 
 **Mechanical (Ironflow runtime):**
 - Event names = typed constants (`as const` objects, never raw strings)
@@ -407,11 +407,11 @@ steps, `expectedVersion`, idempotency, webhooks or upcasters; review those by ha
 If the script cannot be executed — a packaged skill is served as readable resources, not
 as files on disk — read `scripts/audit-scan.sh` as a skill resource and apply its patterns with the
 search tools instead. Keep the rule names it uses so the report matches scanner output;
-classify each hit against `anti-patterns.md` by topic (the sections are numbered, not keyed by rule ID).
+classify each hit against `https://docs.ironflow.run/explanation/ai-pitfalls.md` by topic (the sections are numbered, not keyed by rule ID).
 
 ### Step 2: For each finding, classify
 
-Read the relevant section of `~/.agents/skills/ironflow-docs/anti-patterns.md` for the
+Fetch `https://docs.ironflow.run/explanation/ai-pitfalls.md` and read the relevant section for the
 detailed why and fix.
 
 The scanner is a grep heuristic and says so — `missing-expectedversion` counts parens,
@@ -472,7 +472,7 @@ Then switch to Write Code mode for the chosen scope.
 
 ## Common Mistakes Quick Lookup
 
-For the full anti-pattern reference: `Read ~/.agents/skills/ironflow-docs/anti-patterns.md`.
+For the full anti-pattern reference: fetch `https://docs.ironflow.run/explanation/ai-pitfalls.md`.
 
 **Mechanical — top 5 by impact:**
 1. Side effects outside `step.run()` — duplicate operations on retry

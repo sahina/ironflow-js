@@ -1,6 +1,6 @@
 ---
 name: ironflow-fit
-version: 0.45.2
+version: 0.46.0
 description: |
   Analyze a codebase or workspace and produce a visual HTML report on whether and where
   Ironflow fits — event-driven readiness, ranked opportunities with file:line evidence,
@@ -50,7 +50,7 @@ adoption-paths.md     SDK tiers, honestly; snippet rule
 report-template.html  the output shell
 ```
 
-Snippets come from `~/.agents/skills/ironflow-docs/` — read the topic file. **Never
+Snippets come from the docs pages listed in the `ironflow-docs` skill — fetch the topic URL. **Never
 invent Ironflow API surface.** A wrong snippet in a vendor report is worse than no
 snippet.
 

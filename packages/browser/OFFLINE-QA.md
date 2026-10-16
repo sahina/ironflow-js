@@ -1,7 +1,9 @@
 # Offline write queue — manual QA
 
-Five behaviours that **cannot be proven in the automated suite** and must be
-walked by hand before releasing a change to `src/queue/` or `src/offline.ts`.
+Three behaviours (§3, §4, §5) **cannot be proven in the automated suite** and
+must be walked by hand before releasing a change to `src/queue/` or
+`src/offline.ts`. The other two (§1, §2) are automated in Chromium only: walk
+them by hand in Safari.
 
 ## Why this is manual
 
@@ -10,11 +12,15 @@ suite supplies `fake-indexeddb` and a lock fake, which covers logic but not the
 things that only a real browser has: an actual page reload, two real tabs, real
 storage quota, and real eviction.
 
-The automated alternative is real-browser mode, which is blocked on a
-workspace-wide `vitest` 2 → 4 upgrade (`@vitest/browser` is 4.x). Tracked in
-`TODOS.md` under "Automate the 5 critical browser paths". **Until that lands,
-this file is the only thing standing behind those five behaviours — a green CI
-run does not cover them.**
+`apps/dashboard/e2e/sdk/offline-queue.spec.ts` runs the SDK in real Chromium
+against a real engine (`make test-ui-smoke`, in `make ci`). It covers writes
+queued offline, writes that survive a reload with their idempotency keys, flush
+on reconnect (by `flush()` and by the armed backoff alone), two tabs with one
+flusher, and two tabs without Web Locks. The no-locks run removes
+`navigator.locks` in Chromium, so it tests the SDK's fallback, not Safari. The
+other three are tracked in `TODOS.md` under "Automate the 5 critical browser paths".
+**Until they are automated, this file is the only thing standing behind them —
+a green CI run does not cover them.**
 
 ## Setup
 
@@ -36,6 +42,8 @@ failed one.
 
 This is the entire feature. If only one check gets run, run this one.
 
+Automated in Chromium by `offline-queue.spec.ts`. Walk it by hand in Safari.
+
 1. Go offline.
 2. `emit()` three events with distinguishable payloads.
 3. Confirm the outbox holds 3 records, and each `body` contains an
@@ -49,6 +57,9 @@ This is the entire feature. If only one check gets run, run this one.
 reload), or an empty outbox after the reload (writes were held in memory).
 
 ## 2. Two tabs do not double-send
+
+Automated in Chromium by `offline-queue.spec.ts`, with Web Locks and without
+them. Walk it by hand in Safari.
 
 1. Open the app in two tabs.
 2. Go offline **in both**.

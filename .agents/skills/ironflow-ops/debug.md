@@ -96,7 +96,7 @@ curl -s -H "Authorization: Bearer $IRONFLOW_API_KEY" \
 | "Cannot read properties of undefined" | Missing null check on event data or step output | Add null/undefined checks; verify event.data shape |
 | "expected version 3, got 4" | Concurrent stream appends | `getInfo()` first, pass `expectedVersion` |
 
-For full anti-pattern reference: `Read ~/.agents/skills/ironflow-docs/anti-patterns.md`.
+For full anti-pattern reference: fetch `https://docs.ironflow.run/explanation/ai-pitfalls.md`.
 
 ---
 
@@ -158,9 +158,9 @@ as "no stuck runs". The stuck states are:
   MCP: `ironflow_resume_run`. It takes failed runs as well as paused ones, so it is the
   retry verb too. Completed steps are memoized, but code outside a step re-runs — see the
   mental model at the top. Do not fire it twice in quick succession: a second resume inside
-  the stream's dedupe window returns **HTTP 409** ("a resume for this run is already in
-  flight") and leaves the run exactly as it found it. Wait for the first to land; do not
-  retry on 409.
+  the stream's dedupe window (about 2 minutes) returns **HTTP 409** ("a resume for this run
+  is already in flight"), even after the first resume finished. The server does not queue it
+  and leaves the run exactly as it found it. A retry after about 2 minutes works.
 
 ---
 
@@ -397,7 +397,7 @@ then returns — immediately if the reload already landed, after ~15s if none is
 and `--evidence-file` are set — the reload baseline rides the evidence tap — so the server
 must run as `ironflow mcp --allow-writes --evidence-file trail.jsonl`. If the evidence file
 cannot be opened the server logs a warning and serves without it, and the tool is absent
-even with both flags. See `~/.agents/skills/ironflow-docs/mcp.md`.
+even with both flags. See `https://docs.ironflow.run/reference/mcp-tools.md`.
 
 **CLI fallback:** `ironflow function list/get --json` does **not** expose `version` — the
 column exists but the CLI drops it, so polling those commands can never observe the bump.
