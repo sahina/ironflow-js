@@ -56,6 +56,8 @@ class LeaseFake {
   renewError: (() => Response) | null = null;
   renewHangs = false; // Renew answers only when the request is aborted
   ackError: (() => Response) | null = null;
+  saveError: (() => Response) | null = null;
+  trailer = ""; // the next stream ends after its batch with this error code
   fenceSave: ((pk: string) => boolean) | null = null; // true: a rebuild start fences this save
   acquireDelayMs = 0;
   acquireHangs = false; // Acquire answers only when the request is aborted
@@ -127,6 +129,7 @@ class LeaseFake {
       case "StreamProjectionEvents":
         return this.stream(req, init.signal ?? undefined);
       case "SaveProjectionState":
+        if (this.saveError) return this.saveError();
         return this.fenced(req, req.partitionKey) ? lostResponse() : Response.json({});
       case "AckProjectionEvents":
         if (this.ackError) return this.ackError();
@@ -154,6 +157,11 @@ class LeaseFake {
         if (this.stale(req)) return end();
         // One batch per stream: the next one comes after a rewind, on the next open.
         for (const e of this.batches.shift() ?? []) c.enqueue(envelope(e));
+        if (this.trailer) {
+          c.enqueue(envelope({ error: { code: this.trailer, message: this.trailer } }, 0x02));
+          this.trailer = "";
+          return c.close();
+        }
         timer = setInterval(() => { if (this.streamFence && this.stale(req)) end(); }, 5);
       },
     });
@@ -421,6 +429,37 @@ describe("projection runner lease (ADR 0120)", () => {
     expect(svc.registers).toBe(1);
     expect(svc.acquires).toBe(1);
     expect(r.logs("falling back to polling")).toBe(1);
+  });
+
+  it("fenced_flush_after_stream_error_goes_to_standby", async () => {
+    // The stream error is transient, but the save of the frames before it is fenced.
+    serve(new LeaseFake([event("e1", 1)]));
+    svc.trailer = "unavailable";
+    let fenced = false;
+    svc.fenceSave = () => !fenced && (fenced = true);
+    const r = new Runner(svc, "stream");
+    await until("a new grant", () => r.logs(LOST) === 1 && r.logs(GRANTED) === 2);
+    await r.runner.stop();
+
+    expect(svc.saves[0]?.slice(1)).toEqual([1, true]);
+    expect(r.logs(LADDER), "a lost lease must not use the reconnect ladder").toBe(0);
+    expect(svc.pulls.slice(0, 2), "no stream with the fenced epoch").toEqual([1, 3]);
+  });
+
+  it("unsupported_stream_with_failed_flush_falls_back_to_poll", async () => {
+    serve(new LeaseFake([event("e1", 1)], [event("e2", 2)]));
+    svc.trailer = "unimplemented";
+    svc.saveError = () => {
+      svc.saveError = null;
+      return new Response("boom", { status: 500 });
+    };
+    const r = new Runner(svc, "stream");
+    await until("a poll save", () => svc.saves.length === 1);
+    await r.runner.stop();
+
+    expect(r.logs("flush after stream error failed")).toBe(1);
+    expect(r.logs("falling back to polling")).toBe(1);
+    expect(svc.saves[0]?.[2]).toBe(false);
   });
 
   it("streaming_unsupported_releases_the_lease", async () => {

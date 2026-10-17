@@ -73,6 +73,7 @@ interface PutWritesEventData {
   checkpoint_ns: string;
   checkpoint_id: string;
   task_id: string;
+  task_path?: string;
   writes: WriteEntry[];
 }
 
@@ -201,7 +202,8 @@ export class IronflowSaver extends BaseCheckpointSaver {
   async putWrites(
     config: RunnableConfig,
     writes: PendingWrite[],
-    taskId: string
+    taskId: string,
+    taskPath?: string
   ): Promise<void> {
     const threadId = requireThreadId(config);
     const ns = config.configurable?.checkpoint_ns ?? "";
@@ -231,6 +233,7 @@ export class IronflowSaver extends BaseCheckpointSaver {
       checkpoint_ns: ns,
       checkpoint_id: checkpointId,
       task_id: taskId,
+      ...(taskPath ? { task_path: taskPath } : {}),
       writes: entries,
     };
 
@@ -295,10 +298,21 @@ export class IronflowSaver extends BaseCheckpointSaver {
     const writes = view.writes.get(entry.data.checkpoint_id) ?? [];
     const pendingWrites: CheckpointPendingWrite[] = [];
     const seenWrite = new Set<string>();
-    for (const w of writes) {
+    const unique = writes.filter((w) => {
       const key = `${w.taskId}:${w.idx}`;
-      if (w.idx >= 0 && seenWrite.has(key)) continue;
+      if (w.idx >= 0 && seenWrite.has(key)) return false;
       seenWrite.add(key);
+      return true;
+    });
+    // Checkpoint >= 1.2 replays pendingWrites in writesSortKey order (getDeltaChannelHistory);
+    // appends arrive in task completion order.
+    unique.sort(
+      (a, b) =>
+        compareCodePoints(a.taskPath, b.taskPath) ||
+        compareCodePoints(a.taskId, b.taskId) ||
+        a.idx - b.idx
+    );
+    for (const w of unique) {
       const value = await this.serde.loadsTyped(w.type, b64ToBytes(w.value_b64));
       pendingWrites.push([w.taskId, w.channel, value]);
     }
@@ -343,6 +357,21 @@ function requireThreadId(config: RunnableConfig): string {
   return threadId;
 }
 
+/**
+ * Python str order (by code point), as compareWritesSortKeys in checkpoint 1.2.
+ * Local because the peer range still allows checkpoint 1.0, which lacks it.
+ */
+function compareCodePoints(a: string, b: string): number {
+  if (a === b) return 0;
+  const x = [...a];
+  const y = [...b];
+  for (let i = 0; i < Math.min(x.length, y.length); i += 1) {
+    const d = x[i]!.codePointAt(0)! - y[i]!.codePointAt(0)!;
+    if (d !== 0) return d;
+  }
+  return x.length - y.length;
+}
+
 interface PutEntry {
   data: PutEventData;
   version: number;
@@ -351,6 +380,7 @@ interface PutEntry {
 interface FlatWrite {
   checkpointId: string;
   taskId: string;
+  taskPath: string;
   channel: string;
   idx: number;
   type: string;
@@ -397,6 +427,7 @@ function materialize(events: StreamEvent[], ns: string): ThreadView | undefined 
         list.push({
           checkpointId: data.checkpoint_id,
           taskId: data.task_id,
+          taskPath: data.task_path ?? "",
           channel: w.channel,
           idx: w.idx,
           type: w.type,

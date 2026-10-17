@@ -11,7 +11,6 @@ import { createStreamingWorker } from "./worker-streaming.js";
 // StreamingWorker is not exported, so we drive it through the factory and reach
 // its private message path via `as any`, capturing outgoing messages by replacing
 // sendMessage (normally wired to the gRPC stream).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function makeWorker(functions: any[] = []): { w: any; captured: WorkerMessage[] } {
   const w = createStreamingWorker({
     serverUrl: "http://localhost:0",

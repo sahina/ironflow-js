@@ -33,6 +33,8 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     AUTH_HELP: actual.AUTH_HELP,
     waitResultFromWire: actual.waitResultFromWire,
     runStatusFromWire: actual.runStatusFromWire,
+    userFromWire: actual.userFromWire,
+    tenantFromWire: actual.tenantFromWire,
     runStatusToWire: actual.runStatusToWire,
     RunWaitTimeoutError: actual.RunWaitTimeoutError,
     RunFailedError: actual.RunFailedError,
@@ -575,7 +577,7 @@ describe("IronflowClient", () => {
           maxInflight: 0,
           status: "CONSUMER_GROUP_STATUS_PAUSED",
         },
-        updateMask: { paths: ["max_inflight", "status"] },
+        updateMask: "maxInflight,status",
       });
       expect(mockFetch.mock.calls.map(([url]) => new URL(url as string).pathname)).toEqual([
         "/ironflow.v1.PubSubService/CreateConsumerGroup",
@@ -2633,10 +2635,21 @@ describe("IronflowClient", () => {
         ok: true,
         json: () =>
           Promise.resolve({
-            runId: "run_123",
-            status: "running",
-            steps: [{ id: "step_1", name: "charge", status: "completed", output: { charged: true } }],
-            timestamp: "2026-01-15T10:00:00Z",
+            snapshot: {
+              runId: "run_123",
+              status: "running",
+              input: Buffer.from(JSON.stringify({ who: "José" })).toString("base64"),
+              steps: [
+                {
+                  stepId: "run_123:charge:0",
+                  name: "charge",
+                  status: "completed",
+                  output: Buffer.from(JSON.stringify({ charged: true })).toString("base64"),
+                  completedAt: "2026-01-15T10:00:00Z",
+                },
+              ],
+              timestamp: "2026-01-15T10:00:00Z",
+            },
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -2647,7 +2660,11 @@ describe("IronflowClient", () => {
 
       expect(result.runId).toBe("run_123");
       expect(result.status).toBe("running");
+      expect(result.input).toEqual({ who: "José" });
       expect(result.steps).toHaveLength(1);
+      expect(assertDefined(result.steps[0]).output).toEqual({ charged: true });
+      expect(assertDefined(result.steps[0]).completedAt).toEqual(new Date("2026-01-15T10:00:00Z"));
+      expect(result.timestamp).toEqual(new Date("2026-01-15T10:00:00Z"));
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.TimeTravelService/GetRunStateAt",
         expect.objectContaining({ method: "POST" })
@@ -2678,6 +2695,7 @@ describe("IronflowClient", () => {
       const result = await client.getRunTimeline("run_123");
 
       expect(result).toHaveLength(2);
+      expect(assertDefined(result[0]).timestamp).toEqual(new Date("2026-01-01T00:00:00Z"));
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.TimeTravelService/GetRunTimeline",
         expect.objectContaining({ method: "POST" })
@@ -2709,8 +2727,8 @@ describe("IronflowClient", () => {
         json: () =>
           Promise.resolve({
             stepId: "step_1",
-            output: { charged: true, amount: 99.99 },
-            timestamp: "2026-01-15T10:00:01Z",
+            status: "completed",
+            output: Buffer.from(JSON.stringify({ charged: true, amount: 99.99 })).toString("base64"),
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -2721,6 +2739,8 @@ describe("IronflowClient", () => {
 
       expect(result.stepId).toBe("step_1");
       expect(result.output).toEqual({ charged: true, amount: 99.99 });
+      expect(result.status).toBe("completed");
+      expect(result.originalOutput).toBeNull();
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.TimeTravelService/GetStepOutputAt",
         expect.objectContaining({ method: "POST" })
@@ -2735,26 +2755,31 @@ describe("IronflowClient", () => {
   });
 
   describe("getAuditTrail", () => {
-    it("should POST to AuditService/GetAuditTrail and return entries", async () => {
+    it("should POST to AuditService/GetAuditTrail and decode camelCase events", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () =>
           Promise.resolve({
-            entries: [
-              { id: "audit_1", type: "run.started", timestamp: "2026-01-01T00:00:00Z", data: { runId: "run_123" } },
-              { id: "audit_2", type: "step.completed", timestamp: "2026-01-01T00:00:05Z", data: { stepId: "step_1" } },
+            events: [
+              { id: "audit_1", runId: "run_123", eventType: "run.created", createdAt: "2026-01-01T00:00:00Z", payload: {} },
+              { id: "audit_2", runId: "run_123", stepId: "step_1", eventType: "step.completed", createdAt: "2026-01-01T00:00:05Z", payload: {} },
             ],
+            totalCount: 2,
+            nextCursor: "next",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
-      const result = await client.getAuditTrail("run_123");
+      const result = await client.getAuditTrail("run_123", { limit: 2, cursor: "c1" });
 
-      expect(result).toHaveLength(2);
-      expect(assertDefined(result[0]).id).toBe("audit_1");
-      expect(assertDefined(result[0]).type).toBe("run.started");
-      expect(assertDefined(result[1]).type).toBe("step.completed");
+      expect(result.events).toHaveLength(2);
+      expect(assertDefined(result.events[0]).id).toBe("audit_1");
+      expect(assertDefined(result.events[0]).eventType).toBe("run.created");
+      expect(assertDefined(result.events[1]).stepId).toBe("step_1");
+      expect(assertDefined(result.events[1]).eventType).toBe("step.completed");
+      expect(result.totalCount).toBe(2);
+      expect(result.nextCursor).toBe("next");
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.AuditService/GetAuditTrail",
         expect.objectContaining({ method: "POST" })
@@ -2763,6 +2788,8 @@ describe("IronflowClient", () => {
       const call = assertDefined(mockFetch.mock.calls[0]);
       const body = JSON.parse(call[1]?.body as string);
       expect(body.run_id).toBe("run_123");
+      expect(body.limit).toBe(2);
+      expect(body.cursor).toBe("c1");
     });
   });
 
@@ -3537,6 +3564,7 @@ describe("IronflowClient", () => {
 
       expect(user.id).toBe("user-1");
       expect(user.email).toBe("alice@example.com");
+      expect(user.orgId).toBe("org_default"); // the wire sends org_id (#2945)
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/api/v1/users",
         expect.objectContaining({ method: "POST" })
@@ -3626,8 +3654,8 @@ describe("IronflowClient", () => {
       const tenants = await client.tenants.list();
 
       expect(tenants).toHaveLength(1);
-      expect(assertDefined(tenants[0]).id).toBe("org_acme");
-      expect(assertDefined(tenants[0]).name).toBe("Acme Corp");
+      // The wire sends snake_case (#2945).
+      expect(tenants[0]).toEqual({ id: "org_acme", name: "Acme Corp", envCount: 2, keyCount: 3, createdAt: "2026-01-01" });
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/api/v1/tenants",
         expect.objectContaining({ method: "GET" })
@@ -3652,13 +3680,13 @@ describe("IronflowClient", () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({
-          entries: [
+          events: [
             {
               id: "ae-1",
-              run_id: "run-123",
-              function_id: "fn-1",
-              event_type: "step.completed",
-              created_at: "2026-03-28T00:00:00Z",
+              runId: "run-123",
+              functionId: "fn-1",
+              eventType: "step.completed",
+              createdAt: "2026-03-28T00:00:00Z",
             },
           ],
         }),
@@ -3666,10 +3694,11 @@ describe("IronflowClient", () => {
       vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient({ serverUrl: "http://localhost:9123" });
-      const entries = await client.getAuditTrail("run-123");
+      const { events } = await client.getAuditTrail("run-123");
 
-      expect(entries).toHaveLength(1);
-      expect(assertDefined(entries[0]).id).toBe("ae-1");
+      expect(events).toHaveLength(1);
+      expect(assertDefined(events[0]).id).toBe("ae-1");
+      expect(assertDefined(events[0]).functionId).toBe("fn-1");
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.AuditService/GetAuditTrail",
         expect.objectContaining({
@@ -3679,7 +3708,7 @@ describe("IronflowClient", () => {
       );
     });
 
-    it("should return empty array when entries is undefined", async () => {
+    it("should return no events when events is undefined", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({}),
@@ -3687,9 +3716,9 @@ describe("IronflowClient", () => {
       vi.stubGlobal("fetch", mockFetch);
 
       const client = createClient();
-      const entries = await client.getAuditTrail("run-123");
+      const result = await client.getAuditTrail("run-123");
 
-      expect(entries).toEqual([]);
+      expect(result).toEqual({ events: [], totalCount: 0, nextCursor: undefined });
     });
   });
 

@@ -591,6 +591,8 @@ export class ProjectionRunner {
         // Read the streaming response using the ConnectRPC streaming envelope format.
         // Each message is: 1 byte flags + 4 bytes big-endian length + JSON payload.
         const reader = resp.body.getReader();
+        let streamFailed = false;
+        let streamError: unknown;
 
         try {
           let buffer = new Uint8Array(0);
@@ -648,25 +650,30 @@ export class ProjectionRunner {
           }
         } catch (e) {
           this.lost(e);
-          throw e;
+          streamFailed = true;
+          streamError = e;
         } finally {
           reader.releaseLock();
-          // On stop, finishStop() does the final flush so its save errors reject stop().
-          // A lost lease drops the frames received before the error (ADR 0120 section 3).
-          if (!this.intakeSignal.aborted && !this.leaseLost.signal.aborted) {
-            try {
-              await this.flushChain;
-              await this.flushPending();
-            } catch (e) {
-              this.flushFailed = true;
-              throw e;
-            }
+        }
+        // On stop, finishStop() does the final flush so its save errors reject stop().
+        // A lost lease drops the frames received before the error (ADR 0120 section 3).
+        if (!this.intakeSignal.aborted && !this.leaseLost.signal.aborted) {
+          try {
+            await this.flushChain;
+            await this.flushPending();
+          } catch (e) {
+            this.flushFailed = true;
+            // The stream's own error wins (poll fallback or auth failure below, #1673), except a
+            // lease-lost save: that goes to standby, never the reconnect loop (ADR 0120).
+            if (!streamFailed || this.lost(e)) throw e;
+            logger.warn(`Projection ${name}: flush after stream error failed: ${e}`);
           }
         }
+        if (streamFailed) throw streamError;
 
         // Stream ended normally (server restart, etc.)
         if (!this.intakeSignal.aborted) {
-          // A failed batch is not a clean end. The finally block returns early in this case, so
+          // A failed batch is not a clean end. The flush above returns early in this case, so
           // the catch below must count it.
           if (this.flushFailed) throw new Error(`Projection ${name}: batch failed, reconnecting`);
           logger.info(`Projection stream ended for ${name}, reconnecting...`);
@@ -838,7 +845,7 @@ export class ProjectionRunner {
 
       for (const event of batch.events) {
         const ctx = this.buildContext(event);
-        state = (projConfig.handler as ManagedProjectionHandler)(state, event as any, ctx);
+        state = (projConfig.handler as ManagedProjectionHandler)(state, event, ctx);
         batch.lastEventId = event.id;
         batch.lastEventSeq = event.seq;
         batch.lastEventTime = event.timestamp;
@@ -867,7 +874,7 @@ export class ProjectionRunner {
     for (const event of events) {
       this.checkLease(); // external handlers have side effects: stop the batch at once
       const ctx = this.buildContext(event);
-      await (projConfig.handler as ExternalProjectionHandler)(event as any, ctx);
+      await (projConfig.handler as ExternalProjectionHandler)(event, ctx);
       lastEventId = event.id;
       lastEventSeq = event.seq;
     }

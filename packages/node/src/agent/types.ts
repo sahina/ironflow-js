@@ -61,6 +61,7 @@ export interface ToolDefinition<TInput = unknown, TOutput = unknown> {
  * AgentConfig.tools) where TS array invariance otherwise rejects narrow
  * subtypes.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyToolDefinition = ToolDefinition<any, any>;
 
 /**
@@ -313,6 +314,7 @@ export interface McpToolDef<TInput = unknown, TOutput = unknown> {
  * narrow input/output types. Use in container positions where TS array
  * invariance otherwise rejects narrow McpToolDef subtypes (issue #634).
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyMcpToolDef = McpToolDef<any, any>;
 
 /**

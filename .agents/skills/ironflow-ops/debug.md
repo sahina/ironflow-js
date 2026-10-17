@@ -135,7 +135,8 @@ as "no stuck runs". The stuck states are:
   ```
   MCP: `ironflow_circuit_breaker_list`, then `ironflow_circuit_breaker_reset` with the
   `key` field verbatim from the list. Reset only after fixing the cause — a breaker that
-  reopens tells you nothing new.
+  reopens tells you nothing new. What trips it, and what does not:
+  https://docs.ironflow.run/how-to-guides/workflows/circuit-breakers.md
 - **`step.sleep()` running?** Sleeps are durable. Wait for expiry — not a bug.
 - **`step.waitForEvent()` waiting?**
   - Was the expected event emitted? There is no `ironflow event list`; use

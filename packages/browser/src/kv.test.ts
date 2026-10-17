@@ -790,6 +790,20 @@ describe("watch", () => {
     expect(errArg.message).toBe("KV watch WebSocket error");
   });
 
+  it("reports the server's error frame once and closes (#2949)", () => {
+    const onError = vi.fn();
+    const handle = new BrowserKVBucketHandle("gone", config);
+    handle.watch({ onUpdate: vi.fn(), onError });
+
+    const ws = assertDefined(MockWebSocket.instances[0]);
+    ws.onmessage!(new MessageEvent("message", { data: JSON.stringify({ type: "error", message: "bucket not found" }) }));
+    ws.onerror!(new Event("error"));
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect((assertDefined(onError.mock.calls[0])[0] as Error).message).toBe("bucket not found");
+    expect(ws.close).toHaveBeenCalledOnce();
+  });
+
   it("onClose callback fires when WebSocket closes", () => {
     const onClose = vi.fn();
     const handle = new BrowserKVBucketHandle("test-bucket", config);

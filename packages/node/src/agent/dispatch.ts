@@ -107,6 +107,7 @@ export async function handleAgentToolDispatch(
 
   const entry = lookupLocal(qualifiedName);
   if (!entry) {
+    // eslint-disable-next-line no-console
     console.warn(
       `ironflow.agent.dispatch unknown_tool qualified_name=${JSON.stringify(qualifiedName)}`
     );

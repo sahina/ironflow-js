@@ -1035,6 +1035,23 @@ const result = await ironflow.querySQLProjection('board', {
 console.log(result.columns, result.rows, result.totalCount);
 ```
 
+### Raw SQL and definition history
+
+Prefer a projection read for application data. Use `executeSQL` for an ad-hoc read-only query.
+Every cell is a string, and a SQL `NULL` is the empty string.
+
+```typescript
+const result = await ironflow.executeSQL('SELECT id, total FROM order_totals LIMIT 10', {
+  timeoutMs: 5000, // default 5000, maximum 30000
+  maxRows: 100,    // default 1000, maximum 10000
+});
+
+// Definitions archived before a replacement or deletion. Newest first.
+// beforeRevision is an exclusive cursor: pass the previous page's nextBeforeRevision.
+const page = await ironflow.listProjectionHistory('order-totals', { limit: 20 });
+const entry = await ironflow.getProjectionRevision('order-totals', 3);
+```
+
 ## KV Store
 
 Distributed key-value storage backed by NATS JetStream with bucket management, TTL, compare-and-swap, and real-time watch.
@@ -1196,7 +1213,8 @@ const all = await config.list();
 // Returns ConfigEntry[]
 
 // Watch for real-time config changes.
-// Subscribes to system.config.{name}.updated. Auto-connects on first call —
+// Subscribes to system.config.{name}.updated and .deleted (data: null).
+// Auto-connects on first call —
 // no explicit ironflow.connect() needed. Changes made through a trusted SDK,
 // the CLI, dashboard, or REST API reach the subscriber. Payload includes
 // `revision`; drop events whose
@@ -1354,6 +1372,10 @@ const out = await ironflow.schemas.testUpcast({
   toVersion: 2,
   data: { orderId: '123' },
 });
+
+// Archived definitions per (event name, version), newest first
+const history = await ironflow.schemas.listHistory('order.placed', 2, { limit: 20 });
+const revision = await ironflow.schemas.getRevision('order.placed', 2, 1);
 ```
 
 ## Webhook Source Management

@@ -177,17 +177,28 @@ export class KVBucketHandle {
       webSocketProtocols(this.config.apiKey)
     );
 
+    // The server drops the socket after an error frame; that close must not
+    // report a second, generic error.
+    let failed = false;
+
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(String(event.data)) as KVWatchEvent;
+        const data = JSON.parse(String(event.data)) as KVWatchEvent | { type: "error"; message?: string };
         if (data.type === "kv_update") callbacks.onUpdate(data);
+        else if (data.type === "error") {
+          failed = true;
+          callbacks.onError?.(new Error(data.message ?? "KV watch error"));
+          ws.close();
+        }
       } catch (error) {
         callbacks.onError?.(
           error instanceof Error ? error : new Error(String(error))
         );
       }
     };
-    ws.onerror = () => callbacks.onError?.(new Error("KV watch WebSocket error"));
+    ws.onerror = () => {
+      if (!failed) callbacks.onError?.(new Error("KV watch WebSocket error"));
+    };
     ws.onclose = () => callbacks.onClose?.();
 
     return { stop: () => ws.close() };
@@ -198,6 +209,7 @@ export class KVBucketHandle {
     try {
       await this.config.onError(error, context);
     } catch (callbackError) {
+      // eslint-disable-next-line no-console
       console.error("[ironflow] onError callback threw:", callbackError);
     }
   }
@@ -348,6 +360,7 @@ export class KVClient {
     try {
       await this.config.onError(error, context);
     } catch (callbackError) {
+      // eslint-disable-next-line no-console
       console.error("[ironflow] onError callback threw:", callbackError);
     }
   }

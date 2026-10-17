@@ -26,7 +26,7 @@ export function resolveDiscovery({ env, cwd, readFile }: DiscoveryInput): Record
   if (env.IRONFLOW_NO_DISCOVERY === "1") return undefined;
   if (env.IRONFLOW_SERVER_URL || env.IRONFLOW_API_KEY) return undefined;
 
-  let text: string | null = null;
+  let text: string | null;
   for (let dir = cwd; ; dir = dirname(dir)) {
     text = readFile(join(dir, FILE));
     if (text !== null || dirname(dir) === dir) break;

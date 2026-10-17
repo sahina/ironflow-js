@@ -677,6 +677,7 @@ export interface IronflowFunction<TEvent = unknown, TResult = unknown> {
  * narrow event/result types. Use in container positions (e.g. ServeConfig
  * .functions) where TS array invariance otherwise rejects narrow subtypes.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyIronflowFunction = IronflowFunction<any, any>;
 
 /**
@@ -1576,6 +1577,7 @@ export interface RebuildJob {
 
 /**
  * Reconstructed run state returned by the time-travel API.
+ * @deprecated Never matched the wire; getRunStateAt returns TimeTravelRunStateSnapshot.
  */
 export interface TimeTravelRunState {
   runId: string;
@@ -1586,6 +1588,7 @@ export interface TimeTravelRunState {
 
 /**
  * A single step output snapshot returned by the time-travel API.
+ * @deprecated Never matched the wire; use TimeTravelStepOutputSnapshot.
  */
 export interface TimeTravelStepOutput {
   stepId: string;
@@ -1595,6 +1598,7 @@ export interface TimeTravelStepOutput {
 
 /**
  * A single entry in the audit trail.
+ * @deprecated Never matched the wire; getAuditTrail returns AuditTrailResult.
  */
 export interface AuditTrailEntry {
   id: string;
@@ -1817,8 +1821,11 @@ export interface TestUpcastInput {
  */
 export interface UpcastResult {
   success: boolean;
+  /** The input, unchanged: the server does not run SDK upcasters. */
   data: unknown;
   error?: string;
+  /** The version chain the server resolved, one step per version. */
+  stepsApplied: Array<{ fromVersion: number; toVersion: number; description: string }>;
 }
 
 // ============================================================================
@@ -2134,6 +2141,29 @@ export interface ProvisionTenantResult {
   apiKey: { key: string; roles: string[] };
 }
 
+// The user and tenant routes answer in snake_case (#2945).
+export function userFromWire(r: Record<string, unknown>): User {
+  return {
+    id: String(r.id ?? ""),
+    orgId: String(r.org_id ?? ""),
+    email: String(r.email ?? ""),
+    name: r.name as string | undefined,
+    roles: r.roles as string[] | undefined,
+    createdAt: r.created_at as string | undefined,
+    updatedAt: r.updated_at as string | undefined,
+  };
+}
+
+export function tenantFromWire(r: Record<string, unknown>): Tenant {
+  return {
+    id: String(r.id ?? ""),
+    name: String(r.name ?? ""),
+    envCount: Number(r.env_count ?? 0),
+    keyCount: Number(r.key_count ?? 0),
+    createdAt: r.created_at as string | undefined,
+  };
+}
+
 /**
  * Result of waitForCatchup, waitForCatchupBatch, or waitForEvent (#473).
  * On success exactly one of `caughtUp` or `timedOut` is true; errors
@@ -2372,7 +2402,7 @@ export function registeredFunctionFromWire(
     rawRecordingProfile === "run_lifecycle" ||
     rawRecordingProfile === "steps"
       ? rawRecordingProfile
-      : Boolean(r.recording)
+      : r.recording
         ? "all"
         : undefined;
 

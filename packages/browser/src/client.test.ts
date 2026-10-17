@@ -4486,6 +4486,25 @@ describe("IronflowClient (real module)", () => {
         expect(result.injected).toBe(false);
       });
 
+      it("decodes non-ASCII output as UTF-8", async () => {
+        ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+        const output = { who: "José", city: "東京" };
+        vi.stubGlobal(
+          "fetch",
+          vi.fn().mockResolvedValue({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                stepId: "s",
+                status: "completed",
+                output: Buffer.from(JSON.stringify(output)).toString("base64"),
+              }),
+          })
+        );
+        const result = await ironflow.getStepOutputAt("r", "s", new Date());
+        expect(result.output).toEqual(output);
+      });
+
       it("decodes base64 output and originalOutput via atob", async () => {
         ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
 
@@ -4730,15 +4749,15 @@ describe("IronflowClient (real module)", () => {
               events: [
                 {
                   id: "ae-1",
-                  run_id: "run-123",
-                  function_id: "fn-1",
-                  event_type: "step.completed",
+                  runId: "run-123",
+                  functionId: "fn-1",
+                  eventType: "step.completed",
                   payload: { stepId: "s1" },
-                  created_at: "2026-03-28T00:00:00Z",
+                  createdAt: "2026-03-28T00:00:00Z",
                 },
               ],
-              total_count: 1,
-              next_cursor: "cursor-next",
+              totalCount: 1,
+              nextCursor: "cursor-next",
             }),
         })
       );
@@ -4760,7 +4779,7 @@ describe("IronflowClient (real module)", () => {
         "fetch",
         vi.fn().mockResolvedValue({
           ok: true,
-          json: () => Promise.resolve({ total_count: 0 }),
+          json: () => Promise.resolve({ totalCount: 0 }),
         })
       );
 
@@ -4966,7 +4985,7 @@ describe("IronflowClient (real module)", () => {
       );
       await ironflow.consumerGroups.update("orders", { pattern: "order.>" });
       const updateBody = JSON.parse(mockFetch.mock.calls.at(-1)?.[1]?.body as string);
-      expect(updateBody.update_mask.paths).toEqual(["pattern"]);
+      expect(updateBody.update_mask).toBe("pattern");
     });
 
     it("queries environment audit events", async () => {
@@ -5066,6 +5085,7 @@ describe("IronflowClient (real module)", () => {
       const t0 = assertDefined(tenants[0]);
       expect(t0.id).toBe("org_acme");
       expect(t0.name).toBe("Acme Corp");
+      expect([t0.envCount, t0.keyCount]).toEqual([2, 3]); // the wire sends env_count, key_count (#2945)
     });
 
     it("throws EnterpriseRequiredError on 402", async () => {

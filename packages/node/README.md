@@ -883,7 +883,7 @@ const output   = await client.getStepOutputAt('run_abc123', 'step_xyz', new Date
 ### getAuditTrail(runId) / listAuditEvents(options?)
 
 ```typescript
-const entries = await client.getAuditTrail('run_abc123');           // one run
+const trail   = await client.getAuditTrail('run_abc123');           // one run: { events, totalCount, nextCursor }
 const page    = await client.listAuditEvents({ eventType: 'run.failed', limit: 50 });
 ```
 
@@ -1039,6 +1039,10 @@ const job   = await client.projections.rebuild('order-summary');
 const jobNow = await client.projections.getRebuildJob('order-summary');
 await client.projections.cancelRebuild('order-summary');
 
+// Archived definitions, newest first. The current definition is not in the history.
+const history = await client.projections.listHistory('order-summary', { limit: 20 });
+const revision = await client.projections.getRevision('order-summary', 3);
+
 // Read-your-writes — wait until a projection has caught up.
 // `streams.append` returns no NATS sequence under the transactional outbox;
 // resolve eventId → seq with waitForEvent first, then wait on that seq.
@@ -1128,6 +1132,11 @@ const out = await client.schemas.testUpcast({
   toVersion: 2,
   data: { orderId: '123' },
 });
+
+// Archived definitions, newest first. beforeRevision is an exclusive cursor:
+// pass the previous page's nextBeforeRevision (0 means no more pages).
+const history = await client.schemas.listHistory('order.placed', 2, { limit: 20 });
+const revision = await client.schemas.getRevision('order.placed', 2, 1);
 ```
 
 ### Webhook sources (`client.webhooks`) — server-side registry
@@ -1186,6 +1195,32 @@ await client.users.delete(user.id);
 // Tenant listing. Both tenant calls require the `users:manage` permission.
 const tenants = await client.tenants.list();
 ```
+
+### Deployments, capacity and debounce
+
+```typescript
+// Register stages an immutable deployment. It never changes which code serves new runs.
+const { deployment, created } = await client.deployments.register({
+  functionId: 'process-order',
+  deploymentId: '2026-10-16-a',
+  artifactDigest: `sha256:${digestHex}`,
+  snapshot: { triggers: [{ event: 'order.placed' }], timeoutMs: 30000 },
+  mode: 'pull',
+});
+await client.deployments.get('process-order', '2026-10-16-a');
+await client.deployments.list('process-order', { limit: 20 });
+await client.deployments.getExecutionRouting('process-order'); // 'legacy' | 'adopting' | 'versioned'
+
+// Capacity views need platform credentials (an ifplatform_ key). A tenant key gets 403.
+await client.capacity.listQueue({ limit: 50 });
+await client.capacity.stats();
+
+// cancel() takes the raw debounce key.
+await client.debounce.list();
+await client.debounce.cancel('env_default', 'process-search', 'user-42');
+```
+
+See the [Node reference](https://docs.ironflow.run/reference/js-sdk/node/#deployments-definition-history-capacity-and-debounce) for the full set.
 
 ### Command idempotency (`client.commandDedup`)
 

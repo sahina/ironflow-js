@@ -162,11 +162,19 @@ export class BrowserKVBucketHandle {
       webSocketProtocols(credential),
     );
 
+    // The server drops the socket after an error frame; that close must not
+    // report a second, generic error.
+    let failed = false;
+
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data as string) as KVWatchEvent;
+        const data = JSON.parse(event.data as string) as KVWatchEvent | { type: "error"; message?: string };
         if (data.type === "kv_update") {
           callbacks.onUpdate(data);
+        } else if (data.type === "error") {
+          failed = true;
+          callbacks.onError?.(new Error(data.message ?? "KV watch error"));
+          ws.close();
         }
       } catch (err) {
         callbacks.onError?.(
@@ -176,7 +184,7 @@ export class BrowserKVBucketHandle {
     };
 
     ws.onerror = () => {
-      callbacks.onError?.(new Error("KV watch WebSocket error"));
+      if (!failed) callbacks.onError?.(new Error("KV watch WebSocket error"));
     };
 
     ws.onclose = () => {

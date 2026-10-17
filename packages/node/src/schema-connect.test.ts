@@ -28,7 +28,7 @@ describe("schema upcast over Connect", () => {
   serveUpcast();
   const client = createClient({ serverUrl: "http://localhost:9123" });
   const result = await client.schemas.testUpcast({ eventName: "order.placed", fromVersion: 1, toVersion: 2, data });
-  expect(result).toEqual({ success: true, data });
+  expect(result).toEqual({ success: true, data, stepsApplied: [{ fromVersion: 1, toVersion: 2, description: "upcast to v2" }] });
  });
  it("returns a permanent SDK error for invalid input", async () => {
   serveUpcast();

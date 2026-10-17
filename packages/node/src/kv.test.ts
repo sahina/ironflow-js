@@ -616,4 +616,29 @@ describe("KV watch", () => {
     watcher.stop();
     expect(ws.close).toHaveBeenCalledOnce();
   });
+
+  it("reports the server's error frame once and closes (#2949)", () => {
+    class MockWebSocket {
+      static instances: MockWebSocket[] = [];
+      onmessage: ((event: { data: string }) => void) | null = null;
+      onerror: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      close = vi.fn();
+
+      constructor(public url: string, public protocols: string[]) {
+        MockWebSocket.instances.push(this);
+      }
+    }
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const onError = vi.fn();
+    new KVBucketHandle("gone", defaultConfig()).watch({ onUpdate: vi.fn(), onError });
+    const ws = assertDefined(MockWebSocket.instances[0]);
+
+    ws.onmessage?.({ data: JSON.stringify({ type: "error", message: "bucket not found" }) });
+    ws.onerror?.();
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect((assertDefined(onError.mock.calls[0])[0] as Error).message).toBe("bucket not found");
+    expect(ws.close).toHaveBeenCalledOnce();
+  });
 });

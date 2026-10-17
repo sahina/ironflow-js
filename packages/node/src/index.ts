@@ -286,6 +286,31 @@ export type {
   AuditTrailResult,
   ListAuditEventsOptions,
   PatchSecretInput,
+
+  // Definition history and admin views (#2948)
+  DefinitionHistoryOptions,
+  ProjectionDefinition,
+  SchemaDefinition,
+  DefinitionHistoryEntry,
+  DefinitionHistoryPage,
+  ProjectionHistoryEntry,
+  ProjectionHistoryPage,
+  SchemaHistoryEntry,
+  SchemaHistoryPage,
+  RegisterDeploymentInput,
+  Deployment,
+  RegisterDeploymentResult,
+  ListDeploymentsOptions,
+  FunctionExecutionRouting,
+  CapacityListOptions,
+  CapacityLane,
+  CapacityQueueEntry,
+  CapacityLease,
+  CapacityBucket,
+  CapacityWorkerSession,
+  CapacityWorkerCredit,
+  CapacityStat,
+  DebounceEntry,
 } from "@ironflow/core";
 
 // Re-export branded ID creators

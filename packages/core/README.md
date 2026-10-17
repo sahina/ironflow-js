@@ -2654,6 +2654,7 @@ interface TimeTravelRunState {
   timestamp: string;
 }
 
+/** @deprecated Never matched the wire; getStepOutputAt returns TimeTravelStepOutputSnapshot. */
 interface TimeTravelStepOutput {
   stepId: string;
   output: unknown;
@@ -2954,7 +2955,7 @@ interface ProvisionTenantResult {
 
 ## AuditTrailEntry
 
-Generic timeline entry (distinct from the structured `AuditEvent`).
+**Deprecated.** It never matched the server's response. `getAuditTrail` returns `AuditTrailResult` with `AuditEvent` items.
 
 ```typescript
 interface AuditTrailEntry {

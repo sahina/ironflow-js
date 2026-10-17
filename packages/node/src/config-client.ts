@@ -21,6 +21,7 @@ import {
 } from "@ironflow/core";
 
 import type { OnErrorHandler, ErrorContext } from "./types.js";
+import { webSocketProtocols } from "./websocket-auth.js";
 
 export type { ConfigWatchEvent, ConfigWatchCallbacks, ConfigWatcher };
 
@@ -126,14 +127,10 @@ export class ConfigClient {
 
     const url = `${wsUrl}/api/v1/config/${enc(name)}/watch`;
 
-    const headers: Record<string, string> = {};
-    if (this.config.apiKey) {
-      headers["Authorization"] = `Bearer ${this.config.apiKey}`;
-    }
-
-    // Node 20+ supports the global WebSocket constructor with an options
-    // argument that accepts headers (unlike the browser API).
-    const ws = new WebSocket(url, { headers } as unknown as string[]);
+    const ws = new WebSocket(url, webSocketProtocols(this.config.apiKey));
+    // The server drops the socket after an error frame; that close must not
+    // report a second, generic error.
+    let failed = false;
 
     ws.onmessage = (event) => {
       try {
@@ -141,8 +138,9 @@ export class ConfigClient {
         if (data.type === "config_update") {
           callbacks.onUpdate(data as ConfigWatchEvent);
         } else if (data.type === "error") {
-          const msg = data.message ?? "config watch error";
-          callbacks.onError?.(new Error(msg));
+          failed = true;
+          callbacks.onError?.(new Error(data.message ?? "config watch error"));
+          ws.close();
         }
       } catch (err) {
         callbacks.onError?.(
@@ -152,7 +150,7 @@ export class ConfigClient {
     };
 
     ws.onerror = () => {
-      callbacks.onError?.(new Error("config watch WebSocket error"));
+      if (!failed) callbacks.onError?.(new Error("config watch WebSocket error"));
     };
 
     ws.onclose = () => {
@@ -171,6 +169,7 @@ export class ConfigClient {
     try {
       await this.config.onError(error, context);
     } catch (callbackError) {
+      // eslint-disable-next-line no-console
       console.error("[ironflow] onError callback threw:", callbackError);
     }
   }

@@ -292,21 +292,21 @@ describe("ConfigClient.watch()", () => {
     expect(mockWs.url).toBe("ws://localhost:9123/api/v1/config/my%20config/watch");
   });
 
-  it("should pass Authorization header in WebSocket options when apiKey is set", () => {
+  it("should authenticate with the bearer subprotocol when apiKey is set", () => {
     const client = new ConfigClient(defaultConfig({ apiKey: "ifkey_abc123" }));
     client.watch("cfg", { onUpdate: vi.fn() });
 
-    const options = mockWs.options as { headers?: Record<string, string> };
-    expect(options?.headers?.["Authorization"]).toBe("Bearer ifkey_abc123");
+    expect(mockWs.options).toEqual([
+      "ironflow.v1",
+      `ironflow.auth.bearer.${Buffer.from("ifkey_abc123").toString("base64url")}`,
+    ]);
   });
 
-  it("should not pass Authorization header when apiKey is absent", () => {
+  it("should send only the stable subprotocol when apiKey is absent", () => {
     const client = new ConfigClient(defaultConfig());
     client.watch("cfg", { onUpdate: vi.fn() });
 
-    const options = mockWs.options as { headers?: Record<string, string> };
-    // headers object exists but should be empty (no Authorization key)
-    expect(options?.headers?.["Authorization"]).toBeUndefined();
+    expect(mockWs.options).toEqual(["ironflow.v1"]);
   });
 
   it("should call onUpdate when a config_update message is received", () => {
@@ -347,6 +347,18 @@ describe("ConfigClient.watch()", () => {
     expect(onError).toHaveBeenCalledOnce();
     expect(assertDefined(onError.mock.calls[0])[0]).toBeInstanceOf(Error);
     expect((assertDefined(onError.mock.calls[0])[0] as Error).message).toBe("failed to start config watch");
+  });
+
+  it("should close and not report a second error after an error frame", () => {
+    const onError = vi.fn();
+    const client = new ConfigClient(defaultConfig());
+    client.watch("cfg", { onUpdate: vi.fn(), onError });
+
+    mockWs.simulateMessage({ type: "error", message: "failed to start config watch" });
+    mockWs.simulateError();
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(mockWs.close).toHaveBeenCalledOnce();
   });
 
   it("should call onError with generic message when error message is missing", () => {

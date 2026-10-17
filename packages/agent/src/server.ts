@@ -16,7 +16,7 @@ import { resolveModel } from './models.js'
 import { PermissionGate } from './permissions.js'
 import { noteToolArgs, startRuntime } from './runtime.js'
 import { sessions, type SessionContext } from './sessions.js'
-import { bundledSkillsRoot, loadSkills } from './skills.js'
+import { bundledSkillsRoot, loadSkills, repoSkillsRoot } from './skills.js'
 import { Transcript } from './transcript.js'
 import { promptToMessage, toSessionUpdate } from './translate.js'
 
@@ -330,7 +330,11 @@ let unobserve: (() => void) | null = null
 export async function serve(opts: { input: ReadableStream<Uint8Array>; output: WritableStream<Uint8Array>; home: string; env: NodeJS.ProcessEnv; providers?: Provider[]; inMemory?: boolean; fetchFn?: typeof fetch; bridge?: typeof startBridge }): Promise<{ connection: AgentSideConnection; agent: IronflowAcpAgent; stop(): Promise<void> }> {
   if (!runtime) {
     // Built packages carry the skills in dist/skills; a run from source falls back to the repo's copy.
-    const skills = await loadSkills(bundledSkillsRoot()).catch(async () => loadSkills(join(dirname(fileURLToPath(import.meta.url)), '../../../../.agents/skills')))
+    const skills = await loadSkills(bundledSkillsRoot()).catch(async (err) => {
+      const repo = repoSkillsRoot()
+      if (!repo) throw err
+      return loadSkills(repo)
+    })
     runtime = { flue: await startRuntime({ home: opts.home, skills, ...(opts.providers ? { providers: opts.providers } : {}), ...(opts.inMemory ? { inMemory: true } : {}) }), refs: 0 }
     unobserve = observe((event, ctx) => {
       for (const a of agents) if (a.owns(ctx.id)) a.onEvent(ctx.id, event)

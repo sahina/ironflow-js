@@ -221,6 +221,16 @@ describe("IronflowSaver — putWrites", () => {
     expect(tuple!.pendingWrites?.[1]?.[2]).toBe("v2");
   });
 
+  it("returns pendingWrites in writesSortKey order, not append order", async () => {
+    await saver.put(cfg("t1"), fakeCheckpoint("cp-1"), fakeMetadata(0), {});
+    // Parallel tasks finish in reverse path order; untagged writes (graph input) sort first.
+    await saver.putWrites(cfg("t1", "", "cp-1"), [["c", "late"]], "task-a", "~__pregel_pull, b");
+    await saver.putWrites(cfg("t1", "", "cp-1"), [["c", "early"]], "task-z", "~__pregel_pull, a");
+    await saver.putWrites(cfg("t1", "", "cp-1"), [["c", "input"]], "task-m");
+    const tuple = await saver.getTuple(cfg("t1", "", "cp-1"));
+    expect(tuple!.pendingWrites?.map((w) => w[2])).toEqual(["input", "early", "late"]);
+  });
+
   it("throws when checkpoint_id missing", async () => {
     await expect(saver.putWrites(cfg("t1"), [["a", "v"]], "task-1")).rejects.toMatchObject({
       code: "LG_CHECKPOINT_ID_REQUIRED",

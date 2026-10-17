@@ -155,6 +155,7 @@ export function warnAboutLongLivedBrowserKey(auth?: AuthConfig): void {
 
   const credential = auth?.apiKey || auth?.token;
   if (credential?.startsWith("ifkey_")) {
+    // eslint-disable-next-line no-console
     console.warn(
       "[ironflow] Long-lived ifkey_ credentials should not be embedded in browser code. " +
         "Use a short-lived session token issued by a trusted backend.",

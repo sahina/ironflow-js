@@ -623,6 +623,8 @@ export class OfflineQueue {
       // mode). Never let this escape: every call site is `void drain()`, so an
       // uncaught rejection here is both an unhandled rejection and a queue that
       // reports "idle" while writes sit pending with nothing armed to retry.
+      // eslint-disable-next-line no-console
+      console.error("[ironflow] offline queue drain failed", error);
       this.setState("paused");
       this.emitStats();
       this.scheduleRetry();

@@ -229,6 +229,19 @@ export type {
 
   // Logger
   Logger,
+
+  // Definition history and admin views (#2948)
+  DefinitionHistoryOptions,
+  ProjectionDefinition,
+  SchemaDefinition,
+  DefinitionHistoryEntry,
+  DefinitionHistoryPage,
+  ProjectionHistoryEntry,
+  ProjectionHistoryPage,
+  SchemaHistoryEntry,
+  SchemaHistoryPage,
+  ExecuteSQLOptions,
+  ExecuteSQLResult,
 } from "@ironflow/core";
 
 // Re-export utilities

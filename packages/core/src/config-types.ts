@@ -54,18 +54,19 @@ export interface ConfigSetResult {
 
 /**
  * A config watch event received over the WebSocket stream.
- * Emitted by the server when a config document is created or updated.
+ * Emitted when a config document is created, updated or deleted. The browser
+ * SDK watches the `system.config.{name}.updated` and `.deleted` topics.
  */
 export interface ConfigWatchEvent {
   /** Message type — always "config_update" for data events */
   type: string;
   /** Config namespace name */
   name: string;
-  /** Current config data as key-value pairs */
-  data: Record<string, unknown>;
+  /** Current config data as key-value pairs; `null` after the config is deleted */
+  data: Record<string, unknown> | null;
   /** KV revision number after this update */
   revision: number;
-  /** ISO-8601 timestamp of the update */
+  /** ISO-8601 timestamp of the update, in UTC */
   updatedAt: string;
 }
 

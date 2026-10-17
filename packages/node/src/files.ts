@@ -179,6 +179,7 @@ export class FilesClient {
     try {
       await this.config.onError(error, context);
     } catch (callbackError) {
+      // eslint-disable-next-line no-console
       console.error("[ironflow] onError callback threw:", callbackError);
     }
   }

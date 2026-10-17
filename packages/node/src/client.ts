@@ -4,6 +4,37 @@ import { stepInspectionFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { collectEntityHistory, type EntityHistoryPageWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
+import { tenantFromWire, userFromWire } from "@ironflow/core";
+import {
+  capacityQuery,
+  definitionHistoryPageFromWire,
+  definitionHistoryEntryFromWire,
+  definitionHistoryRequest,
+  deploymentFromWire,
+  executionRoutingFromWire,
+  projectionDefinitionFromWire,
+  registerDeploymentRequest,
+  schemaDefinitionFromWire,
+  type CapacityBucket,
+  type CapacityLane,
+  type CapacityLease,
+  type CapacityListOptions,
+  type CapacityQueueEntry,
+  type CapacityStat,
+  type CapacityWorkerCredit,
+  type CapacityWorkerSession,
+  type DebounceEntry,
+  type DefinitionHistoryOptions,
+  type Deployment,
+  type FunctionExecutionRouting,
+  type ListDeploymentsOptions,
+  type ProjectionHistoryEntry,
+  type ProjectionHistoryPage,
+  type RegisterDeploymentInput,
+  type RegisterDeploymentResult,
+  type SchemaHistoryEntry,
+  type SchemaHistoryPage,
+} from "@ironflow/core";
 import { connectHTTPError, restRetryable, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
  * Ironflow Node.js Client
@@ -96,10 +127,10 @@ import {
   type ProjectionStatusInfo,
   type RebuildJob,
   type WaitResult,
-  type TimeTravelRunState,
+  type TimeTravelRunStateSnapshot,
+  type GetAuditTrailOptions,
   type TimeTravelTimelineEvent,
-  type TimeTravelStepOutput,
-  type AuditTrailEntry,
+  type TimeTravelStepOutputSnapshot,
   type AuditEvent,
   type AuditTrailResult,
   type ListAuditEventsOptions,
@@ -154,6 +185,15 @@ import { FilesClient } from "./files.js";
 import { CommandDedup, type CommandDedupOptions } from "./command-dedup.js";
 import { ConfigClient } from "./config-client.js";
 import type { OnErrorHandler, ErrorContext } from "./types.js";
+
+// Flat aliases: scripts/sdkcoverage reads `restRequest<T>(` with a regex that stops at the first ">".
+type WireRow = Record<string, unknown>;
+type WireRows = WireRow[] | null;
+
+/** Time-travel payloads are proto bytes, which protojson base64-encodes. */
+function protoBytesJSON(b64?: string): unknown {
+  return b64 ? JSON.parse(Buffer.from(b64, "base64").toString("utf8")) : null;
+}
 
 function auditEventFromWire(raw: Record<string, unknown>): AuditEvent {
   return {
@@ -1024,8 +1064,9 @@ export class IronflowClient {
       const paths: string[] = [];
       const set = (path: string, value: unknown) => {
         if (value !== undefined) {
-          group[path.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())] = value;
-          paths.push(path);
+          const field = path.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+          group[field] = value;
+          paths.push(field);
         }
       };
       set("pattern", input.pattern);
@@ -1052,7 +1093,8 @@ export class IronflowClient {
       }
       const response = await this.request<Record<string, unknown>>(
         "/ironflow.v1.PubSubService/UpdateConsumerGroup",
-        { group, updateMask: { paths } },
+        // protojson encodes a FieldMask as one comma-joined string of camelCase paths.
+        { group, updateMask: paths.join(",") },
         "consumerGroups.update"
       );
       return consumerGroupFromWire(response);
@@ -1632,9 +1674,11 @@ export class IronflowClient {
    * ```
    */
   readonly orgs = {
-    /** Create a new organization */
+    /** Create a new organization. Needs a platform credential. */
     create: async (input: CreateOrgInput): Promise<Organization> => {
-      return this.restRequest<Organization>("POST", "/api/v1/orgs", input, "orgs.create");
+      // POST /api/v1/orgs always answers 403: tenants cannot create orgs, and a
+      // platform credential on a tenant route needs an X-Ironflow-Org header (#2945).
+      return this.restRequest<Organization>("POST", "/api/v1/platform/orgs", input, "orgs.create");
     },
     /** List all organizations */
     list: async (): Promise<Organization[]> => {
@@ -1996,6 +2040,120 @@ export class IronflowClient {
       );
       return waitResultFromWire(result);
     },
+    /** List the archived definitions of a projection, newest first. The current definition is not in its history. */
+    listHistory: async (name: string, options: DefinitionHistoryOptions = {}): Promise<ProjectionHistoryPage> => {
+      const raw = await this.request<unknown>(
+        "/ironflow.v1.ProjectionService/ListProjectionHistory",
+        { name, ...definitionHistoryRequest(options) },
+        "projections.listHistory", undefined, true
+      );
+      return definitionHistoryPageFromWire(raw, projectionDefinitionFromWire);
+    },
+    /** Get one archived projection definition by its history revision. */
+    getRevision: async (name: string, revision: number): Promise<ProjectionHistoryEntry> => {
+      const raw = await this.request<{ entry?: unknown }>(
+        "/ironflow.v1.ProjectionService/GetProjectionRevision",
+        { name, revision: String(revision) },
+        "projections.getRevision", undefined, true
+      );
+      return definitionHistoryEntryFromWire(raw.entry, projectionDefinitionFromWire);
+    },
+  };
+
+  /**
+   * Executable deployments (ADR 0081). Registering stages code only; it
+   * never activates a deployment.
+   */
+  readonly deployments = {
+    /**
+     * Register an immutable deployment. Registering the identical tuple again
+     * returns `created: false`; a different artifact, snapshot, mode or
+     * endpoint under an existing deployment ID fails with ALREADY_EXISTS.
+     */
+    register: async (input: RegisterDeploymentInput): Promise<RegisterDeploymentResult> => {
+      const raw = await this.request<{ deployment?: unknown; created?: boolean }>(
+        "/ironflow.v1.DeploymentService/RegisterDeployment",
+        registerDeploymentRequest(input),
+        "deployments.register", undefined, true
+      );
+      return { deployment: deploymentFromWire(raw.deployment), created: raw.created === true };
+    },
+    /** Get one registered deployment. */
+    get: async (functionId: string, deploymentId: string): Promise<Deployment> => {
+      const raw = await this.request<{ deployment?: unknown }>(
+        "/ironflow.v1.DeploymentService/GetDeployment",
+        { functionId, deploymentId },
+        "deployments.get", undefined, true
+      );
+      return deploymentFromWire(raw.deployment);
+    },
+    /** List a function's deployments, newest first. */
+    list: async (functionId: string, options: ListDeploymentsOptions = {}): Promise<Deployment[]> => {
+      const raw = await this.request<{ deployments?: unknown[] }>(
+        "/ironflow.v1.DeploymentService/ListDeployments",
+        { functionId, ...options },
+        "deployments.list", undefined, true
+      );
+      return (raw.deployments ?? []).map(deploymentFromWire);
+    },
+    /** Report how a function selects the executable for new runs. */
+    getExecutionRouting: async (functionId: string): Promise<FunctionExecutionRouting> => {
+      const raw = await this.request<unknown>(
+        "/ironflow.v1.DeploymentService/GetFunctionExecutionRouting",
+        { functionId },
+        "deployments.getExecutionRouting", undefined, true
+      );
+      return executionRoutingFromWire(raw);
+    },
+  };
+
+  /**
+   * Capacity observability. Every view needs platform credentials (an
+   * `ifplatform_` key); a tenant key gets 403.
+   */
+  readonly capacity = {
+    /** Concurrency lanes. */
+    listLanes: (options?: CapacityListOptions): Promise<CapacityLane[]> =>
+      this.restRequest("GET", `/api/v1/capacity/lanes${capacityQuery(options)}`, undefined, "capacity.listLanes"),
+    /** Executions waiting for capacity. */
+    listQueue: (options?: CapacityListOptions): Promise<CapacityQueueEntry[]> =>
+      this.restRequest("GET", `/api/v1/capacity/queue${capacityQuery(options)}`, undefined, "capacity.listQueue"),
+    /** Active concurrency leases. `function` is ignored; match a lease by `run_id`. */
+    listLeases: (options?: CapacityListOptions): Promise<CapacityLease[]> =>
+      this.restRequest("GET", `/api/v1/capacity/leases${capacityQuery(options)}`, undefined, "capacity.listLeases"),
+    /** Fairness-ledger buckets. */
+    listBuckets: (options?: CapacityListOptions): Promise<CapacityBucket[]> =>
+      this.restRequest("GET", `/api/v1/capacity/buckets${capacityQuery(options)}`, undefined, "capacity.listBuckets"),
+    /** Connected streaming-worker sessions. */
+    listSessions: (options?: CapacityListOptions): Promise<CapacityWorkerSession[]> =>
+      this.restRequest("GET", `/api/v1/capacity/sessions${capacityQuery(options)}`, undefined, "capacity.listSessions"),
+    /** Worker execution slots. `function` is ignored. */
+    listCredits: (options?: CapacityListOptions): Promise<CapacityWorkerCredit[]> =>
+      this.restRequest("GET", `/api/v1/capacity/credits${capacityQuery(options)}`, undefined, "capacity.listCredits"),
+    /** Per-function capacity totals across all environments. */
+    stats: (): Promise<CapacityStat[]> =>
+      this.restRequest("GET", "/api/v1/capacity/stats", undefined, "capacity.stats"),
+  };
+
+  /** Armed debounce timers in this client's environment. */
+  readonly debounce = {
+    /** List the armed debounce timers. */
+    list: (): Promise<DebounceEntry[]> =>
+      this.restRequest("GET", "/api/v1/debounce/entries", undefined, "debounce.list"),
+    /**
+     * Disarm one timer so its pending invocation never fires. Pass the raw
+     * debounce key; it is base64url-encoded for the path. Cancelling an entry
+     * that is not armed succeeds.
+     */
+    cancel: async (environmentId: string, functionId: string, key: string): Promise<void> => {
+      const segment = Buffer.from(key, "utf8").toString("base64url");
+      await this.restRequest<void>(
+        "DELETE",
+        `/api/v1/debounce/entries/${encodeURIComponent(environmentId)}/${encodeURIComponent(functionId)}/${segment}`,
+        undefined,
+        "debounce.cancel"
+      );
+    },
   };
 
   /**
@@ -2215,6 +2373,7 @@ export class IronflowClient {
       const result = await this.request<{
         data?: unknown;
         dataValue?: unknown;
+        stepsApplied?: Array<{ fromVersion?: number; toVersion?: number; description?: string }>;
       }>(
         "/ironflow.v1.EventSchemaService/TestUpcast",
         { ...fields, ...payload },
@@ -2225,7 +2384,31 @@ export class IronflowClient {
       return {
         success: true,
         data: "dataValue" in result ? result.dataValue : result.data,
+        // protojson omits zero values, so version 0 and empty fields arrive absent.
+        stepsApplied: (result.stepsApplied ?? []).map((step) => ({
+          fromVersion: step.fromVersion ?? 0,
+          toVersion: step.toVersion ?? 0,
+          description: step.description ?? "",
+        })),
       };
+    },
+    /** List the archived documents of one schema version, newest first. */
+    listHistory: async (eventName: string, version: number, options: DefinitionHistoryOptions = {}): Promise<SchemaHistoryPage> => {
+      const raw = await this.request<unknown>(
+        "/ironflow.v1.EventSchemaService/ListSchemaHistory",
+        { eventName, version, ...definitionHistoryRequest(options) },
+        "schemas.listHistory", undefined, true
+      );
+      return definitionHistoryPageFromWire(raw, schemaDefinitionFromWire);
+    },
+    /** Get one archived schema document by its history revision. */
+    getRevision: async (eventName: string, version: number, revision: number): Promise<SchemaHistoryEntry> => {
+      const raw = await this.request<{ entry?: unknown }>(
+        "/ironflow.v1.EventSchemaService/GetSchemaRevision",
+        { eventName, version, revision: String(revision) },
+        "schemas.getRevision", undefined, true
+      );
+      return definitionHistoryEntryFromWire(raw.entry, schemaDefinitionFromWire);
     },
   };
 
@@ -2235,12 +2418,59 @@ export class IronflowClient {
    * @param runId The run ID to query
    * @param timestamp The point in time to reconstruct state at
    */
-  async getRunStateAt(runId: string, timestamp: Date): Promise<TimeTravelRunState> {
-    return this.request<TimeTravelRunState>(
+  async getRunStateAt(runId: string, timestamp: Date): Promise<TimeTravelRunStateSnapshot> {
+    const { snapshot: s } = await this.request<{
+      snapshot: {
+        runId: string;
+        functionId: string;
+        status: string;
+        input?: string;
+        steps?: Array<{
+          stepId: string;
+          name: string;
+          type: string;
+          sequence?: number;
+          status: string;
+          output?: string;
+          error?: string;
+          originalOutput?: string;
+          startedAt?: string;
+          completedAt?: string;
+          durationMs?: number;
+          injected?: boolean;
+          patched?: boolean;
+        }>;
+        timestamp: string;
+        createdAt?: string;
+      };
+    }>(
       "/ironflow.v1.TimeTravelService/GetRunStateAt",
       { run_id: runId, timestamp: timestamp.toISOString() },
       "getRunStateAt"
     );
+    return {
+      runId: s.runId,
+      functionId: s.functionId,
+      status: s.status,
+      input: protoBytesJSON(s.input),
+      steps: (s.steps ?? []).map((step) => ({
+        stepId: step.stepId,
+        name: step.name,
+        type: step.type,
+        sequence: step.sequence ?? 0,
+        status: step.status,
+        output: protoBytesJSON(step.output),
+        error: protoBytesJSON(step.error),
+        originalOutput: protoBytesJSON(step.originalOutput),
+        startedAt: step.startedAt ? new Date(step.startedAt) : null,
+        completedAt: step.completedAt ? new Date(step.completedAt) : null,
+        durationMs: step.durationMs ?? null,
+        injected: step.injected ?? false,
+        patched: step.patched ?? false,
+      })),
+      timestamp: new Date(s.timestamp),
+      createdAt: s.createdAt ? new Date(s.createdAt) : null,
+    };
   }
 
   /**
@@ -2249,12 +2479,18 @@ export class IronflowClient {
    * @param runId The run ID to query
    */
   async getRunTimeline(runId: string): Promise<TimeTravelTimelineEvent[]> {
-    const response = await this.request<{ events?: TimeTravelTimelineEvent[] }>(
-      "/ironflow.v1.TimeTravelService/GetRunTimeline",
-      { run_id: runId },
-      "getRunTimeline"
-    );
-    return response.events ?? [];
+    const response = await this.request<{
+      events?: Array<Omit<TimeTravelTimelineEvent, "timestamp"> & { timestamp: string }>;
+    }>("/ironflow.v1.TimeTravelService/GetRunTimeline", { run_id: runId }, "getRunTimeline");
+    return (response.events ?? []).map((e) => ({
+      id: e.id,
+      eventType: e.eventType,
+      stepId: e.stepId || "",
+      stepName: e.stepName || "",
+      summary: e.summary,
+      significant: e.significant ?? false,
+      timestamp: new Date(e.timestamp),
+    }));
   }
 
   /**
@@ -2268,26 +2504,61 @@ export class IronflowClient {
     runId: string,
     stepId: string,
     timestamp: Date
-  ): Promise<TimeTravelStepOutput> {
-    return this.request<TimeTravelStepOutput>(
+  ): Promise<TimeTravelStepOutputSnapshot> {
+    const data = await this.request<{
+      stepId: string;
+      status: string;
+      output?: string;
+      originalOutput?: string;
+      patched?: boolean;
+      injected?: boolean;
+    }>(
       "/ironflow.v1.TimeTravelService/GetStepOutputAt",
       { run_id: runId, step_id: stepId, timestamp: timestamp.toISOString() },
       "getStepOutputAt"
     );
+    return {
+      stepId: data.stepId,
+      status: data.status,
+      output: protoBytesJSON(data.output),
+      originalOutput: protoBytesJSON(data.originalOutput),
+      patched: data.patched ?? false,
+      injected: data.injected ?? false,
+    };
   }
 
   /**
    * Get the audit trail for a run.
    *
    * @param runId The run ID to retrieve the audit trail for
+   * @param options Filters and paging; pass the previous `nextCursor` as `cursor`
    */
-  async getAuditTrail(runId: string): Promise<AuditTrailEntry[]> {
-    const response = await this.request<{ entries?: AuditTrailEntry[] }>(
+  async getAuditTrail(
+    runId: string,
+    options: GetAuditTrailOptions = {}
+  ): Promise<AuditTrailResult> {
+    // Connect answers in protojson camelCase; auditEventFromWire takes both casings.
+    const response = await this.request<{
+      events?: Record<string, unknown>[];
+      totalCount?: number;
+      nextCursor?: string;
+    }>(
       "/ironflow.v1.AuditService/GetAuditTrail",
-      { run_id: runId },
+      {
+        run_id: runId,
+        event_type: options.eventType ?? "",
+        from_timestamp: options.fromTimestamp ?? "",
+        to_timestamp: options.toTimestamp ?? "",
+        limit: options.limit ?? 0,
+        cursor: options.cursor ?? "",
+      },
       "getAuditTrail"
     );
-    return response.entries ?? [];
+    return {
+      events: (response.events ?? []).map(auditEventFromWire),
+      totalCount: response.totalCount ?? 0,
+      nextCursor: response.nextCursor || undefined,
+    };
   }
 
   /** Query the environment-wide audit stream. */
@@ -2550,22 +2821,23 @@ export class IronflowClient {
   readonly users = {
     /** Create a new user (admin only) */
     create: async (input: CreateUserInput): Promise<User> => {
-      return this.restRequest<User>("POST", "/api/v1/users", input, "users.create");
+      return userFromWire(await this.restRequest<WireRow>("POST", "/api/v1/users", input, "users.create"));
     },
 
     /** List all users in the current organization (admin only) */
     list: async (): Promise<User[]> => {
-      return this.restRequest<User[]>("GET", "/api/v1/users", undefined, "users.list");
+      const users = await this.restRequest<WireRows>("GET", "/api/v1/users", undefined, "users.list");
+      return (users ?? []).map(userFromWire);
     },
 
     /** Get a user by ID */
     get: async (id: string): Promise<User> => {
-      return this.restRequest<User>("GET", `/api/v1/users/${encodeURIComponent(id)}`, undefined, "users.get");
+      return userFromWire(await this.restRequest<WireRow>("GET", `/api/v1/users/${encodeURIComponent(id)}`, undefined, "users.get"));
     },
 
     /** Update a user's profile (admin only) */
     update: async (id: string, input: UpdateUserInput): Promise<User> => {
-      return this.restRequest<User>("PATCH", `/api/v1/users/${encodeURIComponent(id)}`, input, "users.update");
+      return userFromWire(await this.restRequest<WireRow>("PATCH", `/api/v1/users/${encodeURIComponent(id)}`, input, "users.update"));
     },
 
     /** Delete a user (admin only) */
@@ -2599,7 +2871,8 @@ export class IronflowClient {
   readonly tenants = {
     /** List all tenants (enterprise-only) */
     list: async (): Promise<Tenant[]> => {
-      return this.restRequest<Tenant[]>("GET", "/api/v1/tenants", undefined, "tenants.list");
+      const tenants = await this.restRequest<WireRows>("GET", "/api/v1/tenants", undefined, "tenants.list");
+      return (tenants ?? []).map(tenantFromWire);
     },
     /** Provision an organization, environment, and initial administrator key. */
     provision: async (input: ProvisionTenantInput): Promise<ProvisionTenantResult> => {
@@ -3164,6 +3437,7 @@ export class IronflowClient {
     try {
       await this.onErrorHandler(error, context);
     } catch (callbackError) {
+      // eslint-disable-next-line no-console
       console.error("[ironflow] onError callback threw:", callbackError);
     }
   }

@@ -106,7 +106,7 @@ export interface KVWatchEvent {
   type: "kv_update";
   /** The key that changed */
   key: string;
-  /** The new value (empty for deletes) */
+  /** The stored bytes, base64-encoded; `""` for a delete */
   value: string;
   /** Revision number */
   revision: number;

@@ -1,5 +1,5 @@
 import { readFile, readdir } from 'node:fs/promises'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { SkillDefinition } from '@flue/runtime'
 import { parse } from 'yaml'
@@ -9,6 +9,16 @@ export const BUNDLED_SKILLS = ['ironflow-start', 'ironflow-code', 'ironflow-docs
 
 export function bundledSkillsRoot(): string {
   return join(dirname(fileURLToPath(import.meta.url)), 'skills')
+}
+
+const REPO_LAYOUTS = [join('packages', 'agent', 'src'), join('sdk', 'js', 'agent', 'src')]
+
+// The source-of-truth .agents/skills, for a run from source in the ironflow-js mirror
+// (packages/agent/src) or the engine repo (sdk/js/agent/src). Matched by layout, not depth: from an
+// installed dist, the .agents/skills above it is the user's own, which can be another version.
+export function repoSkillsRoot(srcDir = dirname(fileURLToPath(import.meta.url))): string | undefined {
+  const layout = REPO_LAYOUTS.find((l) => srcDir.endsWith(sep + l))
+  return layout && join(srcDir.slice(0, -layout.length), '.agents', 'skills')
 }
 
 async function listFiles(dir: string): Promise<string[]> {

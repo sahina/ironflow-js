@@ -4,7 +4,7 @@
  * Uses @connectrpc/connect-web for browser-compatible gRPC communication.
  */
 
-import { createClient, ConnectError, Code } from "@connectrpc/connect";
+import { createClient, ConnectError, Code, type Interceptor } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { create } from "@bufbuild/protobuf";
 import type {
@@ -184,9 +184,7 @@ export class ConnectRPCTransport implements Transport {
       const envHeader = this.options.environment;
       const auth = this.options.auth;
 
-      const interceptors: Array<
-        (next: (req: any) => Promise<any>) => (req: any) => Promise<any>
-      > = [];
+      const interceptors: Interceptor[] = [];
 
       if (auth?.apiKey || auth?.token) {
         interceptors.push((next) => async (req) => {
@@ -211,8 +209,8 @@ export class ConnectRPCTransport implements Transport {
 
       // Create the PubSub client
       // Type assertion needed due to connect-es v1/v2 type mismatch
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       this.client = createClient(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         PubSubService as any,
         this.webTransport,
       ) as PubSubClient;
@@ -404,7 +402,7 @@ export class ConnectRPCTransport implements Transport {
       }
 
       // Extract error details from ConnectError or standard Error
-      let errorMessage = "Unknown error";
+      let errorMessage: string;
       let errorCode = "STREAM_ERROR";
 
       if (error instanceof ConnectError) {

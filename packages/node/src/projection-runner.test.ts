@@ -1807,6 +1807,27 @@ describe("ProjectionRunner", () => {
         expect(JSON.parse(assertDefined(saveCall)[1].body).lastEventSeq).toBe(1);
       });
 
+      it("keeps the trailer's auth error when saving the events before it fails", async () => {
+        const ac = new AbortController();
+        let streams = 0;
+        mockFetch.mockImplementation(async (url: string) => {
+          if (url.endsWith("RegisterProjection")) return new Response("{}");
+          if (url.endsWith("GetProjection")) return Response.json({});
+          if (url.endsWith("StreamProjectionEvents")) {
+            // A reconnect means the auth error was lost; stop the runner so the test fails fast.
+            if (++streams > 1) ac.abort();
+            return new Response(makeStream(
+              buildEnvelope(JSON.stringify({ id: "evt-1", name: "order.created", data: {}, seq: 1 })),
+              errorTrailer("unauthenticated"),
+            ));
+          }
+          if (url.endsWith("SaveProjectionState")) return new Response("boom", { status: 500 });
+          throw new Error(`Unexpected fetch: ${url}`);
+        });
+        const runner = createProjectionRunner(createRunnerConfig({ signal: ac.signal }));
+        await expect(runner.startStreaming()).rejects.toThrow(UnauthenticatedError);
+      });
+
       it("backs off and escalates to logger.error on failed_precondition instead of reconnecting every 1s", async () => {
         vi.useFakeTimers();
         try {

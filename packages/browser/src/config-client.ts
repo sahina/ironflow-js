@@ -55,10 +55,11 @@ export class BrowserConfigClient {
 
   /**
    * Watch for changes to a config.
-   * Uses WebSocket subscription on system.config.{name}.updated topic.
+   * Uses WebSocket subscription on the system.config.{name}.updated and
+   * .deleted topics. A delete arrives with `data: null`.
    */
   async watch(name: string, callbacks: ConfigWatchCallbacks): Promise<Subscription> {
-    const pattern = `system.config.${name}.updated`;
+    const pattern = `system.config.${name}.*`;
     return this.subscribeFn(pattern, {
       onEvent: (event) => {
         const payload = event.data as unknown as ConfigResponse;

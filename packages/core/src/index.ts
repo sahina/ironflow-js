@@ -486,6 +486,8 @@ export {
   storedEventFromWire,
   runStepFromWire,
   consumerGroupFromWire,
+  userFromWire,
+  tenantFromWire,
 } from "./types.js";
 
 // ============================================================================
@@ -573,6 +575,8 @@ export { waitResultFromWire, type WaitWireResult } from "./wait-wire.js";
 export { collectEntityHistory, ENTITY_HISTORY_PAGE_SIZE, type EntityHistoryPageWire } from "./entity-history-wire.js";
 
 export { schemaFromWire, type SchemaWire } from "./schema-wire.js";
+
+export * from "./admin-helpers.js";
 
 export { functionListFromWire } from "./function-list-wire.js";
 

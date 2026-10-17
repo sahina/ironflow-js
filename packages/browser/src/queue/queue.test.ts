@@ -829,15 +829,19 @@ describe("storage failures", () => {
     process.on("unhandledRejection", onRejection);
 
     const db = (h.queue as unknown as { db: { head: () => Promise<unknown> } }).db;
+    const closed = new DOMException("database is closed", "InvalidStateError");
     db.head = async () => {
-      throw new DOMException("database is closed", "InvalidStateError");
+      throw closed;
     };
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
     await h.queue.enqueue(emit({ n: 1 }));
     await settle();
     process.off("unhandledRejection", onRejection);
 
     expect(unhandled).toHaveLength(0);
+    expect(logged).toHaveBeenCalledWith("[ironflow] offline queue drain failed", closed);
+    logged.mockRestore();
     // Pending work must never read as idle — that is the signal a UI trusts.
     expect(h.queue.stats().state).not.toBe("idle");
     expect(h.queue.stats().pending).toBe(1);

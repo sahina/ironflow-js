@@ -2,9 +2,24 @@ import {
   projectionStateFromWire,
   projectionStatusFromWire,
 } from "@ironflow/core";
-import { stepInspectionFromWire } from "@ironflow/core";
+import { stepInspectionFromWire, tenantFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
+import {
+  definitionHistoryPageFromWire,
+  definitionHistoryEntryFromWire,
+  definitionHistoryRequest,
+  executeSQLResultFromWire,
+  projectionDefinitionFromWire,
+  schemaDefinitionFromWire,
+  type DefinitionHistoryOptions,
+  type ExecuteSQLOptions,
+  type ExecuteSQLResult,
+  type ProjectionHistoryEntry,
+  type ProjectionHistoryPage,
+  type SchemaHistoryEntry,
+  type SchemaHistoryPage,
+} from "@ironflow/core";
 import { collectEntityHistory, type EntityHistoryPageWire } from "@ironflow/core";
 import { connectHTTPError, restRetryable, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
@@ -160,6 +175,20 @@ import { BrowserFilesClient } from "./files.js";
 import { BrowserConfigClient } from "./config-client.js";
 import { createAgentsNamespace, type AgentsNamespace } from "./agents/index.js";
 import type { z } from "zod";
+
+// Flat aliases: scripts/sdkcoverage reads `restRequest<T>(` with a regex that stops at the first ">".
+type WireRow = Record<string, unknown>;
+type WireRows = WireRow[] | null;
+
+/**
+ * Time-travel payloads are proto bytes, which protojson base64-encodes. atob
+ * alone yields Latin-1, so decode the bytes as UTF-8 before parsing.
+ */
+function protoBytesJSON(b64?: string): unknown {
+  if (!b64) return null;
+  const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
 
 function auditEventFromWire(raw: Record<string, unknown>): AuditEvent {
   return {
@@ -949,16 +978,16 @@ class IronflowClient {
         runId: s.runId,
         functionId: s.functionId,
         status: s.status,
-        input: s.input ? JSON.parse(atob(s.input)) : null,
+        input: protoBytesJSON(s.input),
         steps: (s.steps || []).map((step) => ({
           stepId: step.stepId,
           name: step.name,
           type: step.type,
           sequence: step.sequence,
           status: step.status,
-          output: step.output ? JSON.parse(atob(step.output)) : null,
-          error: step.error ? JSON.parse(atob(step.error)) : null,
-          originalOutput: step.originalOutput ? JSON.parse(atob(step.originalOutput)) : null,
+          output: protoBytesJSON(step.output),
+          error: protoBytesJSON(step.error),
+          originalOutput: protoBytesJSON(step.originalOutput),
           startedAt: step.startedAt ? new Date(step.startedAt) : null,
           completedAt: step.completedAt ? new Date(step.completedAt) : null,
           durationMs: step.durationMs ?? null,
@@ -1089,8 +1118,8 @@ class IronflowClient {
       return {
         stepId: data.stepId,
         status: data.status,
-        output: data.output ? JSON.parse(atob(data.output)) : null,
-        originalOutput: data.originalOutput ? JSON.parse(atob(data.originalOutput)) : null,
+        output: protoBytesJSON(data.output),
+        originalOutput: protoBytesJSON(data.originalOutput),
         patched: data.patched,
         injected: data.injected,
       };
@@ -1437,7 +1466,7 @@ class IronflowClient {
   /** Get one persisted event by ID. */
   async getEvent(eventId: string): Promise<StoredEvent> {
     this.ensureConfigured();
-    const response = await this.restRequest<Record<string, unknown>>(
+    const response = await this.restRequest<WireRow>(
       "GET",
       `/api/v1/events/${encodeURIComponent(eventId)}`
     );
@@ -1621,8 +1650,9 @@ class IronflowClient {
       const paths: string[] = [];
       const set = (path: string, value: unknown) => {
         if (value !== undefined) {
-          group[path] = value;
-          paths.push(path);
+          const field = path.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
+          group[field] = value;
+          paths.push(field);
         }
       };
       set("pattern", input.pattern);
@@ -1649,7 +1679,8 @@ class IronflowClient {
       }
       const response = await this.streamRequest<Record<string, unknown>>(
         "/ironflow.v1.PubSubService/UpdateConsumerGroup",
-        { group, update_mask: { paths } }
+        // protojson encodes a FieldMask as one comma-joined string of camelCase paths.
+        { group, update_mask: paths.join(",") }
       );
       return consumerGroupFromWire(response);
     },
@@ -2391,11 +2422,13 @@ class IronflowClient {
    */
   readonly orgs = {
     /**
-     * Create a new organization
+     * Create a new organization. Needs a platform credential.
      */
     create: async (input: CreateOrgInput): Promise<Organization> => {
       this.ensureConfigured();
-      return this.restRequest<Organization>("POST", "/api/v1/orgs", input);
+      // POST /api/v1/orgs always answers 403: tenants cannot create orgs, and a
+      // platform credential on a tenant route needs an X-Ironflow-Org header (#2945).
+      return this.restRequest<Organization>("POST", "/api/v1/platform/orgs", input);
     },
 
     /**
@@ -2627,6 +2660,7 @@ class IronflowClient {
       const result = await this.streamRequest<{
         data?: unknown;
         dataValue?: unknown;
+        stepsApplied?: Array<{ fromVersion?: number; toVersion?: number; description?: string }>;
       }>(
         "/ironflow.v1.EventSchemaService/TestUpcast",
         { ...fields, ...payload },
@@ -2636,9 +2670,84 @@ class IronflowClient {
       return {
         success: true,
         data: "dataValue" in result ? result.dataValue : result.data,
+        // protojson omits zero values, so version 0 and empty fields arrive absent.
+        stepsApplied: (result.stepsApplied ?? []).map((step) => ({
+          fromVersion: step.fromVersion ?? 0,
+          toVersion: step.toVersion ?? 0,
+          description: step.description ?? "",
+        })),
       };
     },
+    /** List the archived documents of one schema version, newest first. */
+    listHistory: async (eventName: string, version: number, options: DefinitionHistoryOptions = {}): Promise<SchemaHistoryPage> => {
+      this.ensureConfigured();
+      const raw = await this.streamRequest<unknown>(
+        "/ironflow.v1.EventSchemaService/ListSchemaHistory",
+        { eventName, version, ...definitionHistoryRequest(options) },
+        undefined,
+        true,
+      );
+      return definitionHistoryPageFromWire(raw, schemaDefinitionFromWire);
+    },
+    /** Get one archived schema document by its history revision. */
+    getRevision: async (eventName: string, version: number, revision: number): Promise<SchemaHistoryEntry> => {
+      this.ensureConfigured();
+      const raw = await this.streamRequest<{ entry?: unknown }>(
+        "/ironflow.v1.EventSchemaService/GetSchemaRevision",
+        { eventName, version, revision: String(revision) },
+        undefined,
+        true,
+      );
+      return definitionHistoryEntryFromWire(raw.entry, schemaDefinitionFromWire);
+    },
   };
+
+  /**
+   * List the archived definitions of a projection, newest first. The current
+   * definition is not in its history.
+   */
+  async listProjectionHistory(name: string, options: DefinitionHistoryOptions = {}): Promise<ProjectionHistoryPage> {
+    this.ensureConfigured();
+    const raw = await this.streamRequest<unknown>(
+      "/ironflow.v1.ProjectionService/ListProjectionHistory",
+      { name, ...definitionHistoryRequest(options) },
+      undefined,
+      true,
+    );
+    return definitionHistoryPageFromWire(raw, projectionDefinitionFromWire);
+  }
+
+  /** Get one archived projection definition by its history revision. */
+  async getProjectionRevision(name: string, revision: number): Promise<ProjectionHistoryEntry> {
+    this.ensureConfigured();
+    const raw = await this.streamRequest<{ entry?: unknown }>(
+      "/ironflow.v1.ProjectionService/GetProjectionRevision",
+      { name, revision: String(revision) },
+      undefined,
+      true,
+    );
+    return definitionHistoryEntryFromWire(raw.entry, projectionDefinitionFromWire);
+  }
+
+  /**
+   * Run a read-only SQL query against projection tables. Every cell is a
+   * string, and SQL NULL comes back as `""`.
+   *
+   * @example
+   * ```typescript
+   * const { rows } = await ironflow.executeSQL("SELECT id, total FROM orders LIMIT 10");
+   * ```
+   */
+  async executeSQL(query: string, options: ExecuteSQLOptions = {}): Promise<ExecuteSQLResult> {
+    this.ensureConfigured();
+    const raw = await this.streamRequest<unknown>(
+      "/ironflow.v1.QueryService/ExecuteSQL",
+      { query, ...options },
+      undefined,
+      true,
+    );
+    return executeSQLResultFromWire(raw);
+  }
 
   // ============================================================================
   // Audit Trail
@@ -2661,19 +2770,11 @@ class IronflowClient {
   async getAuditTrail(runId: string, options?: GetAuditTrailOptions): Promise<AuditTrailResult> {
     this.ensureConfigured();
 
+    // Connect answers in protojson camelCase; auditEventFromWire takes both casings.
     const response = await this.streamRequest<{
-      events?: Array<{
-        id: string;
-        run_id: string;
-        function_id: string;
-        step_id?: string;
-        event_type: string;
-        payload?: Record<string, unknown>;
-        metadata?: Record<string, string>;
-        created_at: string;
-      }>;
-      total_count?: number;
-      next_cursor?: string;
+      events?: Array<Record<string, unknown>>;
+      totalCount?: number;
+      nextCursor?: string;
     }>("/ironflow.v1.AuditService/GetAuditTrail", {
       run_id: runId,
       event_type: options?.eventType ?? "",
@@ -2684,18 +2785,9 @@ class IronflowClient {
     });
 
     return {
-      events: (response.events ?? []).map((e): AuditEvent => ({
-        id: e.id,
-        runId: e.run_id,
-        functionId: e.function_id,
-        stepId: e.step_id,
-        eventType: e.event_type,
-        payload: e.payload ?? {},
-        metadata: e.metadata,
-        createdAt: e.created_at,
-      })),
-      totalCount: response.total_count ?? 0,
-      nextCursor: response.next_cursor,
+      events: (response.events ?? []).map(auditEventFromWire),
+      totalCount: response.totalCount ?? 0,
+      nextCursor: response.nextCursor,
     };
   }
 
@@ -2950,7 +3042,8 @@ class IronflowClient {
     /** List all tenants (enterprise-only) */
     list: async (): Promise<Tenant[]> => {
       this.ensureConfigured();
-      return this.restRequest<Tenant[]>("GET", "/api/v1/tenants");
+      const tenants = await this.restRequest<WireRows>("GET", "/api/v1/tenants");
+      return (tenants ?? []).map(tenantFromWire);
     },
     /** Provision an organization, environment, and initial administrator key. */
     provision: async (input: ProvisionTenantInput): Promise<ProvisionTenantResult> => {

@@ -24,3 +24,18 @@ describe("BrowserConfigClient retry flag", () => {
     await expect(client().list()).rejects.toMatchObject({ retryable: true });
   });
 });
+
+describe("BrowserConfigClient.watch", () => {
+  it("listens on updated and deleted, and passes a delete through as data null (#2949)", async () => {
+    let onEvent: ((e: { data: unknown }) => void) | undefined;
+    const subscribe = vi.fn(async (_pattern: string, cb: { onEvent: typeof onEvent }) => {
+      onEvent = cb.onEvent;
+      return { unsubscribe: vi.fn() } as never;
+    });
+    const onUpdate = vi.fn();
+    await new BrowserConfigClient(config, subscribe as never).watch("theme", { onUpdate });
+    expect(subscribe.mock.calls[0]![0]).toBe("system.config.theme.*");
+    onEvent!({ data: { name: "theme", revision: 9, data: null, updatedAt: "2026-10-16T00:00:00Z" } });
+    expect(onUpdate).toHaveBeenCalledWith({ type: "config_update", name: "theme", revision: 9, data: null, updatedAt: "2026-10-16T00:00:00Z" });
+  });
+});
