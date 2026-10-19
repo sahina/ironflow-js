@@ -175,6 +175,7 @@ import { BrowserFilesClient } from "./files.js";
 import { BrowserConfigClient } from "./config-client.js";
 import { createAgentsNamespace, type AgentsNamespace } from "./agents/index.js";
 import type { z } from "zod";
+import { SDK_HEADER, sdkFetch } from "./sdk-fetch.js";
 
 // Flat aliases: scripts/sdkcoverage reads `restRequest<T>(` with a regex that stops at the first ">".
 type WireRow = Record<string, unknown>;
@@ -383,7 +384,7 @@ class IronflowClient {
         detectHeaders[HEADERS.ENVIRONMENT] = this.config.environment;
       }
 
-      const response = await fetch(
+      const response = await sdkFetch(
         `${serverUrl}/ironflow.v1.IronflowService/GetCapabilities`,
         {
           method: "POST",
@@ -748,7 +749,7 @@ class IronflowClient {
       };
       this.applyAuthHeader(headers);
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({ run_id: runId }),
@@ -799,7 +800,7 @@ class IronflowClient {
       };
       this.applyAuthHeader(headers);
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({ run_id: runId }),
@@ -867,7 +868,7 @@ class IronflowClient {
       };
       this.applyAuthHeader(headers);
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -927,7 +928,7 @@ class IronflowClient {
       };
       this.applyAuthHeader(headers);
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -1020,7 +1021,7 @@ class IronflowClient {
       };
       this.applyAuthHeader(headers);
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({ runId }),
@@ -1085,7 +1086,7 @@ class IronflowClient {
       };
       this.applyAuthHeader(headers);
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify({
@@ -1243,7 +1244,7 @@ class IronflowClient {
       };
       this.applyAuthHeader(headers);
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "GET",
         headers,
         signal: controller.signal,
@@ -1279,7 +1280,7 @@ class IronflowClient {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "GET",
         signal: controller.signal,
       });
@@ -1313,7 +1314,7 @@ class IronflowClient {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: "GET",
         signal: controller.signal,
       });
@@ -2159,6 +2160,7 @@ class IronflowClient {
       interceptors: [
         (next) => async (req) => {
           req.header.set(HEADERS.ENVIRONMENT, this.config!.environment);
+          req.header.set(SDK_HEADER.name, SDK_HEADER.value);
           const token = this.authCredential();
           if (token) req.header.set("Authorization", `Bearer ${token}`);
           return next(req);
@@ -3209,7 +3211,7 @@ class IronflowClient {
         fetchOptions.body = JSON.stringify(body);
       }
 
-      const response = await fetch(url, fetchOptions);
+      const response = await sdkFetch(url, fetchOptions);
       try {
         return await handle(response);
       } catch (error) {

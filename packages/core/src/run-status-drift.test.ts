@@ -55,7 +55,7 @@ describe("run status drift against the generated protobuf enum", () => {
   }
 
   // The proto RESERVES RUN_STATUS_PENDING. If that ever changes, the SDK's
-  // deprecation of the public "pending" constant needs revisiting.
+  // rejection of "pending" needs revisiting.
   it("keeps RUN_STATUS_PENDING out of the enum", () => {
     expect(protoStatusNames).not.toContain("RUN_STATUS_PENDING");
     expect(() => runStatusToWire("pending")).toThrow();

@@ -19,6 +19,7 @@ import type {
 } from "@ironflow/core";
 import { DEFAULT_CLIENT_RETRY, HEADERS, IronflowError, encodeBucketName, encodeFilePath, fileErrorFor, throwIfAuthError } from "@ironflow/core";
 import type { ErrorContext, OnErrorHandler } from "./types.js";
+import { sdkFetch } from "./sdk-fetch.js";
 
 export interface FilesClientConfig {
   serverUrl: string;
@@ -113,7 +114,7 @@ export class FilesClient {
       const timer = init.method === "PUT" ? undefined : setTimeout(() => controller.abort(), this.config.timeout);
       let res: Response;
       try {
-        res = await fetch(`${this.config.serverUrl}${path}`, { ...init, headers, signal: controller.signal });
+        res = await sdkFetch(`${this.config.serverUrl}${path}`, { ...init, headers, signal: controller.signal });
         // fetch resolves at the headers. Reading a JSON body here keeps a reset
         // or stalled body under the timer and the retry, like a failed fetch.
         if (buffer && res.ok) {

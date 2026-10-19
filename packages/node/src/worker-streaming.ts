@@ -64,6 +64,7 @@ import {
 import { startProjectionRunners, stopProjectionRunners, type ProjectionRunner } from "./projection-runner.js";
 import { drainOnSignal } from "./internal/drain-on-signal.js";
 import { SDK_VERSION } from "./version.js";
+import { SDK_HEADER } from "./sdk-fetch.js";
 
 /**
  * Worker states
@@ -371,6 +372,7 @@ class StreamingWorker implements Worker {
           // registered into — otherwise the worker waits in env_default for
           // jobs created elsewhere (#2027).
           req.header.set(HEADERS.ENVIRONMENT, environment);
+          req.header.set(SDK_HEADER.name, SDK_HEADER.value);
           return next(req);
         },
       ],

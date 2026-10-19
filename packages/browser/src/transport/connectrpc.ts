@@ -21,6 +21,7 @@ import {
   startAfterSequenceToBigInt,
 } from "@ironflow/core";
 import { PubSubService } from "@ironflow/core/gen";
+import { SDK_HEADER } from "../sdk-fetch.js";
 import {
   SubscribeRequestSchema,
   SubscribeOptionsSchema,
@@ -135,6 +136,19 @@ export function isTransientNetworkError(error: unknown): boolean {
 }
 
 /**
+ * The server ends a cursor stream with this Unavailable when the stream fell
+ * behind, and ends only that stream. Keep in step with
+ * internal/server/connect/pubsub_handler.go.
+ */
+function isFellBehind(error: unknown): boolean {
+  return (
+    error instanceof ConnectError &&
+    error.code === Code.Unavailable &&
+    error.rawMessage.startsWith("subscriber fell behind")
+  );
+}
+
+/**
  * ConnectRPC-based transport for browser subscriptions
  *
  * Uses server streaming for auto-ack mode subscriptions.
@@ -201,10 +215,15 @@ export class ConnectRPCTransport implements Transport {
         });
       }
 
+      interceptors.push((next) => async (req) => {
+        req.header.set(SDK_HEADER.name, SDK_HEADER.value);
+        return next(req);
+      });
+
       // Use Connect transport for streaming (simpler protocol, easier to debug)
       this.webTransport = createConnectTransport({
         baseUrl: this.serverUrl,
-        interceptors: interceptors.length > 0 ? interceptors : undefined,
+        interceptors,
       });
 
       // Create the PubSub client
@@ -375,6 +394,28 @@ export class ConnectRPCTransport implements Transport {
       // Explicit cancellations (AbortError, Code.Canceled) are always
       // suppressed — these are user/framework-initiated (unmount, HMR).
       if (isExplicitCancellation(error)) {
+        return;
+      }
+
+      // Only this stream fell behind; the others are healthy. Restart it alone
+      // from its cursor rather than tear down every stream.
+      if (
+        isFellBehind(error) &&
+        sub.options?.startAfterSequence !== undefined &&
+        this.activeSubscriptions.get(subscriptionId) === sub
+      ) {
+        const controller = sub.abortController;
+        setTimeout(() => {
+          // A reconnect or pause in between replaced the controller and owns
+          // the restart.
+          if (
+            this.activeSubscriptions.get(subscriptionId) === sub &&
+            sub.abortController === controller &&
+            this._connectionState === "connected"
+          ) {
+            this.startSubscriptionStream(subscriptionId, sub);
+          }
+        }, this.options.reconnectDelay);
         return;
       }
 

@@ -256,6 +256,40 @@ describe("SubscriptionClient", () => {
       client.close();
     });
 
+    it("rejects a status a newer server added and unsubscribes the id it issued", async () => {
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({
+        serverUrl: "http://localhost:9123",
+      });
+
+      await client.connect();
+
+      const subPromise = client.subscribe("system.secret.*", {
+        onEvent: () => {},
+      });
+      const rejected = expect(subPromise).rejects.toThrow("accepted");
+
+      mockWs.simulateMessage({
+        type: "subscription_result",
+        results: [
+          {
+            pattern: "system.secret.*",
+            status: "accepted",
+            subscriptionId: "sub_future",
+          },
+        ],
+      });
+
+      await rejected;
+      const sent = mockWs.send.mock.calls.map(([frame]) => JSON.parse(frame));
+      expect(sent).toContainEqual({
+        type: "unsubscribe",
+        subscriptionId: "sub_future",
+      });
+
+      client.close();
+    });
+
     it("throws if not connected", async () => {
       const { createSubscriptionClient } = await importModule();
       const client = createSubscriptionClient({

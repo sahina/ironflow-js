@@ -17,6 +17,7 @@ import {
 } from "@ironflow/core";
 import { errorDetail } from "./error-detail.js";
 import { createHash } from "node:crypto";
+import { sdkFetch } from "../sdk-fetch.js";
 
 // Reserved metadata key carrying a hash of the handler source (#1280). The engine
 // bumps a function's VERSION only when its registered config changes, and
@@ -98,7 +99,6 @@ export async function registerFunctions(opts: {
     if (fn.config.actorKey) body.actorKey = fn.config.actorKey;
     if (fn.config.recording != null) body.recording = fn.config.recording;
     if (fn.config.recordingProfile != null) body.recordingProfile = fn.config.recordingProfile;
-    if (fn.config.recordingRetention != null) body.recordingRetention = fn.config.recordingRetention;
     // Stamp a hash of the handler source so a code edit changes the registered
     // config → the engine bumps the version → the reload barrier fires (#1280).
     body.metadata = { ...(fn.config.metadata ?? {}), [CODE_HASH_META_KEY]: functionCodeHash(fn.handler) };
@@ -110,7 +110,7 @@ export async function registerFunctions(opts: {
       }));
     }
 
-    const response = await fetch(
+    const response = await sdkFetch(
       `${baseUrl}/ironflow.v1.IronflowService/RegisterFunction`,
       {
         method: "POST",

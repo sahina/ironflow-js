@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.47.0
+version: 0.48.0
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",
@@ -93,8 +93,8 @@ If `ironflow_installed=true`, present what was found and ask:
 > 5. Start fresh"
 
 On "Update SDK": the skills are compiled into the `ironflow` binary, so after upgrading
-it run `ironflow skills sync` (add `--local` to vendor into `./.agents/skills`) and
-`ironflow skills doctor` to re-wire the agent. Otherwise on-disk skills describe an
+it run `ironflow skills sync` (it writes `./.agents/skills`; add `--global` for
+`~/.agents/skills`) and `ironflow skills doctor` to re-wire the agent. Otherwise on-disk skills describe an
 older engine than the one running.
 
 If `language=mixed`, select the target stack before interpreting installation state.
@@ -276,7 +276,7 @@ Two things to flag before the user builds on this:
 - **`registerFunction` sends only the fields you pass.** Its request takes `id`, `name`,
   `description`, `triggers`, `retry`, `timeoutMs`, `concurrency`, `debounce`,
   `preferredMode`, `endpointUrl`, `actorKey`, `cancelOn`, `secrets`, `recording`,
-  `recordingProfile`, `recordingRetention` and `metadata`. The sample above passes
+  `recordingProfile` and `metadata`. The sample above passes
   `recording` through. Without it a push function runs with `recording: false`, so
   `ironflow inspect` has no frames to replay, no matter what the `createFunction` config
   says. Pull mode's `worker.start()` sends these fields for you (`stepTimeout` is enforced

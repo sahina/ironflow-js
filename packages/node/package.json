@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/node",
-  "version": "0.47.0",
+  "version": "0.48.0",
   "description": "Node.js SDK for Ironflow event-driven backend platform - workers, serve handlers, and step execution",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,6 +25,11 @@
       "types": "./dist/worker-streaming.d.ts",
       "import": "./dist/worker-streaming.js",
       "default": "./dist/worker-streaming.js"
+    },
+    "./consumer-group-stream": {
+      "types": "./dist/consumer-group-stream.d.ts",
+      "import": "./dist/consumer-group-stream.js",
+      "default": "./dist/consumer-group-stream.js"
     },
     "./test": {
       "types": "./dist/test/index.d.ts",

@@ -32,6 +32,7 @@ import type {
   WSUnsubscribeRequest,
   WSAckRequest,
 } from "@ironflow/core";
+import { sdkWebSocket } from "./sdk-fetch.js";
 
 // Re-export patterns for convenience
 export { patterns } from "@ironflow/core";
@@ -242,7 +243,7 @@ export class SubscriptionClient {
       }, timeout);
 
       try {
-        this.ws = new WebSocket(this.wsUrl);
+        this.ws = sdkWebSocket(this.wsUrl);
 
         this.ws.onopen = () => {
           clearTimeout(timeoutId);
@@ -559,9 +560,16 @@ export class SubscriptionClient {
           if (sub.status === "ok" && sub.subscriptionId) {
             this.handleSubscribed(sub.pattern, sub.subscriptionId);
           } else {
+            // A status a newer server added reads as a failure, but the server may
+            // have issued an id for it; release that id so the server drops it.
+            if (sub.subscriptionId && sub.status !== "error") {
+              this.sendUnsubscribe(sub.subscriptionId);
+            }
             this.handleSubscribeFailed(
               sub.pattern,
-              new Error(sub.message ?? `Subscription failed: ${sub.code}`),
+              new Error(
+                sub.message ?? `Subscription failed: ${sub.code ?? sub.status}`,
+              ),
             );
           }
         }

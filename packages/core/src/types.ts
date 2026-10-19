@@ -148,8 +148,6 @@ export interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   recording?: boolean;
   /** Select the workflow audit event families captured for this function */
   recordingProfile?: RecordingProfile;
-  /** @deprecated Metadata only. IRONFLOW_AUDIT_RETENTION_DAYS controls all audit pruning; forever does not exempt rows. */
-  recordingRetention?: string;
   /** Custom metadata (e.g., service, team, owner) */
   metadata?: Record<string, unknown>;
   /** Debounce configuration — collapse rapid-fire events into a single invocation */
@@ -283,7 +281,6 @@ export interface RegisteredFunction {
   updatedAt?: string;
   recording: boolean;
   recordingProfile?: RecordingProfile;
-  recordingRetention: string;
   metadata?: Record<string, unknown>;
   cancelOn: CancelOnConfig[];
 }
@@ -697,6 +694,10 @@ export type FunctionHandler<TEvent = unknown, TResult = unknown> = (
  * Note: "pending" is deprecated — the engine no longer produces it as of #1222
  * (run status "pending" retired). It is retained in the union for source/wire
  * compatibility with older runs.
+ *
+ * A server newer than this SDK can send a status this union does not list. The
+ * SDK passes it through, lowercased, instead of throwing (ADR 0125), so keep a
+ * `default` branch when you switch on it.
  */
 export type RunStatus =
   | "pending"
@@ -738,8 +739,8 @@ export interface Run {
 export interface ListRunsOptions {
   /** Filter by function ID */
   functionId?: string;
-  /** Filter by status */
-  status?: RunStatus;
+  /** Filter by status. "pending" is retired and the server rejects it. */
+  status?: Exclude<RunStatus, "pending">;
   /** Maximum results */
   limit?: number;
   /** Pagination cursor */
@@ -818,11 +819,6 @@ export interface InvokeResult {
   /** ID of the stored event */
   eventId: string;
 }
-
-/**
- * @deprecated Use InvokeResult instead.
- */
-export type TriggerResult = InvokeResult;
 
 /**
  * One run's outcome from `emitSync()`.
@@ -996,11 +992,17 @@ export interface ListEventNamesResult {
 
 /**
  * Acknowledgment mode for consumer groups
+ *
+ * A server newer than this SDK can send a value this union does not list. The
+ * SDK passes it through (ADR 0125), so keep a `default` branch when you switch on it.
  */
 export type AckMode = "auto" | "manual";
 
 /**
  * Backpressure handling mode
+ *
+ * A server newer than this SDK can send a value this union does not list. The
+ * SDK passes it through (ADR 0125), so keep a `default` branch when you switch on it.
  */
 export type BackpressureMode = "drop" | "block" | "buffer";
 
@@ -1162,6 +1164,9 @@ export interface AckableSubscription extends Subscription {
 
 /**
  * Consumer group status
+ *
+ * A server newer than this SDK can send a value this union does not list. The
+ * SDK passes it through (ADR 0125), so keep a `default` branch when you switch on it.
  */
 export type ConsumerGroupStatus = "active" | "paused" | "deleted";
 
@@ -1573,38 +1578,6 @@ export interface RebuildJob {
   status: string;
   progress: number;
   startedAt: string;
-}
-
-/**
- * Reconstructed run state returned by the time-travel API.
- * @deprecated Never matched the wire; getRunStateAt returns TimeTravelRunStateSnapshot.
- */
-export interface TimeTravelRunState {
-  runId: string;
-  status: string;
-  steps: Array<{ id: string; name: string; status: string; output: unknown }>;
-  timestamp: string;
-}
-
-/**
- * A single step output snapshot returned by the time-travel API.
- * @deprecated Never matched the wire; use TimeTravelStepOutputSnapshot.
- */
-export interface TimeTravelStepOutput {
-  stepId: string;
-  output: unknown;
-  timestamp: string;
-}
-
-/**
- * A single entry in the audit trail.
- * @deprecated Never matched the wire; getAuditTrail returns AuditTrailResult.
- */
-export interface AuditTrailEntry {
-  id: string;
-  type: string;
-  timestamp: string;
-  data: unknown;
 }
 
 // ============================================================================
@@ -2448,7 +2421,6 @@ export function registeredFunctionFromWire(
     updatedAt: r.updatedAt ? String(r.updatedAt) : undefined,
     recording: Boolean(r.recording) || recordingProfile !== undefined,
     recordingProfile,
-    recordingRetention: String(r.recordingRetention ?? ""),
     metadata: r.metadata as Record<string, unknown> | undefined,
     cancelOn: (r.cancelOn as CancelOnConfig[] | undefined) ?? [],
   };
@@ -2537,15 +2509,19 @@ export function consumerGroupFromWire(
   raw: Record<string, unknown> | undefined,
 ): ConsumerGroup {
   const r = raw ?? {};
+  // UNSPECIFIED is "absent", not a new value: it reads as the default, as in the Go SDK.
   const ackMode = String(r.ackMode ?? "auto")
     .toLowerCase()
-    .replace(/^ack_mode_/, "") as AckMode;
+    .replace(/^ack_mode_/, "")
+    .replace(/^unspecified$/, "auto") as AckMode;
   const backpressure = String(r.backpressure ?? "buffer")
     .toLowerCase()
-    .replace(/^backpressure_mode_/, "") as BackpressureMode;
+    .replace(/^backpressure_mode_/, "")
+    .replace(/^unspecified$/, "buffer") as BackpressureMode;
   const status = String(r.status ?? "active")
     .toLowerCase()
-    .replace(/^consumer_group_status_/, "") as ConsumerGroupStatus;
+    .replace(/^consumer_group_status_/, "")
+    .replace(/^unspecified$/, "active") as ConsumerGroupStatus;
   return {
     id: String(r.id ?? ""),
     namespace: String(r.namespace ?? ""),

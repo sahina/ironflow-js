@@ -72,7 +72,6 @@ export type {
 
   // Invoke/Trigger types
   InvokeResult,
-  TriggerResult, // deprecated alias for InvokeResult
   InvokeSyncOptions,
   InvokeSyncResult,
 
@@ -142,16 +141,11 @@ export type {
   GetAuditTrailOptions,
   ListAuditEventsOptions,
   AuditTrailResult,
-  AuditTrailEntry,
 
   // Projection management types
   RebuildJob,
   WaitResult,
   WaitProgress,
-
-  // Time-travel client types
-  TimeTravelRunState,
-  TimeTravelStepOutput,
 
   // Webhook types
   WebhookRequest,

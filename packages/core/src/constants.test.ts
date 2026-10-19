@@ -225,7 +225,6 @@ describe("Status Constants", () => {
 
   describe("RUN_STATUS", () => {
     it("should have correct run statuses", () => {
-      expect(RUN_STATUS.PENDING).toBe("pending");
       expect(RUN_STATUS.RUNNING).toBe("running");
       expect(RUN_STATUS.COMPLETED).toBe("completed");
       expect(RUN_STATUS.FAILED).toBe("failed");

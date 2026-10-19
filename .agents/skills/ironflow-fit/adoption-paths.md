@@ -91,7 +91,8 @@ and `InjectStepOutput`; agent tools.
 
 **A push subscription.** `api/openapi.json` contains zero streaming media types.
 `PubSubService/Subscribe` and `JoinConsumerGroup` are server streams;
-`SubscribeBidirectional` is served but returns `Unimplemented` by design. The
+`SubscribeBidirectional` is a consumer-group stream that carries events and
+acks; Go and Node wrap it. The
 `GET /ws` and KV/config `/watch` upgrades are absent from the OpenAPI artifact
 entirely.
 

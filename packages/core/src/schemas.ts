@@ -31,8 +31,8 @@ export const RunStatusSchema = z.enum([
 /**
  * Run statuses as encoded by the default protobuf JSON codec.
  *
- * `RUN_STATUS_UNSPECIFIED` and unknown future values are rejected instead of
- * being presented to callers as a different status.
+ * `RUN_STATUS_UNSPECIFIED` is rejected instead of being presented to callers as
+ * a different status. An unknown future value passes through (see runStatusFromWire).
  */
 export const RunStatusWireSchema = z
   .enum([
@@ -52,6 +52,11 @@ export const RunStatusWireSchema = z
 export function runStatusFromWire(value: unknown) {
   const result = RunStatusWireSchema.safeParse(value);
   if (!result.success) {
+    // A status a newer server added passes through (ADR 0125: new enum values
+    // are allowed in a minor). Absent, UNSPECIFIED, the retired PENDING and a
+    // value off the wire's spelling are malformed, not new.
+    const added = /^RUN_STATUS_(?!UNSPECIFIED$|PENDING$)([A-Z0-9_]+)$/.exec(String(value))?.[1];
+    if (typeof value === "string" && added) return added.toLowerCase() as z.infer<typeof RunStatusSchema>;
     const validationErrors = result.error.issues.map((issue) => issue.message);
     throw new SchemaValidationError(
       `Invalid run status from server: ${String(value)}`,
@@ -163,7 +168,16 @@ export const TriggerResponseSchema = z.object({
 export const TriggerSyncResultItemSchema = z.object({
   runId: z.string(),
   functionId: z.string(),
-  status: RunStatusWireSchema,
+  // Decoded through runStatusFromWire so a status a newer server added does not fail
+  // a run the server already accepted.
+  status: z.unknown().transform((value, ctx) => {
+    try {
+      return runStatusFromWire(value);
+    } catch (err) {
+      ctx.addIssue({ code: "custom", message: err instanceof Error ? err.message : String(err) });
+      return z.NEVER;
+    }
+  }),
   output: z.unknown().optional(),
   error: z
     .object({
@@ -259,21 +273,36 @@ export const EmptyResponseSchema = z.object({});
 // Consumer Group Responses
 // ============================================================================
 
-export const AckModeSchema = z.enum(["ACK_MODE_AUTO", "ACK_MODE_MANUAL", "ACK_MODE_UNSPECIFIED"]);
+// A value a newer server added passes through (ADR 0125: new enum values are
+// allowed in a minor); the TypeScript unions in types.ts stay the same, so
+// callers keep a default branch. A value off the wire's prefix is malformed.
+const withFutureValues = <T extends z.ZodType<string>>(known: T, prefix: string) =>
+  known.or(z.string().regex(new RegExp(`^${prefix}[A-Z0-9_]+$`)));
 
-export const BackpressureModeSchema = z.enum([
-  "BACKPRESSURE_MODE_DROP",
-  "BACKPRESSURE_MODE_BLOCK",
-  "BACKPRESSURE_MODE_BUFFER",
-  "BACKPRESSURE_MODE_UNSPECIFIED",
-]);
+export const AckModeSchema = withFutureValues(
+  z.enum(["ACK_MODE_AUTO", "ACK_MODE_MANUAL", "ACK_MODE_UNSPECIFIED"]),
+  "ACK_MODE_"
+);
 
-export const ConsumerGroupStatusSchema = z.enum([
-  "CONSUMER_GROUP_STATUS_ACTIVE",
-  "CONSUMER_GROUP_STATUS_PAUSED",
-  "CONSUMER_GROUP_STATUS_DELETED",
-  "CONSUMER_GROUP_STATUS_UNSPECIFIED",
-]);
+export const BackpressureModeSchema = withFutureValues(
+  z.enum([
+    "BACKPRESSURE_MODE_DROP",
+    "BACKPRESSURE_MODE_BLOCK",
+    "BACKPRESSURE_MODE_BUFFER",
+    "BACKPRESSURE_MODE_UNSPECIFIED",
+  ]),
+  "BACKPRESSURE_MODE_"
+);
+
+export const ConsumerGroupStatusSchema = withFutureValues(
+  z.enum([
+    "CONSUMER_GROUP_STATUS_ACTIVE",
+    "CONSUMER_GROUP_STATUS_PAUSED",
+    "CONSUMER_GROUP_STATUS_DELETED",
+    "CONSUMER_GROUP_STATUS_UNSPECIFIED",
+  ]),
+  "CONSUMER_GROUP_STATUS_"
+);
 
 export const ConsumerGroupResponseSchema = z.object({
   id: z.string(),
@@ -369,7 +398,8 @@ export const EventMetadataSchema = z.object({
 
 export const WSSubscriptionResultItemSchema = z.object({
   pattern: z.string(),
-  status: z.enum(["ok", "error"]),
+  // Only "ok" is a success; a status a newer server added reads as a failure.
+  status: z.enum(["ok", "error"]).or(z.string().regex(/^[a-z0-9_]+$/)),
   subscriptionId: z.string().optional(),
   code: z.string().optional(),
   message: z.string().optional(),

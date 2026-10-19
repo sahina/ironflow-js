@@ -296,17 +296,23 @@ describe("ConfigClient.watch()", () => {
     const client = new ConfigClient(defaultConfig({ apiKey: "ifkey_abc123" }));
     client.watch("cfg", { onUpdate: vi.fn() });
 
-    expect(mockWs.options).toEqual([
-      "ironflow.v1",
-      `ironflow.auth.bearer.${Buffer.from("ifkey_abc123").toString("base64url")}`,
-    ]);
+    expect(mockWs.options).toEqual({
+      protocols: [
+        "ironflow.v1",
+        `ironflow.auth.bearer.${Buffer.from("ifkey_abc123").toString("base64url")}`,
+      ],
+      headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//) },
+    });
   });
 
   it("should send only the stable subprotocol when apiKey is absent", () => {
     const client = new ConfigClient(defaultConfig());
     client.watch("cfg", { onUpdate: vi.fn() });
 
-    expect(mockWs.options).toEqual(["ironflow.v1"]);
+    expect(mockWs.options).toEqual({
+      protocols: ["ironflow.v1"],
+      headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//) },
+    });
   });
 
   it("should call onUpdate when a config_update message is received", () => {

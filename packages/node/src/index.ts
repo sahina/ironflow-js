@@ -132,7 +132,6 @@ export type {
 
   // Invoke/Trigger types
   InvokeResult,
-  TriggerResult, // deprecated alias for InvokeResult
   EmitSyncResult,
   InvokeSyncOptions,
   InvokeSyncResult,

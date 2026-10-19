@@ -363,6 +363,11 @@ export class WebSocketTransport implements Transport {
               this.callbacks?.onSubscribed(sub.pattern, sub.subscriptionId);
             }
           } else {
+            // A status a newer server added reads as a failure, but the server may
+            // have issued an id for it; release that id so the server drops it.
+            if (sub.subscriptionId && sub.status !== "error") {
+              this.sendUnsubscribe(sub.subscriptionId);
+            }
             const subscriptions = this.pendingSubscriptions.get(sub.pattern);
             const index = subscriptions?.findIndex(
               (candidate) => candidate.awaitingResult,
@@ -382,7 +387,9 @@ export class WebSocketTransport implements Transport {
             }
             this.callbacks?.onSubscribeFailed(
               sub.pattern,
-              new Error(sub.message ?? `Subscription failed: ${sub.code}`),
+              new Error(
+                sub.message ?? `Subscription failed: ${sub.code ?? sub.status}`,
+              ),
               rejected?.subscriptionId,
             );
           }

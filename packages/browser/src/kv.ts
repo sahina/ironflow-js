@@ -20,6 +20,7 @@ import type {
 import { IronflowError, DEFAULT_TIMEOUTS, HEADERS, restRetryable } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
 import { webSocketProtocols } from "./websocket-auth.js";
+import { sdkFetch } from "./sdk-fetch.js";
 
 /**
  * KV bucket handle for key-level operations in the browser.
@@ -231,7 +232,7 @@ export class BrowserKVBucketHandle {
         Object.assign(headers, extraHeaders);
       }
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method,
         headers,
         body:
@@ -370,7 +371,7 @@ export class BrowserKVClient {
         headers["Authorization"] = `Bearer ${credential}`;
       }
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,

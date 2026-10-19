@@ -47,10 +47,9 @@ Docs: <https://docs.ironflow.run>
 30. [Event Schema Registry Types](#event-schema-registry-types)
 31. [Webhook Management Types](#webhook-management-types)
 32. [User and Tenant Types](#user-and-tenant-types)
-33. [AuditTrailEntry](#audittrailentry)
-34. [File Storage Types](#file-storage-types)
-35. [Convenience Aliases](#convenience-aliases)
-36. [Sub-Path Exports](#sub-path-exports)
+33. [File Storage Types](#file-storage-types)
+34. [Convenience Aliases](#convenience-aliases)
+35. [Sub-Path Exports](#sub-path-exports)
 
 ---
 
@@ -144,8 +143,6 @@ interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   recording?: boolean;
   /** Select the workflow audit event families captured for this function */
   recordingProfile?: RecordingProfile;
-  /** @deprecated Metadata only. IRONFLOW_AUDIT_RETENTION_DAYS controls all audit pruning; "forever" does not exempt rows. */
-  recordingRetention?: string;
   /** Cancel-on-event specs (OR semantic). Auto-cancels run with cause "cancel-on-event". */
   cancelOn?: CancelOnConfig[];
   /** Custom metadata (e.g., service, team, owner) */
@@ -341,7 +338,6 @@ interface RegisteredFunction {
   updatedAt?: string;
   recording: boolean;
   recordingProfile?: RecordingProfile;
-  recordingRetention: string;
   metadata?: Record<string, unknown>;
   cancelOn: CancelOnConfig[];
 }
@@ -764,8 +760,6 @@ interface InvokeResult {
   runIds: string[];
   eventId: string;
 }
-
-// TriggerResult is a deprecated alias for InvokeResult
 
 /** Argument to the ID-keyed invoke(), which targets one function. */
 interface InvokeSyncOptions<TInput = unknown> {
@@ -1970,9 +1964,9 @@ formatZodIssues(issues: readonly z.core.$ZodIssue[]): string[]
 - `EmptyResponseSchema` -- `{}`
 
 **Consumer Groups:**
-- `AckModeSchema` -- `z.enum(["ACK_MODE_AUTO", "ACK_MODE_MANUAL", "ACK_MODE_UNSPECIFIED"])`
-- `BackpressureModeSchema`
-- `ConsumerGroupStatusSchema`
+- `AckModeSchema` -- `ACK_MODE_AUTO`, `ACK_MODE_MANUAL`, `ACK_MODE_UNSPECIFIED`, or any other `ACK_MODE_*` name a newer server adds
+- `BackpressureModeSchema` -- the same rule for `BACKPRESSURE_MODE_*`
+- `ConsumerGroupStatusSchema` -- the same rule for `CONSUMER_GROUP_STATUS_*`
 - `ConsumerGroupResponseSchema`
 - `ListConsumerGroupsResponseSchema`
 
@@ -2232,7 +2226,7 @@ import {
   // { COMPLETED: "completed", FAILED: "failed", WAITING: "waiting" }
 
   RUN_STATUS,
-  // { PENDING: "pending" (deprecated), RUNNING: "running", COMPLETED: "completed",
+  // { RUNNING: "running", COMPLETED: "completed",
   //   FAILED: "failed", CANCELLED: "cancelled", PAUSED: "paused",
   //   WAITING_FOR_CAPACITY: "waiting_for_capacity", WAITING: "waiting" }
 
@@ -2645,21 +2639,6 @@ interface TimeTravelStepOutputSnapshot {
   patched: boolean;
   injected: boolean;
 }
-
-// Flat shapes returned by the higher-level time-travel client
-interface TimeTravelRunState {
-  runId: string;
-  status: string;
-  steps: Array<{ id: string; name: string; status: string; output: unknown }>;
-  timestamp: string;
-}
-
-/** @deprecated Never matched the wire; getStepOutputAt returns TimeTravelStepOutputSnapshot. */
-interface TimeTravelStepOutput {
-  stepId: string;
-  output: unknown;
-  timestamp: string;
-}
 ```
 
 ---
@@ -2948,21 +2927,6 @@ interface ProvisionTenantResult {
   org: { id: string; name: string };
   environment: { id: string; name: string };
   apiKey: { key: string; roles: string[] };
-}
-```
-
----
-
-## AuditTrailEntry
-
-**Deprecated.** It never matched the server's response. `getAuditTrail` returns `AuditTrailResult` with `AuditEvent` items.
-
-```typescript
-interface AuditTrailEntry {
-  id: string;
-  type: string;
-  timestamp: string;
-  data: unknown;
 }
 ```
 

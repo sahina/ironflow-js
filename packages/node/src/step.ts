@@ -25,6 +25,7 @@ import {
   type InvokeFunctionYieldInfo,
   type InvokeFunctionAsyncYieldInfo,
 } from "./internal/errors.js";
+import { sdkFetch } from "./sdk-fetch.js";
 
 /**
  * Context interface for step execution
@@ -831,7 +832,7 @@ async function executePublish(
       headers["X-Ironflow-Environment"] = ctx.environment;
     }
 
-    const response = await fetch(url, {
+    const response = await sdkFetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify({

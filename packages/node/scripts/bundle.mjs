@@ -20,6 +20,7 @@ const entryPoints = [
   { in: join(distDir, "serve.js"), out: "serve" },
   { in: join(distDir, "worker.js"), out: "worker" },
   { in: join(distDir, "worker-streaming.js"), out: "worker-streaming" },
+  { in: join(distDir, "consumer-group-stream.js"), out: "consumer-group-stream" },
 ];
 
 // Bundle each entry point
@@ -89,6 +90,10 @@ const bundlePkg = {
     "./worker-streaming": {
       types: "./worker-streaming.d.ts",
       import: "./worker-streaming.js",
+    },
+    "./consumer-group-stream": {
+      types: "./consumer-group-stream.d.ts",
+      import: "./consumer-group-stream.js",
     },
   },
   sideEffects: false,

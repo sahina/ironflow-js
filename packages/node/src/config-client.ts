@@ -19,6 +19,7 @@ import {
   EnterpriseRequiredError,
   UnauthorizedError,
 } from "@ironflow/core";
+import { sdkFetch, sdkWebSocket } from "./sdk-fetch.js";
 
 import type { OnErrorHandler, ErrorContext } from "./types.js";
 import { webSocketProtocols } from "./websocket-auth.js";
@@ -127,7 +128,7 @@ export class ConfigClient {
 
     const url = `${wsUrl}/api/v1/config/${enc(name)}/watch`;
 
-    const ws = new WebSocket(url, webSocketProtocols(this.config.apiKey));
+    const ws = sdkWebSocket(url, webSocketProtocols(this.config.apiKey));
     // The server drops the socket after an error frame; that close must not
     // report a second, generic error.
     let failed = false;
@@ -197,7 +198,7 @@ export class ConfigClient {
 
     let status: number | undefined;
     try {
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: httpMethod,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,

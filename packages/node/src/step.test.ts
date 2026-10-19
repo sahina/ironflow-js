@@ -1467,6 +1467,7 @@ describe("createStepClient (real implementation)", () => {
           // The publish step hand-rolls its request, so the run-id header is
           // not inherited from the client — it must be set explicitly (#1706).
           headers: {
+            "X-Ironflow-SDK": expect.stringMatching(/^node\//),
             "Content-Type": "application/json",
             "X-Ironflow-Run-ID": "run_test_123",
           },
@@ -1593,6 +1594,7 @@ describe("createStepClient (real implementation)", () => {
         "http://localhost:9123/ironflow.v1.PubSubService/Publish",
         expect.objectContaining({
           headers: {
+            "X-Ironflow-SDK": expect.stringMatching(/^node\//),
             "Content-Type": "application/json",
             Authorization: "Bearer my-secret-key",
             "X-Ironflow-Run-ID": "run_test_123",

@@ -20,6 +20,7 @@
  */
 
 import { hydrateEnvFromDiscovery } from "../internal/discovery.js";
+import { sdkFetch } from "../sdk-fetch.js";
 import { IronflowError, getConfiguredServerUrl } from "@ironflow/core";
 import { z } from "zod";
 import {
@@ -209,7 +210,7 @@ async function postJSON(
   if (environment) {
     headers["X-Ironflow-Environment"] = environment;
   }
-  const resp = await fetch(url, {
+  const resp = await sdkFetch(url, {
     method: "POST",
     headers,
     body: JSON.stringify(body),

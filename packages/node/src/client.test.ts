@@ -100,6 +100,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/ironflow.v1.IronflowService/PatchStep",
         expect.objectContaining({
           headers: {
+            "X-Ironflow-SDK": expect.stringMatching(/^node\//),
             "Content-Type": "application/json",
             Authorization: "Bearer env-key",
           },
@@ -121,6 +122,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/ironflow.v1.IronflowService/PatchStep",
         expect.objectContaining({
           headers: {
+            "X-Ironflow-SDK": expect.stringMatching(/^node\//),
             "Content-Type": "application/json",
             Authorization: "Bearer env-key",
           },
@@ -142,6 +144,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/ironflow.v1.IronflowService/PatchStep",
         expect.objectContaining({
           headers: {
+            "X-Ironflow-SDK": expect.stringMatching(/^node\//),
             "Content-Type": "application/json",
             Authorization: "Bearer explicit-key",
           },
@@ -175,7 +178,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/ironflow.v1.IronflowService/RegisterFunction",
         expect.objectContaining({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//), "Content-Type": "application/json" },
         })
       );
     });
@@ -211,7 +214,6 @@ describe("IronflowClient", () => {
         secrets: ["STRIPE_KEY"],
         recording: false,
         recordingProfile: "steps",
-        recordingRetention: "30d",
         metadata: { team: "billing" },
       });
 
@@ -221,7 +223,6 @@ describe("IronflowClient", () => {
         secrets: ["STRIPE_KEY"],
         recording: false,
         recordingProfile: "steps",
-        recordingRetention: "30d",
         metadata: { team: "billing" },
       });
     });
@@ -240,7 +241,7 @@ describe("IronflowClient", () => {
 
       const [, init] = assertDefined(mockFetch.mock.calls[0]);
       const body = JSON.parse(init.body as string);
-      for (const key of ["secrets", "recording", "recordingProfile", "recordingRetention", "metadata"]) {
+      for (const key of ["secrets", "recording", "recordingProfile", "metadata"]) {
         expect(body).not.toHaveProperty(key);
       }
     });
@@ -830,7 +831,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/ironflow.v1.PubSubService/Publish",
         expect.objectContaining({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//), "Content-Type": "application/json" },
         })
       );
 
@@ -1317,6 +1318,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/api/v1/workers",
         expect.objectContaining({
           headers: {
+            "X-Ironflow-SDK": expect.stringMatching(/^node\//),
             Authorization: "Bearer worker-key",
           },
         })
@@ -1385,7 +1387,7 @@ describe("IronflowClient", () => {
           "http://localhost:9123/ironflow.v1.EntityStreamService/AppendEvent",
           expect.objectContaining({
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//), "Content-Type": "application/json" },
           })
         );
 
@@ -1763,7 +1765,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/ironflow.v1.IronflowService/PauseRun",
         expect.objectContaining({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//), "Content-Type": "application/json" },
         })
       );
 
@@ -1968,7 +1970,7 @@ describe("IronflowClient", () => {
         "http://localhost:9123/ironflow.v1.IronflowService/InjectStepOutput",
         expect.objectContaining({
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//), "Content-Type": "application/json" },
         })
       );
 
@@ -3949,11 +3951,11 @@ describe("resumeRun Connect decoding", () => {
     expect(result.startedAt).toBe("2025-01-01T00:00:00Z");
   });
 
-  it("rejects a status the SDK cannot name", async () => {
+  it("rejects a status off the wire spelling", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_QUARANTINED" }),
+      json: () => Promise.resolve({ id: "run_123", status: "quarantined" }),
     });
     vi.stubGlobal("fetch", mockFetch);
 

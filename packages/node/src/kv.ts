@@ -25,6 +25,7 @@ import {
 } from "@ironflow/core";
 import type { OnErrorHandler, ErrorContext } from "./types.js";
 import { webSocketProtocols } from "./websocket-auth.js";
+import { sdkFetch, sdkWebSocket } from "./sdk-fetch.js";
 
 /**
  * Configuration for the KV client (inherited from parent client).
@@ -172,7 +173,7 @@ export class KVBucketHandle {
     const query = options?.key
       ? `?key=${encodeURIComponent(options.key)}`
       : "";
-    const ws = new WebSocket(
+    const ws = sdkWebSocket(
       `${wsUrl}/api/v1/kv/buckets/${enc(this.bucketName)}/watch${query}`,
       webSocketProtocols(this.config.apiKey)
     );
@@ -244,7 +245,7 @@ export class KVBucketHandle {
 
     let status: number | undefined;
     try {
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: httpMethod,
         headers,
         body:
@@ -387,7 +388,7 @@ export class KVClient {
 
     let status: number | undefined;
     try {
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method: httpMethod,
         headers,
         body: body !== undefined ? JSON.stringify(body) : undefined,

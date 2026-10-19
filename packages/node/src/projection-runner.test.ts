@@ -1967,6 +1967,97 @@ describe("ProjectionRunner", () => {
       },
       8000
     );
+
+    it.each([0, 1])(
+      "reloads the saved state after a save whose response was lost, %i failed reloads first (#2977)",
+      async (reloadFailures) => {
+        vi.useFakeTimers();
+        try {
+          const evt = (seq: number) => ({ id: `evt-${seq}`, name: "order.created", data: {}, seq, timestamp: "2025-01-01T00:00:00Z" });
+
+          // The server keeps the first save, but the worker gets a 502 for it.
+          let saved: unknown;
+          let gets = 0;
+          let streamCallCount = 0;
+          const saveBodies: any[] = [];
+          const calls: string[] = [];
+          mockFetch.mockImplementation(async (url: string, opts: any) => {
+            const u = String(url);
+            if (u.includes("RegisterProjection")) return { ok: true, status: 200 };
+            if (u.includes("GetProjection")) {
+              gets++;
+              // The first get is the startup load; the reloads come after the lost save.
+              if (gets > 1 && gets <= 1 + reloadFailures) {
+                calls.push("get-failed");
+                return { ok: false, status: 500 };
+              }
+              calls.push("get");
+              return { ok: true, status: 200, json: () => Promise.resolve(saved ? { state: saved } : {}) };
+            }
+            if (u.includes("StreamProjectionEvents")) {
+              streamCallCount++;
+              calls.push("stream");
+              if (streamCallCount === 1) {
+                // evt-1, then held open until the failed flush aborts it.
+                return {
+                  ok: true,
+                  status: 200,
+                  body: new ReadableStream({
+                    start(controller) {
+                      controller.enqueue(buildEnvelope(JSON.stringify(evt(1))));
+                      opts.signal.addEventListener("abort", () => {
+                        try { controller.error(new DOMException("Aborted", "AbortError")); } catch { /* closed */ }
+                      }, { once: true });
+                    },
+                  }),
+                };
+              }
+              // The server replays from its cursor, which the lost save moved past evt-1.
+              if (streamCallCount === 2) {
+                return {
+                  ok: true,
+                  status: 200,
+                  body: makeStream(buildEnvelope(JSON.stringify(evt(2))), buildEnvelope(JSON.stringify(evt(3))), emptyTrailer),
+                };
+              }
+              return { ok: true, status: 200, body: makeStream(emptyTrailer) };
+            }
+            if (u.includes("SaveProjectionState")) {
+              const body = JSON.parse(opts.body);
+              saveBodies.push(body);
+              saved = body.state;
+              if (saveBodies.length === 1) return { ok: false, status: 502, text: () => Promise.resolve("injected") };
+              return { ok: true, status: 200 };
+            }
+            throw new Error(`unexpected fetch: ${u}`);
+          });
+
+          const ac = new AbortController();
+          const projection = createManagedProjection({
+            handler: (s: any) => ({ count: s.count + 1 }),
+            initialState: () => ({ count: 0 }),
+          });
+          const runner = createProjectionRunner(createRunnerConfig({ signal: ac.signal, projection }));
+
+          const p = runner.startStreaming();
+          // Flush, 2s backoff, a 4s backoff after a failed reload, then the replay.
+          await vi.advanceTimersByTimeAsync(10_000);
+          ac.abort();
+          await p.catch(() => {});
+
+          // A failed reload must not open the stream on the stale state.
+          expect(calls.slice(0, 4 + reloadFailures)).toEqual([
+            "get", "stream", ...Array(reloadFailures).fill("get-failed"), "get", "stream",
+          ]);
+          expect(saveBodies).toHaveLength(2);
+          const second = assertDefined(saveBodies[1]);
+          expect(second.state, "evt-2 and evt-3 must apply on top of the saved evt-1").toEqual({ count: 3 });
+          expect(second.lastEventSeq).toBe(3);
+        } finally {
+          vi.useRealTimers();
+        }
+      }
+    );
   });
 
   // Reconnect CADENCE, which every other streaming test above is blind to by construction: they

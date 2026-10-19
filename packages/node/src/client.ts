@@ -36,6 +36,7 @@ import {
   type SchemaHistoryPage,
 } from "@ironflow/core";
 import { connectHTTPError, restRetryable, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
+import { sdkFetch } from "./sdk-fetch.js";
 /**
  * Ironflow Node.js Client
  *
@@ -309,8 +310,6 @@ export interface RegisterFunctionRequest {
   recording?: boolean;
   /** Which run data to record. */
   recordingProfile?: RecordingProfile;
-  /** @deprecated Metadata only. IRONFLOW_AUDIT_RETENTION_DAYS controls all audit pruning; forever does not exempt rows. */
-  recordingRetention?: string;
   /** Free-form metadata stored with the function. */
   metadata?: Record<string, unknown>;
 }
@@ -495,7 +494,6 @@ export class IronflowClient {
     if (request.secrets?.length) body.secrets = request.secrets;
     if (request.recording != null) body.recording = request.recording;
     if (request.recordingProfile != null) body.recordingProfile = request.recordingProfile;
-    if (request.recordingRetention != null) body.recordingRetention = request.recordingRetention;
     if (request.metadata) body.metadata = request.metadata;
 
     const response = await this.request<{ created: boolean }>(
@@ -3397,7 +3395,7 @@ export class IronflowClient {
       let response: Response | undefined;
       let delayMs: number;
       try {
-        response = await fetch(url, { ...init, signal: controller.signal });
+        response = await sdkFetch(url, { ...init, signal: controller.signal });
         return await parse(response);
       } catch (error) {
         // No response means the network failed or the timeout fired, and the

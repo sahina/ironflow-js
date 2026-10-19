@@ -100,6 +100,50 @@ describe("ConnectRPCTransport resume cursor", () => {
     expect(reconnect.options.replay).toBe(0);
   });
 
+  it("restarts only the stream that fell behind", async () => {
+    let call = 0;
+    mocks.subscribe.mockImplementation(() => {
+      call++;
+      if (call === 1) {
+        return (async function* () {
+          yield create(SubscriptionEventSchema, {
+            subscriptionId: "sub-1",
+            eventId: "event-1",
+            topic: "orders.created",
+            sequence: 401n,
+            metadata: create(EventMetadataSchema, {}),
+          });
+          throw new ConnectError(
+            "subscriber fell behind; resume after the last sequence received",
+            Code.Unavailable,
+          );
+        })();
+      }
+      return (async function* () {
+        await new Promise(() => {});
+      })();
+    });
+
+    const transport = new ConnectRPCTransport("http://localhost:9123", options);
+    transport.setCallbacks(callbacks);
+    await transport.connect();
+    transport.subscribe("orders.*", { startAfterSequence: 400 });
+    transport.subscribe("payments.*", {});
+    await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(2));
+
+    await vi.advanceTimersByTimeAsync(1);
+    await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(3));
+    const restart = assertDefined(mocks.subscribe.mock.calls[2])[0];
+    expect(restart.pattern).toBe("orders.*");
+    expect(restart.options.startAfterSequence).toBe(401n);
+    expect(callbacks.onConnectionChange).not.toHaveBeenCalledWith(
+      "disconnected",
+    );
+    expect(callbacks.onError).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(mocks.subscribe).toHaveBeenCalledTimes(3);
+  });
+
   it("preserves replay until a cursor request is accepted", async () => {
     let call = 0;
     mocks.subscribe.mockImplementation(() => {

@@ -82,20 +82,24 @@ describe("RunStatusWireSchema", () => {
     expect(() => RunStatusWireSchema.parse(status)).toThrow();
   });
 
-  it("reports invalid server statuses as a public schema validation error", () => {
-    expect(() => runStatusFromWire("RUN_STATUS_FUTURE")).toThrow(
+  it("passes a status a newer server added through, lowercased", () => {
+    expect(runStatusFromWire("RUN_STATUS_FUTURE")).toBe("future");
+  });
+
+  it("reports malformed server statuses as a public schema validation error", () => {
+    expect(() => runStatusFromWire("RUN_STATUS_UNSPECIFIED")).toThrow(
       SchemaValidationError
     );
 
     try {
-      runStatusFromWire("RUN_STATUS_FUTURE");
+      runStatusFromWire("RUN_STATUS_UNSPECIFIED");
       expect.unreachable("expected invalid wire status to throw");
     } catch (error) {
       expect(error).toMatchObject({
         name: "SchemaValidationError",
         code: "VALIDATION_ERROR",
         retryable: false,
-        message: "Invalid run status from server: RUN_STATUS_FUTURE",
+        message: "Invalid run status from server: RUN_STATUS_UNSPECIFIED",
       });
       expect(
         (error as SchemaValidationError).validationErrors
@@ -691,6 +695,20 @@ describe("WSServerMessageSchema (discriminated union)", () => {
     const msg = { type: "unknown" };
     expect(() => WSServerMessageSchema.parse(msg)).toThrow();
   });
+
+  it("passes through a subscription result status a newer server added", () => {
+    const msg = {
+      type: "subscription_result",
+      results: [{ pattern: "test", status: "zz_future" }],
+    };
+    const result = WSServerMessageSchema.parse(msg);
+    expect(result.type === "subscription_result" && result.results[0]?.status).toBe("zz_future");
+  });
+
+  it("rejects a subscription result status off the wire spelling", () => {
+    const msg = { type: "subscription_result", results: [{ pattern: "test", status: " OK " }] };
+    expect(() => WSServerMessageSchema.parse(msg)).toThrow();
+  });
 });
 
 describe("parseAndValidate", () => {
@@ -811,6 +829,24 @@ describe("TriggerSyncResultItemSchema", () => {
 
   it("rejects missing required fields", () => {
     expect(() => TriggerSyncResultItemSchema.parse({ runId: "r" })).toThrow();
+  });
+
+  it("passes a run status a newer server added through", () => {
+    const result = TriggerSyncResultItemSchema.parse({
+      runId: "r",
+      functionId: "f",
+      status: "RUN_STATUS_ZZ_FUTURE",
+      durationMs: 1,
+    });
+    expect(result.status).toBe("zz_future");
+  });
+
+  it("rejects an unspecified or absent run status", () => {
+    for (const status of ["RUN_STATUS_UNSPECIFIED", undefined]) {
+      expect(() =>
+        TriggerSyncResultItemSchema.parse({ runId: "r", functionId: "f", status, durationMs: 1 })
+      ).toThrow();
+    }
   });
 });
 
@@ -941,7 +977,7 @@ describe("InvokeFunctionSyncResponseSchema", () => {
     expect(() =>
       validate(
         InvokeFunctionSyncResponseSchema,
-        { result: { ...wireResult, status: "RUN_STATUS_FUTURE" } },
+        { result: { ...wireResult, status: "RUN_STATUS_UNSPECIFIED" } },
         "invoke sync response"
       )
     ).toThrow(SchemaValidationError);
@@ -951,7 +987,7 @@ describe("InvokeFunctionSyncResponseSchema", () => {
     try {
       validate(
         InvokeFunctionSyncResponseSchema,
-        { result: { ...wireResult, status: "RUN_STATUS_FUTURE" } },
+        { result: { ...wireResult, status: "RUN_STATUS_UNSPECIFIED" } },
         "invoke sync response"
       );
       expect.unreachable("should have thrown");
@@ -972,8 +1008,13 @@ describe("AckModeSchema", () => {
     }
   );
 
-  it("rejects invalid value", () => {
+  it("passes through a value a newer server added", () => {
+    expect(AckModeSchema.parse("ACK_MODE_ZZ_FUTURE")).toBe("ACK_MODE_ZZ_FUTURE");
+  });
+
+  it("rejects a value off the wire spelling", () => {
     expect(() => AckModeSchema.parse("INVALID")).toThrow();
+    expect(() => AckModeSchema.parse(undefined)).toThrow();
   });
 });
 
@@ -987,8 +1028,13 @@ describe("BackpressureModeSchema", () => {
     expect(BackpressureModeSchema.parse(value)).toBe(value);
   });
 
-  it("rejects invalid value", () => {
+  it("passes through a value a newer server added", () => {
+    expect(BackpressureModeSchema.parse("BACKPRESSURE_MODE_ZZ_FUTURE")).toBe("BACKPRESSURE_MODE_ZZ_FUTURE");
+  });
+
+  it("rejects a value off the wire spelling", () => {
     expect(() => BackpressureModeSchema.parse("INVALID")).toThrow();
+    expect(() => BackpressureModeSchema.parse(undefined)).toThrow();
   });
 });
 
@@ -1002,8 +1048,13 @@ describe("ConsumerGroupStatusSchema", () => {
     expect(ConsumerGroupStatusSchema.parse(value)).toBe(value);
   });
 
-  it("rejects invalid value", () => {
+  it("passes through a value a newer server added", () => {
+    expect(ConsumerGroupStatusSchema.parse("CONSUMER_GROUP_STATUS_ZZ_FUTURE")).toBe("CONSUMER_GROUP_STATUS_ZZ_FUTURE");
+  });
+
+  it("rejects a value off the wire spelling", () => {
     expect(() => ConsumerGroupStatusSchema.parse("INVALID")).toThrow();
+    expect(() => ConsumerGroupStatusSchema.parse(undefined)).toThrow();
   });
 });
 

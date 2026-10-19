@@ -70,6 +70,16 @@ export interface WorkerConfig {
   heartbeatInterval?: number;
   /** Reconnect delay in ms (default: 5000) */
   reconnectDelay?: number;
+  /**
+   * Seconds the server may hold an empty job poll open before it answers, so a
+   * new job reaches the worker at once instead of on the next 1 s poll
+   * (default: 20; 0 or less disables long polling; capped at 25). Servers
+   * without long polling ignore it. A proxy with a read timeout below this
+   * value must be raised, or this value lowered.
+   *
+   * REST polling worker only — `createStreamingWorker` ignores it.
+   */
+  pollWaitSeconds?: number;
   /** Worker labels for routing */
   labels?: Record<string, string>;
   /** Logger instance (or false to disable) */

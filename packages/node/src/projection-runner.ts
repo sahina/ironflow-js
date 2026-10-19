@@ -32,6 +32,7 @@ import {
   UnauthorizedError,
   throwIfAuthError,
 } from "@ironflow/core";
+import { sdkFetch } from "./sdk-fetch.js";
 
 export interface ProjectionRunnerConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -177,6 +178,8 @@ export class ProjectionRunner {
   private streamAbort: AbortController | null = null;
   /** Set by a failed flush; later flushes are dropped until the reconnect, which replays from the saved cursor. */
   private flushFailed = false;
+  /** A failed save may still have landed (only its response was lost): reload the state before the next stream (#2977). */
+  private reloadState = false;
   /** A batch with events succeeded on the current stream. */
   private progressed = false;
 
@@ -201,7 +204,7 @@ export class ProjectionRunner {
 
   async register(): Promise<void> {
     const { projection, baseUrl, headers } = this.config;
-    const resp = await fetch(
+    const resp = await sdkFetch(
       `${baseUrl}/ironflow.v1.ProjectionService/RegisterProjection`,
       {
         method: "POST",
@@ -356,7 +359,7 @@ export class ProjectionRunner {
     let standby = false;
     while (!this.intakeSignal.aborted) {
       try {
-        const resp = await fetch(`${baseUrl}/ironflow.v1.ProjectionService/AcquireProjectionLease`, {
+        const resp = await sdkFetch(`${baseUrl}/ironflow.v1.ProjectionService/AcquireProjectionLease`, {
           method: "POST",
           headers: { ...headers, "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
@@ -412,7 +415,7 @@ export class ProjectionRunner {
       let wait = runnerTimings.renewRetryMs;
       let failure = "";
       try {
-        const resp = await fetch(`${baseUrl}/ironflow.v1.ProjectionService/RenewProjectionLease`, {
+        const resp = await sdkFetch(`${baseUrl}/ironflow.v1.ProjectionService/RenewProjectionLease`, {
           method: "POST",
           headers: { ...headers, "Content-Type": "application/json" },
           body,
@@ -468,7 +471,7 @@ export class ProjectionRunner {
     this.lease = null;
     if (!lease) return;
     const { projection, baseUrl, headers } = this.config;
-    await fetch(`${baseUrl}/ironflow.v1.ProjectionService/ReleaseProjectionLease`, {
+    await sdkFetch(`${baseUrl}/ironflow.v1.ProjectionService/ReleaseProjectionLease`, {
       method: "POST",
       headers: { ...headers, "Content-Type": "application/json" },
       body: JSON.stringify({ name: projection.config.name, lease }),
@@ -512,6 +515,7 @@ export class ProjectionRunner {
     await this.flushChain; // a batch of the lost grant must not send the next grant's lease
     this.pendingEvents = [];
     this.flushFailed = false;
+    this.reloadState = false; // the next grant loads the state before it streams
     this.resetManagedState();
     this.lease = null;
     this.leaseLost = new AbortController();
@@ -544,7 +548,15 @@ export class ProjectionRunner {
       let worked = false;
       this.progressed = false;
       try {
-        const resp = await fetch(
+        // The stream replays from the server cursor, so the state must be the server's too.
+        // Reset first, as at startup: a 404 or {} answer leaves the state as it is.
+        // A failed reload keeps the flag and goes down the backoff ladder.
+        if (this.reloadState) {
+          this.resetManagedState();
+          await this.loadExistingState();
+          this.reloadState = false;
+        }
+        const resp = await sdkFetch(
           `${baseUrl}/ironflow.v1.ProjectionService/StreamProjectionEvents`,
           {
             method: "POST",
@@ -728,6 +740,7 @@ export class ProjectionRunner {
         // one belongs to the polling fallback and mutating it from here would corrupt its ladder.
         await this.flushChain;
         this.pendingEvents = [];
+        if (this.flushFailed) this.reloadState = true;
         this.flushFailed = false;
         await this.sleep(
           calculateBackoff(consecutiveFailures, RECONNECT_BASE_MS, RECONNECT_MAX_MS)
@@ -892,7 +905,7 @@ export class ProjectionRunner {
     const { projection, baseUrl, headers } = this.config;
     if (projection.config.mode !== "managed") return;
 
-    const resp = await fetch(
+    const resp = await sdkFetch(
       `${baseUrl}/ironflow.v1.ProjectionService/GetProjection`,
       {
         method: "POST",
@@ -927,7 +940,7 @@ export class ProjectionRunner {
    */
   private async loadPartitionState(partition: string): Promise<unknown> {
     const { projection, baseUrl, headers } = this.config;
-    const resp = await fetch(
+    const resp = await sdkFetch(
       `${baseUrl}/ironflow.v1.ProjectionService/GetProjection`,
       {
         method: "POST",
@@ -1048,7 +1061,7 @@ export class ProjectionRunner {
   private async poll(): Promise<number> {
     const { projection, baseUrl, headers } = this.config;
 
-    const resp = await fetch(
+    const resp = await sdkFetch(
       `${baseUrl}/ironflow.v1.ProjectionService/PollProjectionEvents`,
       {
         method: "POST",
@@ -1111,7 +1124,7 @@ export class ProjectionRunner {
     partitionKey?: string
   ): Promise<void> {
     const { baseUrl, headers, projection } = this.config;
-    const resp = await fetch(
+    const resp = await sdkFetch(
       `${baseUrl}/ironflow.v1.ProjectionService/SaveProjectionState`,
       {
         method: "POST",
@@ -1148,7 +1161,7 @@ export class ProjectionRunner {
     lastEventSeq: number
   ): Promise<void> {
     const { baseUrl, headers, projection } = this.config;
-    const resp = await fetch(
+    const resp = await sdkFetch(
       `${baseUrl}/ironflow.v1.ProjectionService/AckProjectionEvents`,
       {
         method: "POST",

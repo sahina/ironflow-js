@@ -83,6 +83,8 @@ export const DEFAULT_WORKER = {
   HEARTBEAT_INTERVAL_MS: 30_000,
   /** Default reconnect delay in milliseconds (5 seconds). */
   RECONNECT_DELAY_MS: 5_000,
+  /** Default long-poll hold for the REST job poll in seconds; 0 disables (ADR 0124). */
+  POLL_WAIT_SECONDS: 20,
   /** Default step-checkpoint debounce window in milliseconds (#1670). */
   CHECKPOINT_INTERVAL_MS: 1_000,
   /** Maximum steps in one checkpoint batch. Must not exceed the server's cap. */
@@ -160,12 +162,6 @@ export const STEP_STATUS = {
 
 /** Run status values */
 export const RUN_STATUS = {
-  /**
-   * Run is pending execution.
-   * @deprecated The engine no longer produces this status as of #1222 (run
-   * status "pending" retired). Retained for source compatibility.
-   */
-  PENDING: "pending",
   /** Run is currently executing */
   RUNNING: "running",
   /** Run completed successfully */

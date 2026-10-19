@@ -45,6 +45,7 @@ import {
   resolveEnvironment,
 } from "./internal/register-functions.js";
 import { SDK_VERSION } from "./version.js";
+import { sdkFetch } from "./sdk-fetch.js";
 
 // Re-exported for back-compat: both live in internal/register-functions.ts,
 // which the streaming worker also uses (#2027).
@@ -109,6 +110,7 @@ class IronflowWorker implements Worker {
   private readonly maxConcurrentJobs: number;
   private readonly heartbeatInterval: number;
   private readonly reconnectDelay: number;
+  private readonly pollWaitSeconds: number;
   private readonly drainTimeout: number;
   private readonly logger: Logger;
   private readonly environment: string;
@@ -118,6 +120,9 @@ class IronflowWorker implements Worker {
   private activeJobs: Map<string, ActiveJob> = new Map();
   private heartbeatTimer?: ReturnType<typeof setInterval>;
   private abortController?: AbortController;
+  // Separate from abortController: drain() must cut a held poll while the
+  // heartbeat and running jobs keep using abortController.
+  private pollAbortController?: AbortController;
   private projectionRunners: ProjectionRunner[] = [];
   private projectionsStopped: Promise<void> = Promise.resolve();
   private drainPromise?: Promise<void>;
@@ -136,6 +141,12 @@ class IronflowWorker implements Worker {
       config.heartbeatInterval ?? DEFAULT_WORKER.HEARTBEAT_INTERVAL_MS;
     this.reconnectDelay =
       config.reconnectDelay ?? DEFAULT_WORKER.RECONNECT_DELAY_MS;
+    // The server rejects a wait it cannot parse with 400 and caps it at 25, so only
+    // a whole number in 0..25 may reach the wire; NaN or Infinity means the default.
+    const pollWait = config.pollWaitSeconds ?? DEFAULT_WORKER.POLL_WAIT_SECONDS;
+    this.pollWaitSeconds = Number.isFinite(pollWait)
+      ? Math.min(Math.max(Math.floor(pollWait), 0), 25)
+      : DEFAULT_WORKER.POLL_WAIT_SECONDS;
     this.drainTimeout =
       config.drainTimeout && config.drainTimeout > 0 ? config.drainTimeout : DEFAULT_WORKER.DRAIN_TIMEOUT_MS;
     this.environment = resolveEnvironment(config.environment);
@@ -229,6 +240,7 @@ class IronflowWorker implements Worker {
 
     this.logger.info("Draining worker...");
     this.state = "draining";
+    this.pollAbortController?.abort();
 
     this.drainPromise = (async () => {
       const deadline = Date.now() + this.drainTimeout;
@@ -253,6 +265,7 @@ class IronflowWorker implements Worker {
     this.removeSignalDrain?.();
     this.removeSignalDrain = undefined;
     this.abortController?.abort();
+    this.pollAbortController?.abort();
 
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
@@ -324,7 +337,7 @@ class IronflowWorker implements Worker {
   private async registerWorker(baseUrl: string): Promise<void> {
     const functionIds = Array.from(this.functionMap.keys());
 
-    const response = await fetch(
+    const response = await sdkFetch(
       `${baseUrl}/api/v1/workers/${this.workerId}/register`,
       {
         method: "POST",
@@ -390,7 +403,7 @@ class IronflowWorker implements Worker {
         const jobs = Array.from(this.activeJobs.values())
           .filter((job) => !job.abortController.signal.aborted)
           .map((job) => ({ job_id: job.jobId, started_at: job.startedAt.toISOString() }));
-        await fetch(`${baseUrl}/api/v1/workers/${this.workerId}/heartbeat`, {
+        await sdkFetch(`${baseUrl}/api/v1/workers/${this.workerId}/heartbeat`, {
           method: "POST",
           headers: this.buildHeaders(),
           body: JSON.stringify({
@@ -414,6 +427,7 @@ class IronflowWorker implements Worker {
     // DOWN logs a warning per attempt forever. Reset on any poll that reaches the server, so a
     // single blip costs the next job 5s and nothing more.
     let consecutiveFailures = 0;
+    const pollAbort = (this.pollAbortController = new AbortController());
     while (this.state === "connected") {
       // Check capacity
       if (this.activeJobs.size >= this.maxConcurrentJobs) {
@@ -426,14 +440,20 @@ class IronflowWorker implements Worker {
         // many fenced assignments; a legacy server ignores the param and returns
         // at most one single-object assignment.
         const available = this.maxConcurrentJobs - this.activeJobs.size;
-        const response = await fetch(
-          `${baseUrl}/api/v1/workers/${this.workerId}/jobs?available=${available}`,
+        const wait = this.pollWaitSeconds > 0 ? `&wait=${this.pollWaitSeconds}` : "";
+        const response = await sdkFetch(
+          `${baseUrl}/api/v1/workers/${this.workerId}/jobs?available=${available}${wait}`,
           {
             method: "GET",
             headers: this.buildHeaders(),
-            signal: this.abortController?.signal,
+            signal: pollAbort.signal,
           }
         );
+
+        // Only a server that held the poll sets a positive value. Without it (older server, or
+        // wait=0) the response came back at once, and polling again at once would spin.
+        const held =
+          Number.parseInt(response.headers?.get("Ironflow-Poll-Wait") ?? "", 10) > 0;
 
         // `response.ok` covers 204 too, so the ladder resets on the idle no-jobs path a mostly-idle
         // worker spends its life in — but NOT on the 5xx below, which throws and must keep backing
@@ -443,7 +463,7 @@ class IronflowWorker implements Worker {
 
         if (response.status === 204) {
           // No jobs available
-          await this.sleep(1000);
+          if (!held) await this.sleep(1000);
           continue;
         }
 
@@ -490,7 +510,7 @@ class IronflowWorker implements Worker {
           this.processJob(baseUrl, result.data);
           processedAny = true;
         }
-        if (!processedAny) {
+        if (!processedAny && !held) {
           await this.sleep(1000);
         }
       } catch (error) {
@@ -775,7 +795,7 @@ class IronflowWorker implements Worker {
       };
       this.stampFence(body, fence);
       try {
-        const response = await fetch(
+        const response = await sdkFetch(
           `${baseUrl}/api/v1/workers/${this.workerId}/jobs/${job.job_id}`,
           { method: "PUT", headers: this.buildHeaders(), body: JSON.stringify(body) }
         );
@@ -859,7 +879,7 @@ class IronflowWorker implements Worker {
     job: ValidatedJobAssignment
   ): Promise<boolean> {
     try {
-      const response = await fetch(
+      const response = await sdkFetch(
         `${baseUrl}/api/v1/workers/${this.workerId}/jobs/${job.job_id}/ack`,
         {
           method: "PUT",
@@ -929,7 +949,7 @@ class IronflowWorker implements Worker {
     body: Record<string, unknown>,
     fence?: JobFence
   ): Promise<void> {
-    const response = await fetch(
+    const response = await sdkFetch(
       `${baseUrl}/api/v1/workers/${this.workerId}/jobs/${jobId}`,
       {
         method: "PUT",

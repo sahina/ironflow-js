@@ -111,7 +111,6 @@ All fields on the config object:
 | `stepTimeout` | `string` | Default timeout for all `step.run()` calls (e.g., `"30s"`, `"5m"`). |
 | `recording` | `boolean` | Legacy audit toggle. `true` is equivalent to `recordingProfile: "all"`. |
 | `recordingProfile` | `"all" \| "run_lifecycle" \| "steps"` | Workflow audit families to capture. A profile enables recording by itself. |
-| `recordingRetention` | `string` | Audit retention metadata (`"7d"`, `"30d"`, `"90d"`, `"forever"`); informational only today. Global audit pruning still applies. |
 | `metadata` | `Record<string, unknown>` | Arbitrary metadata attached to the function definition. |
 | `cancelOn` | `CancelOnConfig[]` | Auto-cancel in-flight runs when a matching event arrives. Each spec is `{ event: string; match: string }`; OR semantics across specs. |
 
@@ -160,7 +159,6 @@ const processOrder = createFunction(
     secrets: ['STRIPE_SECRET_KEY', 'SENDGRID_API_KEY'],
     stepTimeout: '30s',
     recordingProfile: 'steps',
-    recordingRetention: '30d',
   },
   async ({ event, step, secrets }) => {
     const apiKey = secrets.get('STRIPE_SECRET_KEY');
@@ -603,6 +601,7 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `maxConcurrentJobs` | `number` | `10` | Maximum concurrent job executions. |
 | `heartbeatInterval` | `number` | `30000` | Heartbeat interval in ms. |
 | `reconnectDelay` | `number` | `5000` | Reconnect delay in ms. |
+| `pollWaitSeconds` | `number` | `20` | Seconds the server may hold an empty job poll open, so a new job reaches the worker at once. `0` disables long polling; the server caps it at 25. A proxy with a read timeout below this value must be raised, or this value lowered. REST polling worker only -- `createStreamingWorker` ignores it. |
 | `labels` | `Record<string, string>` | -- | Worker labels for routing. |
 | `logger` | `Logger \| false` | -- | Custom logger or `false` to disable. |
 | `environment` | `string` | `IRONFLOW_ENV` or `"default"` | Target environment. |
@@ -1775,6 +1774,31 @@ console.log(sub.isConnected);     // boolean
 console.log(sub.connectionState); // ConnectionState
 ```
 
+### Consumer Group Stream
+
+Join a consumer group over one ConnectRPC stream (`PubSubService.SubscribeBidirectional`). The stream carries events and acks, and every `ack`, `nak` and `term` resolves from the server result. The group must exist. Import from the separate `@ironflow/node/consumer-group-stream` entry point to avoid loading protobuf dependencies unless needed. WebSocket stays the default join transport.
+
+```typescript
+import { joinConsumerGroupStream } from '@ironflow/node/consumer-group-stream';
+const sub = await joinConsumerGroupStream(
+  { serverUrl: 'http://localhost:9123', apiKey: process.env.IRONFLOW_API_KEY },
+  'order-processors',
+  {
+    onEvent: async (event) => {
+      await processOrder(event);
+      await sub.ack(event.eventId!); // or sub.nak(id, delayMs), sub.term(id)
+    },
+  },
+);
+```
+
+- The SDK holds events until `joinConsumerGroupStream` returns, so `sub` is set when `onEvent` runs.
+- The stream needs a server that includes this change (released after v0.47.0). Against an older server the join fails with a `SERVER_TOO_OLD` error that names the first server version with the stream (0.48.0). The SDK does not retry it. Use the WebSocket transport there.
+- `onEvent` may return a Promise and the SDK awaits it, so events are handled in order. A handler that rejects goes to `onError`, and the SDK does not ack the event. In an `AUTO` group a slow handler slows the server through HTTP/2 flow control.
+- `ack`, `nak` and `term` reject with `AckError` (the server refused), `StaleAckError` (the stream reconnected, so the server redelivers the event, or the event was settled already) or `SubscriptionClosedError` (after `unsubscribe()` or a terminal error). In an `AUTO` group they do nothing.
+- A retryable disconnect reconnects with backoff. `Unauthenticated`, `PermissionDenied`, `NotFound` and `InvalidArgument` end the subscription and go to `onError`.
+- Config: `serverUrl`, `apiKey?`, `environment?`, `namespace?`, `logger?`, `reconnectDelay?` (1000 ms), `maxReconnectDelay?` (30000 ms), `reconnectBackoff?` (1.5), `ackTimeoutMs?` (30000), `idleTimeoutMs?` (90000: no frame for this long reconnects).
+
 ---
 
 ## Projections
@@ -2153,8 +2177,6 @@ Set provider options such as `max_tokens` in the actual application/provider SDK
 
 Execution audit describes what happened during a run. Durable step results supply replay values. Case state represents application-owned business facts, such as a support ticket's status. Projection-backed memory reads derived state from explicitly appended events; curated knowledge requires application decisions about what to retain and reuse. Raw audit logs are not automatically appropriate or authorized model context, and projections do not automatically curate, redact, or authorize data.
 
-Per-function `recordingRetention` is metadata-only today. The global audit pruner applies uniformly by age, even to functions marked `forever`. Audit retention does not control all execution data or durable step results. See [audit recording and data boundaries](https://docs.ironflow.run/how-to-guides/audit-logging/#audit-and-agent-data-boundaries).
-
 ### Errors
 
 | Error | When |
@@ -2310,6 +2332,7 @@ describe('transferFunds', () => {
 | `serve(config)` / `createHandler(config)` | Create HTTP handler for push mode. |
 | `createWorker(config)` | Create pull mode worker (REST polling). |
 | `createStreamingWorker(config)` | Create pull mode worker (ConnectRPC streaming). Import from `@ironflow/node/worker-streaming`. |
+| `joinConsumerGroupStream(config, group, callbacks)` | Join a consumer group over `SubscribeBidirectional`. Import from `@ironflow/node/consumer-group-stream`. |
 | `createProjection(config)` | Define a projection. |
 | `createProjectionRunner(config)` / `ProjectionRunner` / `StreamingUnsupportedError` | Lower-level projection runner (advanced). `run()` streams and polls when the server cannot stream, under one lease. `startStreaming()` only streams and `start()` only polls; the error signals a server without `StreamProjectionEvents`, so the caller can fall back to polling. `stop()` permanently closes intake and waits for accepted events to finish saving. Create a new runner to resume. |
 | `createClient(config)` / `IronflowClient` | Create server-side HTTP client. |

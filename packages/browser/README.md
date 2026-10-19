@@ -738,10 +738,6 @@ const result = await ironflow.agents.invoke<{ category: string }>(
     timeoutMs: 60_000,             // default 30s
     idempotencyKey: 'click-abc',   // server-side dedup
     signal: ac.signal,             // AbortController; the server cancels the run
-    // replay:       DEPRECATED, unread -- there is no subscription to replay
-    // onRunStarted: DEPRECATED -- now fires AFTER the run settles, not before
-    //               the wait. Use agents.subscribe(runId, { replay }) for
-    //               live progress.
   }
 );
 console.log(result.runId, result.output, result.durationMs);
@@ -1633,7 +1629,7 @@ The browser client supports two transport protocols for real-time subscriptions:
 
 ### ConnectRPC (Default)
 
-Uses HTTP/2 with Protocol Buffers. Preferred for production because it shares the same connection as REST API calls and supports bidirectional streaming.
+Uses HTTP/2 with Protocol Buffers. Preferred for production because it shares the same connection as REST API calls. A browser cannot stream both ways over `fetch`, so manual acks of consumer-group events use the WebSocket `ack` frame.
 
 ```typescript
 ironflow.configure({
@@ -1777,7 +1773,7 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Pub/Sub types:** `PublishOptions`, `PublishResult`
 
-**Invoke/Trigger types:** `InvokeResult`, `TriggerResult` (deprecated alias), `EmitSyncResult`, `InvokeSyncOptions`, `InvokeSyncResult`
+**Invoke/Trigger types:** `InvokeResult`, `EmitSyncResult`, `InvokeSyncOptions`, `InvokeSyncResult`
 
 **Subscription types:** `SubscribeOptions`, `Subscription`, `AckableSubscription`, `SubscriptionEvent`, `SubscriptionErrorInfo`, `SubscriptionCallbacks`, `ConnectionState`, `AckHandle`
 

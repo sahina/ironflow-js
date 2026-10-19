@@ -94,16 +94,6 @@ export async function invoke<TOutput = unknown>(
     throw err;
   }
 
-  // Surface the runId to the caller's hook. It settles after the run rather
-  // than before the wait now — see the deprecation note on the option.
-  if (opts.onRunStarted) {
-    try {
-      await opts.onRunStarted(result.runId);
-    } catch {
-      /* swallow — caller's bug is not ours */
-    }
-  }
-
   return {
     runId: result.runId,
     output: result.output as TOutput | undefined,

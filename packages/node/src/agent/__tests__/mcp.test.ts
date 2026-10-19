@@ -86,6 +86,7 @@ describe("exposeMcp() — runtime", () => {
       const headers = init?.headers as Record<string, string>;
       expect(headers["Authorization"]).toBe(`Bearer ${API_KEY}`);
       expect(headers["Content-Type"]).toBe("application/json");
+      expect(headers["X-Ironflow-SDK"]).toMatch(/^node\//);
 
       const body = JSON.parse(init?.body as string);
       expect(body.agentName).toBe("docproc");

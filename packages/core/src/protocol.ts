@@ -293,7 +293,8 @@ export interface WSSubscriptionResult {
   type: "subscription_result";
   results: Array<{
     pattern: string;
-    status: "ok" | "error";
+    /** "ok" or "error"; a newer server can send another value, which is a failure. */
+    status: "ok" | "error" | (string & {});
     subscriptionId?: string;
     code?: string;
     message?: string;

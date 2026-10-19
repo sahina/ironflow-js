@@ -7,6 +7,7 @@ import {
   createJobId,
   createWorkerId,
   createSubscriptionId,
+  consumerGroupFromWire,
   type RunId,
   type FunctionId,
   type StepId,
@@ -281,5 +282,33 @@ describe("Branded ID Factories", () => {
       expect(ids).toHaveLength(3);
       expect(ids.includes("run-2" as RunId)).toBe(true);
     });
+  });
+});
+
+describe("consumerGroupFromWire", () => {
+  it("passes through enum values a newer server added", () => {
+    const group = consumerGroupFromWire({
+      ackMode: "ACK_MODE_ZZ_FUTURE",
+      backpressure: "BACKPRESSURE_MODE_ZZ_FUTURE",
+      status: "CONSUMER_GROUP_STATUS_ZZ_FUTURE",
+    });
+    expect([group.ackMode, group.backpressure, group.status]).toEqual([
+      "zz_future",
+      "zz_future",
+      "zz_future",
+    ]);
+  });
+
+  it("reads UNSPECIFIED as the default, the way the Go SDK does", () => {
+    const group = consumerGroupFromWire({
+      ackMode: "ACK_MODE_UNSPECIFIED",
+      backpressure: "BACKPRESSURE_MODE_UNSPECIFIED",
+      status: "CONSUMER_GROUP_STATUS_UNSPECIFIED",
+    });
+    expect([group.ackMode, group.backpressure, group.status]).toEqual([
+      "auto",
+      "buffer",
+      "active",
+    ]);
   });
 });

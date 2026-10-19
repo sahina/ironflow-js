@@ -39,26 +39,6 @@ export interface AgentInvokeOptions {
    * Wires to existing event-idempotency path.
    */
   idempotencyKey?: string;
-
-  /**
-   * @deprecated Unread. `invoke()` no longer subscribes to run events — it
-   * waits on a single `InvokeFunctionSync` response — so there is no replay
-   * budget to size. Pass `replay` to `agents.subscribe(runId, ...)` instead.
-   */
-  replay?: number;
-
-  /**
-   * Called once with the runId. May return a Promise; the SDK awaits it
-   * before resolving.
-   *
-   * @deprecated Fires AFTER the run has settled, not before the wait. The
-   * synchronous RPC returns the runId and the terminal outcome in the same
-   * response, so there is no earlier moment at which the id exists on the
-   * client. Attaching a live progress subscription from this hook no longer
-   * works; use `agents.subscribe(runId, { replay })` after the call, or drive
-   * progress from a subscription you open before invoking.
-   */
-  onRunStarted?: (runId: string) => void | Promise<void>;
 }
 
 /**

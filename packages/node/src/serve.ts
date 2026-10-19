@@ -39,6 +39,7 @@ import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
 import { DISPATCH_PATH, handleAgentToolDispatch } from "./agent/dispatch.js";
+import { sdkFetch } from "./sdk-fetch.js";
 
 /**
  * Node.js IncomingMessage-like object
@@ -49,7 +50,7 @@ interface NodeRequest {
   url?: string;
   headers: Record<string, string | string[] | undefined>;
   on?(event: string, callback: (data: unknown) => void): void;
-  body?: string | Buffer | unknown;
+  body?: unknown; // a string, a Buffer, or a body a framework already parsed
 }
 
 /**
@@ -263,7 +264,7 @@ export function serve(config: ServeConfig): UniversalHandler {
               emitHeaders["Authorization"] =
                 `Bearer ${process.env.IRONFLOW_API_KEY}`;
             }
-            const emitResp = await fetch(
+            const emitResp = await sdkFetch(
               `${emitUrl}/ironflow.v1.IronflowService/Emit`,
               {
                 method: "POST",

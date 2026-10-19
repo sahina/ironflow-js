@@ -18,6 +18,7 @@ import type {
 } from "@ironflow/core";
 import { DEFAULT_CLIENT_RETRY, DEFAULT_TIMEOUTS, HEADERS, IronflowError, UnauthorizedError, encodeBucketName, encodeFilePath, fileErrorFor, throwIfAuthError } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
+import { sdkFetch } from "./sdk-fetch.js";
 
 /** Every browser body is replayable, so `contentLength` is never needed. */
 export type BrowserFileBody = Blob | File | ArrayBuffer | Uint8Array | string;
@@ -89,7 +90,7 @@ export class BrowserFilesClient {
     // fixed timer would abort a large upload.
     const timer = init.method === "PUT" ? undefined : setTimeout(() => controller.abort(), timeout);
     try {
-      const res = await fetch(`${this.config.serverUrl}${path}`, { ...init, headers, signal: controller.signal });
+      const res = await sdkFetch(`${this.config.serverUrl}${path}`, { ...init, headers, signal: controller.signal });
       if (!res.ok) throw await errorFrom(res);
       // fetch resolves at the headers. Reading a JSON body here keeps a reset
       // or stalled body under the timer and the retry, like a failed fetch.
@@ -230,7 +231,7 @@ export async function uploadToSignedUrl(
   contentType?: string,
 ): Promise<FileInfo> {
   const type = contentType ?? (body instanceof Blob ? body.type : "");
-  const res = await fetch(url, {
+  const res = await fetch(url, { // sdk-fetch: exempt, a signed URL carries its own credential
     method: "PUT",
     body: body as BodyInit,
     headers: type ? { "Content-Type": type } : {},
@@ -242,7 +243,7 @@ export async function uploadToSignedUrl(
 
 /** Download with a URL from bucket.signDownload(); the caller reads the Response. */
 export async function downloadFromSignedUrl(url: string): Promise<Response> {
-  const res = await fetch(url, { credentials: "omit" });
+  const res = await fetch(url, { credentials: "omit" }); // sdk-fetch: exempt, a signed URL carries its own credential
   if (!res.ok) throw await errorFrom(res, true);
   return res;
 }

@@ -31,8 +31,6 @@ that describe that compose are marked with what still applies.
 - `timeoutMs?: number` — default `30000`. A **server-side wait budget**, sent as `timeout_ms`; the transport deadline is deliberately longer (`+ SYNC_TRANSPORT_HEADROOM`). On expiry the server returns with the run still alive, and the SDK throws `AgentInvokeTimeoutError` and best-effort calls `cancelRun(runId)`.
 - `signal?: AbortSignal` — caller cancellation. Aborts the HTTP request; the server reads a dead request context as an abandoned caller and cancels the run itself (Q19), then the SDK throws `AbortError`. No client-side `cancelRun` on this path.
 - `idempotencyKey?: string` — opt-in dedup. Server returns the same `runId` for repeat calls with same key (existing event-idempotency path).
-- `replay?: number` — **deprecated, unread.** `invoke` no longer subscribes, so there is no replay budget to size. Pass it to `agents.subscribe` instead.
-- `onRunStarted?: (runId) => void | Promise<void>` — **deprecated.** Fires AFTER the run settles. The sync RPC returns the runId and the terminal outcome in the same response, so no earlier moment exists on the client; attaching a live progress subscription from this hook no longer works.
 
 `AgentInvokeResult<TOutput>`:
 - `runId: string`
@@ -86,7 +84,7 @@ Window is `t1..t4`. Worst-case: agent starts and emits `.completed` between t1 a
 
 Default `replay: 1000`, matching the server's `ReplayMaxEvents` cap. Subscribe replays the last N events on the matching subject. Since the run's run-events stream did not exist before t1, replay covers the entire t1..t4 window for new runs whose total emitted events fit within the budget.
 
-For step-heavier agents (>500 steps in one run; each step emits `created`+`completed`), raise both `opts.replay` and the server's `ReplayMaxEvents` config. Otherwise the terminal `.completed` event can fall off the replay buffer and `agents.invoke` waits until timeout.
+For step-heavier agents (>500 steps in one run; each step emits `created`+`completed`), raise the `replay` you pass to `agents.subscribe` and the server's `ReplayMaxEvents` config. Otherwise the terminal `.completed` event can fall off the replay buffer and `agents.invoke` waits until timeout.
 
 ### Verification (D10 ship-blocking gate)
 

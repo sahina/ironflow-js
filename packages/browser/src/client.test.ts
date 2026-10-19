@@ -1870,7 +1870,7 @@ describe("IronflowClient (real module)", () => {
       });
     });
 
-    it("rejects an unknown wire status", async () => {
+    it("rejects a wire status off the RUN_STATUS_ spelling", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       vi.stubGlobal(
         "fetch",
@@ -1882,7 +1882,7 @@ describe("IronflowClient (real module)", () => {
                 id: "run_5",
                 functionId: "fn-5",
                 eventId: "evt-5",
-                status: "RUN_STATUS_UNKNOWN_THING",
+                status: "unknown_thing",
                 attempt: 1,
                 maxAttempts: 3,
                 createdAt: "2026-01-01T00:00:00Z",

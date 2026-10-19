@@ -56,6 +56,30 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     expect(counts[b]).toBe(1);
   });
 
+  it("event-emit, event-list and event-get", async () => {
+    const name = `nodesdk.readiness.emit.${Date.now()}`;
+    const res = await client.emit(name, { i: 7 });
+    // No function listens on a unique name, so the event is stored with no runs.
+    expect(res.eventId).toBeTruthy();
+    expect(res.runIds).toEqual([]);
+
+    const page = await client.listEvents({ name, limit: 5 });
+    expect(page.count).toBe(1);
+    expect(page.events.map((e) => e.id)).toEqual([res.eventId]);
+
+    const got = await client.getEvent(res.eventId);
+    expect(got.id).toBe(res.eventId);
+    expect(got.name).toBe(name);
+    expect(got.data).toEqual({ i: 7 });
+  });
+
+  it("event-emit-sync", async () => {
+    const name = `nodesdk.readiness.sync.${Date.now()}`;
+    const results = await client.emitSync(name, { i: 1 }, { timeout: 5000 });
+    expect(results).toEqual([]);
+    expect((await client.listEvents({ name })).count).toBe(1);
+  });
+
   it("function-at-version", async () => {
     const entry = await client.getFunctionAtVersion(seed.functionId, seed.pausedVersion);
     expect(entry.functionId).toBe(seed.functionId);

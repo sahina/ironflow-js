@@ -128,7 +128,6 @@ export type {
 
   // Invoke/Trigger types
   InvokeResult,
-  TriggerResult, // deprecated alias for InvokeResult
   InvokeSyncOptions, // options + result of the ID-keyed sync `invoke()`
   InvokeSyncResult,
   EmitSyncResult, // one element of what `emitSync()` returns

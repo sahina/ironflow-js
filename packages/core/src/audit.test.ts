@@ -74,10 +74,8 @@ describe("FunctionConfig recording", () => {
       triggers: [{ event: "test.event" }],
       recording: true,
       recordingProfile: "steps",
-      recordingRetention: "90d",
     };
     expect(config.recording).toBe(true);
-    expect(config.recordingRetention).toBe("90d");
     expect(config.recordingProfile).toBe("steps");
   });
 
@@ -93,6 +91,5 @@ describe("FunctionConfig recording", () => {
       triggers: [{ event: "test.event" }],
     };
     expect(config.recording).toBeUndefined();
-    expect(config.recordingRetention).toBeUndefined();
   });
 });

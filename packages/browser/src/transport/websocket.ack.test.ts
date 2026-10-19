@@ -93,3 +93,26 @@ describe("WebSocketTransport ack frame", () => {
     });
   });
 });
+
+describe("WebSocketTransport subscription result", () => {
+  it("fails a status a newer server added and unsubscribes the id it issued", async () => {
+    const { ws } = await connected();
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: "subscription_result",
+        results: [{ pattern: "future.*", status: "accepted", subscriptionId: "sub-9" }],
+      }),
+    });
+
+    expect(callbacks.onSubscribed).not.toHaveBeenCalled();
+    expect(callbacks.onSubscribeFailed).toHaveBeenCalledWith(
+      "future.*",
+      expect.objectContaining({ message: expect.stringContaining("accepted") }),
+      undefined,
+    );
+    expect(ws.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "unsubscribe", subscriptionId: "sub-9" }),
+    );
+  });
+});

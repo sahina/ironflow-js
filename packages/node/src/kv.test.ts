@@ -585,7 +585,7 @@ describe("KV watch", () => {
       onclose: (() => void) | null = null;
       close = vi.fn();
 
-      constructor(public url: string, public protocols: string[]) {
+      constructor(public url: string, public init: { protocols: string[]; headers: Record<string, string> }) {
         MockWebSocket.instances.push(this);
       }
     }
@@ -601,10 +601,13 @@ describe("KV watch", () => {
     expect(ws.url).toBe(
       "ws://localhost:9123/api/v1/kv/buckets/orders/watch?key=order.*"
     );
-    expect(ws.protocols).toEqual([
-      "ironflow.v1",
-      `ironflow.auth.bearer.${Buffer.from("secret-key").toString("base64url")}`,
-    ]);
+    expect(ws.init).toEqual({
+      protocols: [
+        "ironflow.v1",
+        `ironflow.auth.bearer.${Buffer.from("secret-key").toString("base64url")}`,
+      ],
+      headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//) },
+    });
     expect(ws.url).not.toContain("secret-key");
 
     ws.onmessage?.({
@@ -625,7 +628,7 @@ describe("KV watch", () => {
       onclose: (() => void) | null = null;
       close = vi.fn();
 
-      constructor(public url: string, public protocols: string[]) {
+      constructor(public url: string, public init: { protocols: string[]; headers: Record<string, string> }) {
         MockWebSocket.instances.push(this);
       }
     }

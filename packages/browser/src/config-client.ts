@@ -16,6 +16,7 @@ import type {
 } from "@ironflow/core";
 import { IronflowError, DEFAULT_TIMEOUTS, HEADERS, restRetryable } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
+import { sdkFetch } from "./sdk-fetch.js";
 
 /**
  * Browser config client for config management operations.
@@ -95,7 +96,7 @@ export class BrowserConfigClient {
         headers["Authorization"] = `Bearer ${credential}`;
       }
 
-      const response = await fetch(url, {
+      const response = await sdkFetch(url, {
         method,
         headers,
         signal: controller.signal,
