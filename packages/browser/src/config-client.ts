@@ -14,7 +14,7 @@ import type {
   Subscription,
   SubscriptionCallbacks,
 } from "@ironflow/core";
-import { IronflowError, DEFAULT_TIMEOUTS, HEADERS, restRetryable } from "@ironflow/core";
+import { IronflowError, DEFAULT_TIMEOUTS, HEADERS, restRetryable, connectCodeForStatus } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
@@ -105,7 +105,7 @@ export class BrowserConfigClient {
       if (!response.ok) {
         const errorBody = await response.text();
         let errorMessage = `Config request failed: ${response.status}`;
-        let errorJson: { error?: string; retryable?: unknown } | undefined;
+        let errorJson: { error?: string; code?: string; retryable?: unknown } | undefined;
         try {
           errorJson = JSON.parse(errorBody);
           if (errorJson?.error) errorMessage = errorJson.error;
@@ -113,7 +113,8 @@ export class BrowserConfigClient {
           if (errorBody) errorMessage = errorBody;
         }
         throw new IronflowError(errorMessage, {
-          code: `HTTP_${response.status}`,
+          code: connectCodeForStatus(response.status, errorJson?.code),
+          status: response.status,
           retryable: restRetryable(response.status, errorJson),
         });
       }

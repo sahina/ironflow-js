@@ -2092,6 +2092,48 @@ describe("IronflowClient (real module)", () => {
     });
   });
 
+  describe("getPausedState", () => {
+    // protojson: lowerCamel keys, false omitted, bytes base64 (#3051).
+    it("decodes the protojson wire shape", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            steps: [
+              {
+                id: "run_p:note:0",
+                name: "run_p:note:0",
+                output: "eyJ3aG8iOiJKb3PDqSJ9",
+                completedAt: "2026-01-01T00:00:00Z",
+                stepType: "invoke",
+                status: "completed",
+              },
+            ],
+            pauseReason: "injection",
+          }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      expect(await ironflow.getPausedState("run_p")).toEqual({
+        steps: [
+          {
+            id: "run_p:note:0",
+            name: "run_p:note:0",
+            output: { who: "José" },
+            injected: false,
+            completedAt: "2026-01-01T00:00:00Z",
+            stepType: "invoke",
+            status: "completed",
+            error: null,
+          },
+        ],
+        nextStepHint: "",
+        pauseReason: "injection",
+      });
+    });
+  });
+
   // --------------------------------------------------------------------------
   // emit
   // --------------------------------------------------------------------------
@@ -3061,6 +3103,44 @@ describe("IronflowClient (real module)", () => {
     });
   });
 
+  describe("ready", () => {
+    it("reads GET /ready", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: "ready" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      expect(await ironflow.ready()).toEqual({ status: "ready" });
+      expect(assertDefined(mockFetch.mock.calls[0])[0]).toBe("http://localhost:9123/ready");
+    });
+
+    it("throws NOT_READY with the issues, after one attempt", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({ status: "not ready", issues: { nats: "disconnected" } }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await expect(ironflow.ready()).rejects.toMatchObject({
+        code: "NOT_READY",
+        status: 503,
+        details: { issues: { nats: "disconnected" } },
+      });
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it("still says NOT_READY when the 503 has no JSON body", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503, json: () => Promise.reject(new Error("no body")) }));
+
+      await expect(ironflow.ready()).rejects.toMatchObject({ code: "NOT_READY", status: 503, details: { issues: {} } });
+    });
+  });
+
   // --------------------------------------------------------------------------
   // getCapabilities (uses direct fetch)
   // --------------------------------------------------------------------------
@@ -3145,7 +3225,7 @@ describe("IronflowClient (real module)", () => {
           text: () =>
             Promise.resolve(
               JSON.stringify({
-                code: "NOT_FOUND",
+                code: "not_found",
                 message: "Run not found",
               })
             ),
@@ -3415,7 +3495,7 @@ describe("IronflowClient (real module)", () => {
       ).rejects.toThrow("version conflict");
     });
 
-    it("throws IronflowError with code HTTP_409 on version conflict", async () => {
+    it("throws IronflowError with code already_exists on version conflict", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       vi.stubGlobal(
         "fetch",
@@ -3439,7 +3519,7 @@ describe("IronflowClient (real module)", () => {
       } catch (err: unknown) {
         const e = err as { code?: string; retryable?: boolean; message: string };
         expect(e.message).toBe("optimistic locking failure");
-        expect(e.code).toBe("HTTP_409");
+        expect(e.code).toBe("already_exists");
         expect(e.retryable).toBe(false);
       }
     });
@@ -4074,7 +4154,7 @@ describe("IronflowClient (real module)", () => {
             status: 404,
             text: () =>
               Promise.resolve(
-                JSON.stringify({ message: "Run not found", code: "NOT_FOUND" })
+                JSON.stringify({ message: "Run not found", code: "not_found" })
               ),
           })
         );
@@ -4322,7 +4402,7 @@ describe("IronflowClient (real module)", () => {
               Promise.resolve(
                 JSON.stringify({
                   message: "Internal error",
-                  code: "INTERNAL",
+                  code: "internal",
                 })
               ),
           })
@@ -4606,7 +4686,7 @@ describe("IronflowClient (real module)", () => {
               Promise.resolve(
                 JSON.stringify({
                   message: "Step not found",
-                  code: "NOT_FOUND",
+                  code: "not_found",
                 })
               ),
           })

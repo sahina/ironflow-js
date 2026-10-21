@@ -42,6 +42,7 @@
 import { ironflow } from "./function.js";
 export { ironflow, createFunction } from "./function.js";
 export { serve, createHandler } from "./serve.js";
+export type { NodeRequest, NodeResponse, UniversalHandler } from "./serve.js";
 export { createWorker } from "./worker.js";
 export { createProjection } from "./projection.js";
 export { createProjectionRunner, ProjectionRunner, StreamingUnsupportedError, type ProjectionRunnerConfig } from "./projection-runner.js";
@@ -54,11 +55,21 @@ export {
   createSubscriptionClient,
   SubscriptionClient,
   type SubscriptionClientConfig,
+  type SubscriptionCallbacks,
 } from "./subscribe.js";
 export type {
   IronflowClientConfig,
   RegisterFunctionRequest,
   RegisterFunctionResult,
+} from "./client.js";
+// IronflowClient's own request and result shapes. Core exports Run, EmitOptions and the
+// rest under the same names with different fields, so these carry a Client prefix.
+export type {
+  EmitOptions as ClientEmitOptions,
+  EmitResult as ClientEmitResult,
+  ListRunsOptions as ClientListRunsOptions,
+  ListRunsResult as ClientListRunsResult,
+  Run as ClientRun,
 } from "./client.js";
 export { KVClient, KVBucketHandle } from "./kv.js";
 export type { KVClientConfig } from "./kv.js";
@@ -155,6 +166,7 @@ export type {
   UpdateConsumerGroupInput,
   ConsumerGroup,
   ServerCapabilities,
+  ServerReadiness,
   ListAgentToolsResult,
   VisibleAgentTool,
 

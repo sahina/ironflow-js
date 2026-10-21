@@ -6,6 +6,7 @@ import {
   ConflictError,
   ContendedError,
   InjectionUnverifiedError,
+  connectCodeForStatus,
 } from "./errors.js";
 
 /**
@@ -46,7 +47,7 @@ export function connectHTTPError(status: number, message: string, code?: string,
       if (status === 401) return new UnauthenticatedError(authMessage);
       if (status === 403) return new UnauthorizedError(authMessage);
       return new IronflowError(message, {
-        code: code ?? `HTTP_${status}`,
+        code: connectCodeForStatus(status, code),
         status,
         // `status >= 500` alone gets the write throttle backwards. Its rate cap
         // answers resource_exhausted (429) with a Retry-After — transient, and

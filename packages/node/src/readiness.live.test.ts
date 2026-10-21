@@ -9,6 +9,7 @@ import { IronflowClient } from "./client.js";
 import { createFunction } from "./function.js";
 import { createProjection } from "./projection.js";
 import { createWorker } from "./worker.js";
+import { isRedacted } from "./index.js";
 
 const SEED_PATH = process.env["IRONFLOW_READINESS_SEED"];
 
@@ -25,6 +26,8 @@ interface Seed {
   partitionProjection: string;
   partitions: string[];
   schemaEvent: string;
+  projections: Record<string, { name: string; eventId: string; seq: number }>;
+  holds: Record<string, { functionId: string; runId: string; eventId: string; noteStepId: string; spareRunId: string }>;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -36,6 +39,88 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
   const client = new IronflowClient({
     serverUrl: process.env["IRONFLOW_TEST_SERVER"]!,
     apiKey: process.env["IRONFLOW_TEST_API_KEY"],
+  });
+
+  // #3051: these hold runs belong to the Node suite alone, so the cases below
+  // pauses, cancels, redacts and deletes them. They run first, in order.
+  const hold = SEED_PATH ? seed.holds["node"]! : ({} as Seed["holds"][string]);
+  const ids = (runs: { id: string }[]) => runs.map((r) => r.id).sort();
+
+  it("run-get", async () => {
+    const run = await client.getRun(seed.runId);
+    expect(run).toMatchObject({ id: seed.runId, functionId: seed.functionId, status: "completed", input: {}, output: seed.stepOutput });
+    expect(run.endedAt).toBeTruthy();
+  });
+
+  it("run-list", async () => {
+    const own = await client.listRuns({ functionId: seed.functionId });
+    expect(ids(own.runs)).toEqual([seed.runId]);
+    expect(own.totalCount).toBe(1);
+    const both = [hold.runId, hold.spareRunId].sort();
+    const waiting = await client.listRuns({ functionId: hold.functionId, status: "waiting" });
+    expect(ids(waiting.runs)).toEqual(both);
+    expect(waiting.totalCount).toBe(2);
+    const first = await client.listRuns({ functionId: hold.functionId, limit: 1 });
+    expect(first.runs).toHaveLength(1);
+    expect(first.nextCursor).toBeTruthy();
+    const second = await client.listRuns({ functionId: hold.functionId, limit: 1, cursor: first.nextCursor });
+    expect(ids([...first.runs, ...second.runs])).toEqual(both);
+  });
+
+  it("run-steps", async () => {
+    const seeded = await client.getRunSteps(seed.runId);
+    expect(seeded.count).toBe(1);
+    expect(seeded.steps[0]).toMatchObject({ stepId: seed.stepId, runId: seed.runId, status: "completed", output: seed.stepOutput });
+    const held = await client.getRunSteps(hold.runId);
+    expect(held.steps).toHaveLength(2);
+    expect(held.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", output: { sdk: "node" } });
+    expect(held.steps[1]).toMatchObject({
+      stepType: "wait_for_event",
+      status: "waiting",
+      waitEventName: `readiness.never.${hold.functionId}`,
+    });
+    expect(held.steps[1]!.waitTimeout).toBeTruthy();
+  });
+
+  it("run-pause", async () => {
+    // A waiting run has no next step boundary, so it is held at once.
+    expect(await client.pauseRun(hold.runId)).toEqual({ status: "paused" });
+    expect((await client.getRun(hold.runId)).status).toBe("paused");
+  });
+
+  it("run-paused-state", async () => {
+    const state = await client.getPausedState(hold.runId);
+    expect(state.pauseReason).toBe("injection");
+    expect(state.steps).toHaveLength(1);
+    expect(state.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", injected: false, completedAt: expect.stringMatching(/^\d{4}-/), output: { sdk: "node" } });
+  });
+
+  // The wait step is still open, so resume puts the run back on its wait.
+  it("run-resume", async () => {
+    expect(await client.resumeRun(hold.runId)).toMatchObject({ id: hold.runId, status: "waiting" });
+  });
+
+  it("run-cancel", async () => {
+    expect(await client.cancelRun(hold.runId, "readiness")).toMatchObject({ id: hold.runId, status: "cancelled" });
+    expect((await client.getRun(hold.runId)).status).toBe("cancelled");
+  });
+
+  it("payload-redact", async () => {
+    const { runId, eventId, noteStepId } = hold;
+    await client.redactStep(noteStepId);
+    await client.redactRun(runId);
+    await client.redactEvent(eventId);
+    expect(isRedacted((await client.getRunSteps(runId)).steps[0]!.output)).toBe(true);
+    expect(isRedacted((await client.getRun(runId)).input)).toBe(true);
+    expect(isRedacted((await client.getEvent(eventId)).data)).toBe(true);
+  });
+
+  it("run-delete", async () => {
+    await client.deleteRun(hold.runId);
+    await expect(client.getRun(hold.runId)).rejects.toThrow(/not found/i);
+    await client.cancelRun(hold.spareRunId, "readiness");
+    expect(await client.deleteRuns({ functionId: hold.functionId })).toBe(1);
+    expect(await client.deleteRuns({ functionId: hold.functionId })).toBe(0);
   });
 
   it("event-emit-batch and event-names", async () => {
@@ -150,6 +235,105 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const res = await client.projections.listPartitions(seed.partitionProjection);
     expect([...res.partitions].sort()).toEqual(seed.partitions);
     expect(res.returned).toBe(seed.partitions.length);
+  });
+
+  // #3003: this projection belongs to the Node suite alone, so the cases below
+  // may pause, rebuild and delete it. Vitest runs them in order.
+  const own = () => seed.projections["node"]!;
+  const statusOf = async () => (await client.projections.getStatus(own().name)).status;
+
+  it("proj-get, proj-list and proj-status", async () => {
+    const { name, seq } = own();
+    const got = await client.projections.get<{ count: number }>(name);
+    expect(got).toMatchObject({ name, mode: "managed", status: "active", state: { count: 2 } });
+    expect(got.lastEventSeq).toBeGreaterThanOrEqual(seq);
+    const list = await client.projections.list();
+    expect(list.find((p) => p.name === name)?.status).toBe("active");
+    const status = await client.projections.getStatus(name);
+    expect(status).toMatchObject({ name, mode: "managed", status: "active", lastEventSeq: got.lastEventSeq });
+  });
+
+  it("proj-wait-for-event", async () => {
+    const { name, eventId, seq } = own();
+    const w = await client.projections.waitForEvent(eventId, name, { timeoutMs: 5000 });
+    expect(w).toMatchObject({ caughtUp: true, targetSeq: seq, behindByEvents: 0, mode: "managed" });
+  });
+
+  it("proj-catchup", async () => {
+    const { name, seq } = own();
+    const w = await client.projections.waitForCatchup(name, { minSeq: seq, timeoutMs: 5000 });
+    expect(w).toMatchObject({ caughtUp: true, timedOut: false, targetSeq: seq });
+    expect(w.currentSeq).toBeGreaterThanOrEqual(seq);
+    const far = seq + 1_000_000;
+    const late = await client.projections.waitForCatchup(name, { minSeq: far, timeoutMs: 200 });
+    expect(late).toMatchObject({ caughtUp: false, timedOut: true, targetSeq: far });
+  });
+
+  it("proj-catchup-batch", async () => {
+    const { name, seq } = own();
+    const missing = `readiness-missing-${Date.now()}`;
+    const res = await client.projections.waitForCatchupBatch(
+      [
+        { name, minSeq: seq },
+        { name: missing, minSeq: 1 },
+      ],
+      { timeoutMs: 5000 },
+    );
+    expect(res).toHaveLength(2);
+    expect(res[0]!.result?.caughtUp).toBe(true);
+    expect(res[0]!.error).toBeFalsy();
+    expect(res[1]!.error).toMatch(/not found/);
+  });
+
+  it("proj-pause and proj-resume", async () => {
+    await client.projections.pause(own().name);
+    expect(await statusOf()).toBe("paused");
+    await client.projections.resume(own().name);
+    expect(await statusOf()).toBe("active");
+  });
+
+  // No runner is connected, so the rebuild stays running until it is cancelled.
+  it("proj-rebuild, proj-rebuild-status and proj-rebuild-cancel", async () => {
+    const { name } = own();
+    const job = await client.projections.rebuild(name);
+    expect(job).toMatchObject({ name, status: "running" });
+    expect(job.startedAt).toBeTruthy();
+    expect(await statusOf()).toBe("rebuilding");
+    expect(await client.projections.getRebuildJob(name)).toMatchObject({ name, status: "running" });
+    await client.projections.cancelRebuild(name);
+    expect((await client.projections.getRebuildJob(name)).status).toBe("cancelled");
+    expect(await statusOf()).toBe("active");
+  });
+
+  // delete is the SDK's unregister: the REST route runs the UnregisterProjection handler.
+  it("proj-delete and proj-unregister", async () => {
+    await client.projections.delete(own().name);
+    await expect(client.projections.get(own().name)).rejects.toThrow(/not found/i);
+  });
+
+  it("proj-sql-create and proj-sql-query", async () => {
+    const name = `readiness_sql_node_${Date.now()}`;
+    const event = `readiness.sql.${name}`;
+    const created = await client.sqlProjections.create({
+      name,
+      tableSql: `CREATE TABLE proj_${name} (k TEXT PRIMARY KEY, v TEXT)`,
+      events: [event],
+      eventHandlers: {
+        [event]: `INSERT INTO proj_${name} (k, v) VALUES (:data.k, :data.v) ON CONFLICT (k) DO UPDATE SET v = excluded.v`,
+      },
+    });
+    expect(created).toEqual({ name, status: "created" });
+    try {
+      await client.emit(event, { k: "a", v: "1" });
+      let res = await client.sqlProjections.query(name);
+      for (let i = 0; i < 75 && res.totalCount === 0; i++) {
+        await sleep(200);
+        res = await client.sqlProjections.query(name);
+      }
+      expect(res).toMatchObject({ columns: ["k", "v"], rows: [["a", "1"]], typedRows: [["a", "1"]], totalCount: 1 });
+    } finally {
+      await client.projections.delete(name);
+    }
   });
 
   it("schema-test-upcast", async () => {

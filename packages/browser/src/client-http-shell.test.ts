@@ -139,8 +139,32 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
       await expect(ironflow.emit("x", {})).rejects.toMatchObject({
         message: "Request failed: 418",
-        code: "HTTP_418",
+        code: "invalid_argument",
       });
+    });
+
+    // #3054: one condition, one code, on every transport.
+    it("answers not_found for a 404, whether the body names a code or not", async () => {
+      ironflow.configure({ serverUrl: "http://test:9123", logger: false });
+
+      vi.stubGlobal("fetch", vi.fn(async () => mockResponse(JSON.stringify({ code: "not_found", message: "gone" }), { status: 404 })));
+      await expect(ironflow.emit("x", {})).rejects.toMatchObject({ code: "not_found", status: 404, retryable: false });
+
+      vi.stubGlobal("fetch", vi.fn(async () => mockResponse("{}", { status: 404 })));
+      await expect(ironflow.emit("x", {})).rejects.toMatchObject({ code: "not_found", status: 404 });
+      await expect(ironflow.apiKeys.list()).rejects.toMatchObject({ code: "not_found", status: 404 });
+    });
+
+    it("names the failures of health, capabilities, workers and pause with a Connect code", async () => {
+      ironflow.configure({ serverUrl: "http://test:9123", logger: false });
+
+      vi.stubGlobal("fetch", vi.fn(async () => mockResponse("{}", { status: 503 })));
+      await expect(ironflow.health()).rejects.toMatchObject({ code: "unavailable", status: 503 });
+      await expect(ironflow.getCapabilities()).rejects.toMatchObject({ code: "unavailable", status: 503 });
+      await expect(ironflow.listWorkers()).rejects.toMatchObject({ code: "unavailable", status: 503 });
+
+      vi.stubGlobal("fetch", vi.fn(async () => mockResponse(JSON.stringify({ code: "NOT_FOUND", message: "no run" }), { status: 404 })));
+      await expect(ironflow.pauseRun("run_x")).rejects.toMatchObject({ code: "not_found", status: 404 });
     });
 
     it("marks 5xx retryable, 429 retryable, and other 4xx not retryable", async () => {
@@ -153,7 +177,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
       vi.stubGlobal("fetch", vi.fn(async () => mockResponse("{}", { status: 429 })));
       await expect(ironflow.emit("x", {})).rejects.toMatchObject({
         retryable: true,
-        code: "HTTP_429",
+        code: "resource_exhausted",
       });
 
       vi.stubGlobal("fetch", vi.fn(async () => mockResponse("{}", { status: 400 })));
@@ -253,7 +277,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
         ironflow.streams.append("o", { entityType: "order", name: "c", data: {} })
       ).rejects.toMatchObject({
         message: "Request failed: 500",
-        code: "HTTP_500",
+        code: "internal",
         retryable: true,
       });
     });
@@ -264,7 +288,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
       await expect(
         ironflow.streams.append("o", { entityType: "order", name: "c", data: {} })
-      ).rejects.toMatchObject({ retryable: true, code: "HTTP_429" });
+      ).rejects.toMatchObject({ retryable: true, code: "resource_exhausted" });
     });
 
     it("names POST in the timeout message", async () => {
@@ -336,7 +360,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
       vi.stubGlobal("fetch", vi.fn(async () => mockResponse("", { status: 401 })));
       await expect(ironflow.apiKeys.list()).rejects.toMatchObject({
         name: "UnauthenticatedError",
-        code: "UNAUTHENTICATED",
+        code: "unauthenticated",
       });
 
       vi.stubGlobal("fetch", vi.fn(async () => mockResponse("", { status: 402 })));
@@ -356,7 +380,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
       await expect(ironflow.apiKeys.list()).rejects.toMatchObject({
         message: "Request failed with status 500",
-        code: "HTTP_500",
+        code: "internal",
         retryable: true,
       });
     });
@@ -382,7 +406,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
       await expect(ironflow.apiKeys.list()).rejects.toMatchObject({
         retryable: true,
-        code: "HTTP_429",
+        code: "resource_exhausted",
       });
     });
 

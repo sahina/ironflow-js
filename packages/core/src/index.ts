@@ -30,6 +30,7 @@ export type {
   Trigger,
   RetryConfig,
   ConcurrencyConfig,
+  CancelOnConfig,
   DebounceConfig,
   ExecutionMode,
   RecordingProfile,
@@ -129,6 +130,7 @@ export type {
 
   // Server types
   ServerCapabilities,
+  ServerReadiness,
 
   // Time-travel debugging types
   TimeTravelStepSnapshot,
@@ -225,6 +227,8 @@ export type {
   YieldInfo,
   SleepYield,
   WaitEventYield,
+  InvokeFunctionYield,
+  InvokeFunctionAsyncYield,
 
   // WebSocket protocol
   WSSubscribeRequest,
@@ -322,6 +326,8 @@ export {
   UnsupportedMediaTypeError,
   fileErrorFor,
   restRetryable,
+  connectCodeForStatus,
+  notReadyError,
   encodeFilePath,
   encodeBucketName,
   InjectionUnverifiedError,
@@ -437,7 +443,8 @@ export {
 // Upcaster Exports
 // ============================================================================
 
-export { createUpcasterRegistry, type UpcasterFn } from "./upcaster.js";
+// UpcasterRegistry is type-only: build one with createUpcasterRegistry().
+export { createUpcasterRegistry, type UpcasterFn, type UpcasterRegistry } from "./upcaster.js";
 export { defineEvent, createEventDefinitionRegistry, type EventDefinition, type EventDefinitionOptions, type EventDefinitionRegistry } from "./event-definition.js";
 
 // ============================================================================

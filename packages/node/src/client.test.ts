@@ -28,7 +28,9 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     validate: actual.validate,
     getServerUrl: () => undefined,
     IronflowError: actual.IronflowError,
+    notReadyError: actual.notReadyError,
     restRetryable: actual.restRetryable,
+    connectCodeForStatus: actual.connectCodeForStatus,
     connectHTTPError: actual.connectHTTPError,
     AUTH_HELP: actual.AUTH_HELP,
     waitResultFromWire: actual.waitResultFromWire,
@@ -181,6 +183,14 @@ describe("IronflowClient", () => {
           headers: { "X-Ironflow-SDK": expect.stringMatching(/^node\//), "Content-Type": "application/json" },
         })
       );
+    });
+
+    it("reports created: false when protojson omits the default", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({}) }));
+
+      const result = await createClient({ serverUrl: "http://localhost:9123" }).registerFunction({ id: "test-function" });
+
+      expect(result).toEqual({ created: false });
     });
 
     it("should throw error on failed request", async () => {
@@ -801,6 +811,44 @@ describe("IronflowClient", () => {
       const result = await client.health();
 
       expect(result).toBe("healthy");
+    });
+  });
+
+  describe("ready", () => {
+    it("reads GET /ready", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ status: "ready", warnings: { audit: "degraded" } }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const result = await createClient().ready();
+
+      expect(result).toEqual({ status: "ready", warnings: { audit: "degraded" } });
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining("/ready"),
+        expect.objectContaining({ method: "GET" })
+      );
+    });
+
+    it("throws NOT_READY with the issues, after one attempt", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        statusText: "Service Unavailable",
+        headers: new Headers(),
+        json: () => Promise.resolve({ status: "not ready", issues: { nats: "disconnected" } }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      await expect(createClient().ready()).rejects.toMatchObject({
+        code: "NOT_READY",
+        status: 503,
+        details: { issues: { nats: "disconnected" } },
+      });
+      // A probe answers at once: a 503 is not retried with backoff.
+      expect(mockFetch).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -1886,6 +1934,21 @@ describe("IronflowClient", () => {
       const result = await client.getPausedState("run_abc123");
 
       expect(assertDefined(result.steps[0]).output).toBeNull();
+    });
+
+    it("defaults the values protojson omits", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ steps: [{ id: "step_1", name: "fetch-data" }] }),
+        })
+      );
+
+      const result = await createClient().getPausedState("run_abc123");
+
+      expect(assertDefined(result.steps[0])).toMatchObject({ injected: false, completedAt: "" });
+      expect([result.nextStepHint, result.pauseReason]).toEqual(["", ""]);
     });
 
     it("should handle empty steps array", async () => {

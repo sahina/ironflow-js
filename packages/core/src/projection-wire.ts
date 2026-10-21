@@ -4,10 +4,8 @@ import type {
   ProjectionStatusInfo,
 } from "./projection-types.js";
 
-type Wire = Record<string, unknown>;
-
 /** Decode protocol metadata without changing keys inside reducer state. */
-export function projectionRegistryFromWire(p: Wire) {
+export function projectionRegistryFromWire(p: Record<string, unknown>) {
   return {
     name: String(p.name ?? ""),
     environment_id: String(p.environmentId ?? ""),
@@ -35,9 +33,9 @@ export function projectionRegistryFromWire(p: Wire) {
 }
 
 /** Preserve the inspection shape consumed by the dashboard and MCP-style views. */
-export function projectionInspectionFromWire(p: Wire) {
+export function projectionInspectionFromWire(p: Record<string, unknown>) {
   const registry = projectionRegistryFromWire(
-    (p.registry as Wire | undefined) ?? {
+    (p.registry as Record<string, unknown> | undefined) ?? {
       name: p.name,
       mode: p.mode,
       version: p.version,
@@ -63,13 +61,13 @@ export function projectionInspectionFromWire(p: Wire) {
 }
 
 export function projectionStateFromWire<T = unknown>(
-  p: Wire,
+  p: Record<string, unknown>,
   partition?: string,
 ): ProjectionStateResult<T> {
   return peelProjectionEnvelope<T>(projectionInspectionFromWire(p), partition);
 }
 
-export function projectionStatusFromWire(p: Wire): ProjectionStatusInfo {
+export function projectionStatusFromWire(p: Record<string, unknown>): ProjectionStatusInfo {
   return {
     name: String(p.name ?? ""),
     status: p.status as ProjectionStatusInfo["status"],
@@ -81,13 +79,13 @@ export function projectionStatusFromWire(p: Wire): ProjectionStatusInfo {
   };
 }
 
-export function rebuildJobFromWire(p: Wire): {
+export function rebuildJobFromWire(p: Record<string, unknown>): {
   name: string;
   status: string;
   progress: number;
   startedAt: string;
 } {
-  const job = (p.job as Wire | undefined) ?? {};
+  const job = (p.job as Record<string, unknown> | undefined) ?? {};
   return {
     name: String(job.projectionName ?? ""),
     status: String(job.status ?? ""),

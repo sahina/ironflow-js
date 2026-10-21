@@ -1516,7 +1516,7 @@ retried after a `503`. The other bodies are retried. `put` has no fixed timeout.
 
 Errors: `PreconditionFailedError` (412), `PayloadTooLargeError` (413),
 `UnsupportedMediaTypeError` (415) and `ConflictError` (409). A 404 is an `IronflowError` with
-code `NOT_FOUND`. Import the three file error classes from `@ironflow/node`.
+code `not_found`. Import the three file error classes from `@ironflow/node`.
 
 ---
 

@@ -532,7 +532,7 @@ describe("consumer-group stream", () => {
     const sub = await join(fake, { onEvent: (e) => first(e.eventId!), onError: (e) => errors.push(e) });
     const eventId = await got;
     await vi.waitFor(() => expect(errors).toHaveLength(1));
-    expect(errors[0]).toMatchObject({ code: "NOT_FOUND" });
+    expect(errors[0]).toMatchObject({ code: "not_found" });
     await new Promise((r) => setTimeout(r, 120));
     expect(fake.streams).toHaveLength(2); // no third attempt
     expect(await rejection(sub.ack(eventId))).toBeInstanceOf(SubscriptionClosedError);

@@ -344,11 +344,11 @@ describe("CommandDedup.tryClaim concurrent", () => {
 });
 
 // ---------------------------------------------------------------------------
-// throwTypedError regression — HTTP_412 code
+// throwTypedError regression — failed_precondition code
 // ---------------------------------------------------------------------------
 
 describe("throwTypedError regression", () => {
-  it("status 412 produces IronflowError with code HTTP_412", async () => {
+  it("status 412 produces IronflowError with code failed_precondition", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }));
 
     const kv = new KVClient(config());
@@ -359,6 +359,6 @@ describe("throwTypedError regression", () => {
     } catch (err) {
       if (err instanceof IronflowError) caughtCode = err.code;
     }
-    expect(caughtCode).toBe("HTTP_412");
+    expect(caughtCode).toBe("failed_precondition");
   });
 });

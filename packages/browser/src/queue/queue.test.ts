@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { IronflowError, QueueFullError } from "@ironflow/core";
+import { IronflowError, QueueFullError, connectCodeForStatus } from "@ironflow/core";
 import { OfflineQueue, classifyFailure, type SendOutcome } from "./queue.js";
 import { RECORD_VERSION } from "./types.js";
 import type { QueuedWrite, QueueStats, WriteStatus } from "./types.js";
@@ -16,7 +16,8 @@ afterEach(async () => {
 /** HTTP error shaped exactly like the ones the client's send() produces. */
 function httpError(status: number, message = `Request failed: ${status}`) {
   return new IronflowError(message, {
-    code: `HTTP_${status}`,
+    code: connectCodeForStatus(status),
+    status,
     retryable: status >= 500 || status === 429,
   });
 }
@@ -1012,7 +1013,7 @@ describe("byte accounting", () => {
     // admit far more than 5MB of actual stored data.
     const h = await harness({
       send: async () => {
-        throw new IronflowError("offline", { code: "HTTP_503", retryable: true });
+        throw new IronflowError("offline", { code: "unavailable", retryable: true });
       },
     });
     const body = { note: "注文が確定しました 🎉" };
@@ -1034,7 +1035,7 @@ describe("byte accounting", () => {
   it("enforces the byte cap using real byte length", async () => {
     const h = await harness({
       send: async () => {
-        throw new IronflowError("offline", { code: "HTTP_503", retryable: true });
+        throw new IronflowError("offline", { code: "unavailable", retryable: true });
       },
       // Under UTF-16 counting this body measured well under the cap.
       maxBytes: 60,

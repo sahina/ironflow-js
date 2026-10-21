@@ -1864,10 +1864,10 @@ class IronflowError extends Error {
 | `RunCancelledError` | `RUN_CANCELLED` | false | `invoke`/`InvokeFunctionSync` run cancelled (has `runId`). `emitSync` reports `status` per result instead |
 | `AgentInvokeTimeoutError` | `AGENT_INVOKE_TIMEOUT` | true | `agents.invoke()` exceeded `timeoutMs` (has `runId`, `timeoutMs`) |
 | `MemoryCatchupTimeoutError` | `MEMORY_CATCHUP_TIMEOUT` | true | `agents.readMemory()` waited past `timeoutMs` for projection catch-up (has `projection`, `minSeq`, `timeoutMs`) |
-| `UnauthenticatedError` | `UNAUTHENTICATED` | false | No/invalid API key (HTTP 401) |
+| `UnauthenticatedError` | `unauthenticated` | false | No/invalid API key (HTTP 401) |
 | `EnterpriseRequiredError` | `ENTERPRISE_REQUIRED` | false | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility |
-| `UnauthorizedError` | `UNAUTHORIZED` | false | Insufficient permissions (HTTP 403) |
-| `ConflictError` | `CONFLICT` | false | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun`. Wait, do not retry |
+| `UnauthorizedError` | `permission_denied` | false | Insufficient permissions (HTTP 403) |
+| `ConflictError` | `already_exists` | false | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun`. Wait, do not retry |
 | `ContendedError` | `CONTENDED` | false | HTTP 409 from a lost CAS race (Connect `aborted`). Nothing was applied — re-read and reissue |
 | `InjectionUnverifiedError` | `INJECTION_UNVERIFIED` | false | Connect `aborted` + `Ironflow-Error-Reason: injection_unverified`. `injectStepOutput` wrote the step but could not confirm the run stood still. Unlike `ContendedError` the write **did** land — read the step and decide, do not reissue |
 | `QueueFullError` | `QUEUE_FULL` | false | `@ironflow/browser`'s offline write queue hit its 500-write / 5 MB cap |
@@ -2842,7 +2842,7 @@ interface UpdateWebhookSourceInput {
   verifyAlgorithm?: string;
   verifyConfig?: WebhookVerifyConfig;
   metadata?: Record<string, unknown>;
-  expectedUpdatedAt?: string;       // optimistic concurrency; ABORTED if the row moved
+  expectedUpdatedAt?: string;       // optimistic concurrency; aborted if the row moved
 }
 
 interface RotateWebhookSecretInput {

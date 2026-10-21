@@ -257,7 +257,7 @@ describe("KVBucketHandle", () => {
       vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(404, { error: "key not found" }));
       const bucket = new KVBucketHandle("my-bucket", config);
 
-      await expect(bucket.getJSON("missing")).rejects.toMatchObject({ code: "HTTP_404", status: 404 });
+      await expect(bucket.getJSON("missing")).rejects.toMatchObject({ code: "not_found", status: 404 });
     });
 
     it("reports decoding errors to onError", async () => {
@@ -277,10 +277,10 @@ describe("KVBucketHandle", () => {
       vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(404, { error: "key not found" }));
       const bucket = new KVBucketHandle("my-bucket", { ...config, onError });
 
-      await expect(bucket.getJSON("mykey")).rejects.toMatchObject({ code: "HTTP_404" });
+      await expect(bucket.getJSON("mykey")).rejects.toMatchObject({ code: "not_found" });
       expect(onError).toHaveBeenCalledTimes(1);
       expect(onError).toHaveBeenCalledWith(
-        expect.objectContaining({ code: "HTTP_404" }),
+        expect.objectContaining({ code: "not_found" }),
         { method: "kv.bucket.getJSON", endpoint: "/api/v1/kv/buckets/my-bucket/keys/mykey", statusCode: 404 },
       );
     });

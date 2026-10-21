@@ -66,6 +66,8 @@ import { drainOnSignal } from "./internal/drain-on-signal.js";
 import { SDK_VERSION } from "./version.js";
 import { SDK_HEADER } from "./sdk-fetch.js";
 
+export type { WorkerConfig, Worker } from "./types.js";
+
 /**
  * Worker states
  */

@@ -18,10 +18,13 @@ import type {
 } from "@ironflow/core";
 import {
   IronflowError,
+  connectCodeForStatus,
+  restRetryable,
   AUTH_HELP,
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,
+  ContendedError,
 } from "@ironflow/core";
 import type { OnErrorHandler, ErrorContext } from "./types.js";
 import { webSocketProtocols } from "./websocket-auth.js";
@@ -262,13 +265,15 @@ export class KVBucketHandle {
       if (!response.ok) {
         const errorBody = await response.text();
         let errorMessage = `KV request failed with status ${response.status}`;
+        let parsed: { code?: string; retryable?: unknown } | undefined;
         try {
           const errorJson = JSON.parse(errorBody);
+          parsed = errorJson;
           if (errorJson.error) errorMessage = errorJson.error;
         } catch {
           if (errorBody) errorMessage = errorBody;
         }
-        throwTypedError(response.status, errorMessage);
+        throwTypedError(response.status, errorMessage, parsed);
       }
 
       if (response.status === 204) {
@@ -400,13 +405,15 @@ export class KVClient {
       if (!response.ok) {
         const errorBody = await response.text();
         let errorMessage = `KV request failed with status ${response.status}`;
+        let parsed: { code?: string; retryable?: unknown } | undefined;
         try {
           const errorJson = JSON.parse(errorBody);
+          parsed = errorJson;
           if (errorJson.error) errorMessage = errorJson.error;
         } catch {
           if (errorBody) errorMessage = errorBody;
         }
-        throwTypedError(response.status, errorMessage);
+        throwTypedError(response.status, errorMessage, parsed);
       }
 
       if (response.status === 204) {
@@ -429,7 +436,7 @@ function enc(s: string): string {
   return encodeURIComponent(s);
 }
 
-function throwTypedError(status: number, message: string): never {
+function throwTypedError(status: number, message: string, body?: { code?: string; retryable?: unknown }): never {
   switch (status) {
     case 401:
       throw new UnauthenticatedError(`${message} — ${AUTH_HELP}`);
@@ -437,7 +444,11 @@ function throwTypedError(status: number, message: string): never {
       throw new EnterpriseRequiredError(message);
     case 403:
       throw new UnauthorizedError(`${message} — ${AUTH_HELP}`);
+    case 409:
+      // `aborted` is a lost race, as on the Connect path; any other 409 is a plain IronflowError.
+      if (body?.code === "aborted") throw new ContendedError(message);
+      throw new IronflowError(message, { code: connectCodeForStatus(status, body?.code), status, retryable: restRetryable(status, body) });
     default:
-      throw new IronflowError(message, { code: `HTTP_${status}`, status });
+      throw new IronflowError(message, { code: connectCodeForStatus(status, body?.code), status, retryable: restRetryable(status, body) });
   }
 }

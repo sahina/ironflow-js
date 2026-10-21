@@ -13,8 +13,10 @@ export interface CommandDedupOptions {
   ttlSeconds?: number;
 }
 
-function isHTTPCode(err: unknown, code: string): boolean {
-  return err instanceof IronflowError && err.code === code;
+// Match the HTTP status, not the code: the KV write throttle's 507 also answers
+// failed_precondition, and it is not a lost claim race.
+function isHTTPStatus(err: unknown, status: number): boolean {
+  return err instanceof IronflowError && err.status === status;
 }
 
 function encodeKey(commandId: string): string {
@@ -80,7 +82,7 @@ export class CommandDedup<T> {
             ttlSeconds: this.ttlSeconds,
           });
         } catch (e) {
-          if (!isHTTPCode(e, "HTTP_409")) {
+          if (!isHTTPStatus(e, 409)) {
             this.bucketReady = null; // reset so the next call retries
             throw e;
           }
@@ -121,14 +123,14 @@ export class CommandDedup<T> {
         await bucket.create(key, encodeValue(claim));
         return null; // winner
       } catch (e) {
-        if (!isHTTPCode(e, "HTTP_412")) throw e;
+        if (!isHTTPStatus(e, 412)) throw e;
       }
       // loser — read winner's entry
       let entry: KVEntry;
       try {
         entry = await bucket.get(key);
       } catch (readErr) {
-        if (isHTTPCode(readErr, "HTTP_404")) continue; // winner released between our write and read: claim again
+        if (isHTTPStatus(readErr, 404)) continue; // winner released between our write and read: claim again
         throw readErr;
       }
       if (entry.value == null) continue;
@@ -163,7 +165,7 @@ export class CommandDedup<T> {
     try {
       await this.kvClient.bucket(this.bucketName).delete(encodeKey(commandId));
     } catch (e) {
-      if (isHTTPCode(e, "HTTP_404")) return; // already released
+      if (isHTTPStatus(e, 404)) return; // already released
       throw e;
     }
   }

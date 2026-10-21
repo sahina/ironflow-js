@@ -41,11 +41,12 @@ import { withRunContext } from "./internal/run-context.js";
 import { DISPATCH_PATH, handleAgentToolDispatch } from "./agent/dispatch.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
+export type { ServeConfig } from "./types.js";
+
 /**
  * Node.js IncomingMessage-like object
- * @internal
  */
-interface NodeRequest {
+export interface NodeRequest {
   method?: string;
   url?: string;
   headers: Record<string, string | string[] | undefined>;
@@ -55,9 +56,8 @@ interface NodeRequest {
 
 /**
  * Node.js ServerResponse-like object
- * @internal
  */
-interface NodeResponse {
+export interface NodeResponse {
   statusCode?: number;
   setHeader?(name: string, value: string): void;
   end?(data: string): void;
@@ -67,7 +67,7 @@ interface NodeResponse {
 /**
  * Universal handler function signature
  */
-type UniversalHandler = (
+export type UniversalHandler = (
   request: Request | NodeRequest,
   responseOrContext?: NodeResponse | unknown
 ) => Promise<Response | void>;
@@ -356,7 +356,7 @@ export function serve(config: ServeConfig): UniversalHandler {
       return sendResponse(500, {
         error: {
           message: error instanceof Error ? error.message : "Internal server error",
-          code: "INTERNAL_ERROR",
+          code: "internal",
         },
       });
     }

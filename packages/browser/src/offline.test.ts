@@ -7,7 +7,7 @@
  * reaches the network, or a reload losing writes.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { QueueFullError } from "@ironflow/core";
+import { QueueFullError, connectCodeForStatus } from "@ironflow/core";
 import { createClient, queueDbName, type OfflineClient } from "./offline.js";
 import type { QueueStats, WriteStatus } from "./queue/types.js";
 
@@ -31,7 +31,7 @@ function okResponse(body: unknown = { eventId: "evt_1" }): Response {
 }
 
 function errorResponse(status: number, message = "nope"): Response {
-  const body = JSON.stringify({ message, code: `HTTP_${status}` });
+  const body = JSON.stringify({ message, code: connectCodeForStatus(status) });
   return {
     ok: false,
     status,

@@ -146,7 +146,7 @@ export class ServerTooOldError extends IronflowError {
   }
 }
 
-const codeName = (c: Code) => Code[c].replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase();
+const codeName = (c: Code) => Code[c].replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
 
 class GroupSubscription<T> implements AckableSubscription {
   pattern = "";

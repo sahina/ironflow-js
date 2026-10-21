@@ -64,7 +64,7 @@ export function encodeResponse(status: number, body: unknown): { status: number;
     const message = error instanceof Error ? error.message : String(error);
     return {
       status: 500,
-      text: JSON.stringify({ error: { message: `response is not JSON-encodable: ${message}`, code: "INTERNAL_ERROR" } }),
+      text: JSON.stringify({ error: { message: `response is not JSON-encodable: ${message}`, code: "internal" } }),
     };
   }
 }

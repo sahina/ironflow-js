@@ -21,6 +21,9 @@ interface Seed {
   stepName: string;
   stepOutput: Record<string, unknown>;
   schemaEvent: string;
+  projections: Record<string, { name: string; eventId: string; seq: number }>;
+  sqlProjection: string;
+  holds: Record<string, { functionId: string; runId: string; eventId: string; noteStepId: string; spareRunId: string }>;
 }
 
 const STEP_EVENTS = ["run.created", "step.started", "step.completed", "run.status_changed"];
@@ -31,6 +34,70 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
   client.configure({
     serverUrl: process.env["IRONFLOW_TEST_SERVER"]!,
     auth: { apiKey: process.env["IRONFLOW_TEST_API_KEY"] },
+  });
+
+  // #3051: these hold runs belong to the Browser suite alone, so the cases below
+  // pauses and cancels them. Delete and redact are outside its boundary (ADR 0092). They run first, in order.
+  const hold = SEED_PATH ? seed.holds["browser"]! : ({} as Seed["holds"][string]);
+  const ids = (runs: { id: string }[]) => runs.map((r) => r.id).sort();
+
+  it("run-get", async () => {
+    const run = await client.getRun(seed.runId);
+    expect(run).toMatchObject({ id: seed.runId, functionId: seed.functionId, status: "completed", input: {}, output: seed.stepOutput });
+    expect(run.endedAt).toBeInstanceOf(Date);
+  });
+
+  it("run-list", async () => {
+    const own = await client.listRuns({ functionId: seed.functionId });
+    expect(ids(own.runs)).toEqual([seed.runId]);
+    expect(own.totalCount).toBe(1);
+    const both = [hold.runId, hold.spareRunId].sort();
+    const waiting = await client.listRuns({ functionId: hold.functionId, status: "waiting" });
+    expect(ids(waiting.runs)).toEqual(both);
+    expect(waiting.totalCount).toBe(2);
+    const first = await client.listRuns({ functionId: hold.functionId, limit: 1 });
+    expect(first.runs).toHaveLength(1);
+    expect(first.nextCursor).toBeTruthy();
+    const second = await client.listRuns({ functionId: hold.functionId, limit: 1, cursor: first.nextCursor });
+    expect(ids([...first.runs, ...second.runs])).toEqual(both);
+  });
+
+  it("run-steps", async () => {
+    const seeded = await client.getRunSteps(seed.runId);
+    expect(seeded.count).toBe(1);
+    expect(seeded.steps[0]).toMatchObject({ stepId: seed.stepId, runId: seed.runId, status: "completed", output: seed.stepOutput });
+    const held = await client.getRunSteps(hold.runId);
+    expect(held.steps).toHaveLength(2);
+    expect(held.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", output: { sdk: "browser" } });
+    expect(held.steps[1]).toMatchObject({
+      stepType: "wait_for_event",
+      status: "waiting",
+      waitEventName: `readiness.never.${hold.functionId}`,
+    });
+    expect(held.steps[1]!.waitTimeout).toBeTruthy();
+  });
+
+  it("run-pause", async () => {
+    // A waiting run has no next step boundary, so it is held at once.
+    expect(await client.pauseRun(hold.runId)).toEqual({ status: "paused" });
+    expect((await client.getRun(hold.runId)).status).toBe("paused");
+  });
+
+  it("run-paused-state", async () => {
+    const state = await client.getPausedState(hold.runId);
+    expect(state.pauseReason).toBe("injection");
+    expect(state.steps).toHaveLength(1);
+    expect(state.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", injected: false, completedAt: expect.stringMatching(/^\d{4}-/), output: { sdk: "browser" } });
+  });
+
+  // The wait step is still open, so resume puts the run back on its wait.
+  it("run-resume", async () => {
+    expect(await client.resumeRun(hold.runId)).toMatchObject({ id: hold.runId, status: "waiting" });
+  });
+
+  it("run-cancel", async () => {
+    expect(await client.cancelRun(hold.runId, "readiness")).toMatchObject({ id: hold.runId, status: "cancelled" });
+    expect((await client.getRun(hold.runId)).status).toBe("cancelled");
   });
 
   it("event-emit-batch and event-names", async () => {
@@ -139,6 +206,45 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
       expect(e.stepName).toBe(seed.stepName);
     }
     expect(events[0]!.timestamp).toBeInstanceOf(Date);
+  });
+
+  // #3003: the browser reads its own seeded projection. The operator calls
+  // (pause, rebuild, delete, SQL create, batch wait) are outside its boundary.
+  it("proj-get, proj-list and proj-status", async () => {
+    const { name, seq } = seed.projections["browser"]!;
+    const got = await client.getProjection<{ count: number }>(name);
+    expect(got).toMatchObject({ name, mode: "managed", status: "active", state: { count: 2 } });
+    expect(got.lastEventSeq).toBeGreaterThanOrEqual(seq);
+    const list = await client.listProjections();
+    expect(list.find((p) => p.name === name)?.status).toBe("active");
+    const status = await client.getProjectionStatus(name);
+    expect(status).toMatchObject({ name, mode: "managed", status: "active", lastEventSeq: got.lastEventSeq });
+  });
+
+  it("proj-wait-for-event", async () => {
+    const { name, eventId, seq } = seed.projections["browser"]!;
+    const w = await client.waitForEvent(eventId, name, { timeoutMs: 5000 });
+    expect(w).toMatchObject({ caughtUp: true, targetSeq: seq, behindByEvents: 0, mode: "managed" });
+  });
+
+  it("proj-catchup", async () => {
+    const { name, seq } = seed.projections["browser"]!;
+    const w = await client.waitForProjectionCatchup(name, { minSeq: seq, timeoutMs: 5000 });
+    expect(w).toMatchObject({ caughtUp: true, timedOut: false, targetSeq: seq });
+    const far = seq + 1_000_000;
+    const late = await client.waitForProjectionCatchup(name, { minSeq: far, timeoutMs: 200 });
+    expect(late).toMatchObject({ caughtUp: false, timedOut: true, targetSeq: far });
+    let last;
+    for await (const p of client.waitForProjectionCatchupStream(name, { minSeq: seq, timeoutMs: 5000 })) {
+      last = p;
+      if (p.terminal) break;
+    }
+    expect(last).toMatchObject({ terminal: true, caughtUp: true, targetSeq: BigInt(seq) });
+  });
+
+  it("proj-sql-query", async () => {
+    const res = await client.querySQLProjection(seed.sqlProjection);
+    expect(res).toMatchObject({ columns: ["k", "v"], rows: [["a", "1"]], typedRows: [["a", "1"]], totalCount: 1 });
   });
 
   it("schema-test-upcast", async () => {

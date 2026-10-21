@@ -863,7 +863,7 @@ describe("SubscriptionManager (real module)", () => {
 
       transport._callbacks()!.onError("sub-terminal", {
         subscriptionId: "sub-terminal",
-        code: "INVALID_ARGUMENT",
+        code: "invalid_argument",
         message: "cursor rejected",
         retrying: false,
       });
@@ -888,7 +888,7 @@ describe("SubscriptionManager (real module)", () => {
       expect(() =>
         transport._callbacks()!.onError("sub-throwing", {
           subscriptionId: "sub-throwing",
-          code: "INVALID_ARGUMENT",
+          code: "invalid_argument",
           message: "cursor rejected",
           retrying: false,
         }),
@@ -910,7 +910,7 @@ describe("SubscriptionManager (real module)", () => {
 
       transport._callbacks()!.onError("sub-failed", {
         subscriptionId: "sub-failed",
-        code: "INVALID_ARGUMENT",
+        code: "invalid_argument",
         message: "cursor rejected",
         retrying: false,
       });

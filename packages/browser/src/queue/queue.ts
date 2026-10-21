@@ -165,16 +165,12 @@ export function classifyFailure(error: unknown): Disposition {
     // A thrown non-Ironflow error is a network/runtime fault: worth retrying.
     return "retry";
   }
-  // Key off the HTTP status. `code` is `errorBody?.code ?? HTTP_<status>`, so a
-  // proxy or a Connect handler that puts its own `code` in the body replaces it
-  // — a 401 arriving as {"code":"unauthenticated"} would miss a string match and
-  // be dead-lettered instead of pausing for re-auth. The code comparisons stay
-  // as a fallback for errors built without a status.
-  if (
-    error.status === 401 ||
-    error.code === "HTTP_401" ||
-    error.code.toUpperCase() === "UNAUTHENTICATED"
-  ) {
+  // Key off the HTTP status. `code` is the body's own code, so a proxy that
+  // puts its own `code` in the body replaces the one the status would give — a
+  // 401 arriving as {"code":"proxy_denied"} would miss a string match and be
+  // dead-lettered instead of pausing for re-auth. The code comparison stays as
+  // a fallback for errors built without a status.
+  if (error.status === 401 || error.code === "unauthenticated") {
     return "auth";
   }
   return error.retryable ? "retry" : "poison";

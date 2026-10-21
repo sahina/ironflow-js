@@ -214,7 +214,7 @@ describe("BrowserKVClient", () => {
       expect(result).toEqual(info);
     });
 
-    it("throws IronflowError with HTTP_404 on not found", async () => {
+    it("throws IronflowError with not_found on not found", async () => {
       mockFetch.mockResolvedValueOnce(
         errorResponse(404, { error: "bucket not found" })
       );
@@ -227,7 +227,7 @@ describe("BrowserKVClient", () => {
       } catch (err) {
         expect(err).toBeInstanceOf(IronflowError);
         const e = err as IronflowError;
-        expect(e.code).toBe("HTTP_404");
+        expect(e.code).toBe("not_found");
         expect(e.retryable).toBe(false);
       }
     });
@@ -331,7 +331,7 @@ describe("BrowserKVBucketHandle", () => {
 
     it("preserves HTTP errors", async () => {
       mockFetch.mockResolvedValueOnce(jsonResponse({ error: "key not found" }, 404));
-      await expect(handle.getJSON("missing")).rejects.toMatchObject({ code: "HTTP_404", status: 404 });
+      await expect(handle.getJSON("missing")).rejects.toMatchObject({ code: "not_found", status: 404 });
     });
 
     it("round-trips a JSON counter through put and update while keeping get raw", async () => {
@@ -419,7 +419,7 @@ describe("BrowserKVBucketHandle", () => {
       } catch (err) {
         expect(err).toBeInstanceOf(IronflowError);
         const e = err as IronflowError;
-        expect(e.code).toBe("HTTP_412");
+        expect(e.code).toBe("failed_precondition");
         expect(e.retryable).toBe(false);
       }
     });
@@ -448,7 +448,7 @@ describe("BrowserKVBucketHandle", () => {
       } catch (err) {
         expect(err).toBeInstanceOf(IronflowError);
         const e = err as IronflowError;
-        expect(e.code).toBe("HTTP_412");
+        expect(e.code).toBe("failed_precondition");
         expect(e.retryable).toBe(false);
       }
     });
@@ -536,7 +536,7 @@ describe("IronflowError handling", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(IronflowError);
       const e = err as IronflowError;
-      expect(e.code).toBe("HTTP_404");
+      expect(e.code).toBe("not_found");
       expect(e.retryable).toBe(false);
     }
   });
@@ -552,7 +552,7 @@ describe("IronflowError handling", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(IronflowError);
       const e = err as IronflowError;
-      expect(e.code).toBe("HTTP_500");
+      expect(e.code).toBe("internal");
       expect(e.retryable).toBe(true);
     }
   });

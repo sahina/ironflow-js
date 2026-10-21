@@ -90,6 +90,9 @@ export type {
   AgentProgressEvent,
   AgentStepEvent,
   AgentSubscribeCallbacks,
+  AgentMemoryResult,
+  AgentReadMemoryOptions,
+  AgentSubscribeRuntimeOptions,
 } from "./agents/index.js";
 
 // Re-export commonly used types from core
@@ -303,5 +306,8 @@ export {
   type WriteLostReason,
   type WriteStatus,
 } from "./queue/types.js";
+
+// Type-only: OfflineClient owns the queue, so the class is named here for its signatures but is not constructible.
+export type { OfflineQueue, OfflineQueueOptions, SendOutcome } from "./queue/queue.js";
 
 export { QueueFullError } from "@ironflow/core";

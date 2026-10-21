@@ -267,7 +267,7 @@ describe("WebSocketTransport resume cursor", () => {
         {
           pattern: "orders.*",
           status: "error",
-          code: "INVALID_ARGUMENT",
+          code: "invalid_argument",
           message: "replay and startAfterSequence are mutually exclusive",
         },
       ],

@@ -100,7 +100,7 @@ export type ConcurrencyConfig = Message<"ironflow.v1.ConcurrencyConfig"> & {
   limit: number;
 
   /**
-   * JSON path for grouping (e.g., "event.data.customerId")
+   * Path into the event data for grouping (e.g., "customerId" or "customer.id"). Do not prefix "event.data.".
    *
    * @generated from field: string key = 2;
    */

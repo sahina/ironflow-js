@@ -215,7 +215,7 @@ describe("signed URL helpers", () => {
   });
 
   it("does not give API-key help for a bad token", async () => {
-    mockFetch.mockResolvedValueOnce(json(403, { message: "invalid or expired signed URL", code: "FORBIDDEN" }));
+    mockFetch.mockResolvedValueOnce(json(403, { message: "invalid or expired signed URL", code: "permission_denied" }));
     const down = (await downloadFromSignedUrl("http://h/api/v1/files/signed?token=t").catch((e: unknown) => e)) as Error;
     expect(down).toBeInstanceOf(UnauthorizedError);
     expect(down.message).toMatch(/invalid or expired/);

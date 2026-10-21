@@ -348,7 +348,7 @@ describe("SubscriptionClient", () => {
 
       mockWs.simulateMessage({
         type: "error",
-        code: "INTERNAL_ERROR",
+        code: "internal",
         message: "PubSub not configured",
       });
 
@@ -374,12 +374,12 @@ describe("SubscriptionClient", () => {
 
       mockWs.simulateMessage({
         type: "error",
-        code: "INTERNAL_ERROR",
+        code: "internal",
         message: "PubSub not configured",
       });
 
       await subPromise;
-      expect(seen).toEqual([{ code: "INTERNAL_ERROR" }]);
+      expect(seen).toEqual([{ code: "internal" }]);
 
       client.close();
     });
@@ -400,7 +400,7 @@ describe("SubscriptionClient", () => {
           const p = client.subscribe("system.run.>", { onEvent: () => {} });
           mockWs.simulateMessage({
             type: "error",
-            code: "INTERNAL_ERROR",
+            code: "internal",
             message: "PubSub not configured",
           });
           return p;
@@ -510,7 +510,7 @@ describe("SubscriptionClient", () => {
             {
               pattern: "orders.*",
               status: "error",
-              code: "INVALID_ARGUMENT",
+              code: "invalid_argument",
               message,
             },
           ],
@@ -691,7 +691,7 @@ describe("SubscriptionClient", () => {
             {
               pattern: "orders.*",
               status: "error",
-              code: "INVALID_ARGUMENT",
+              code: "invalid_argument",
               message: "old reconnect rejected",
             },
           ],
@@ -751,7 +751,7 @@ describe("SubscriptionClient", () => {
             {
               pattern: "orders.*",
               status: "error",
-              code: "INVALID_ARGUMENT",
+              code: "invalid_argument",
               message: "cursor rejected",
             },
           ],
@@ -1018,12 +1018,12 @@ describe("SubscriptionClient", () => {
 
       mockWs.simulateMessage({
         type: "error",
-        code: "INTERNAL_ERROR",
+        code: "internal",
         message: "Server error",
       });
 
       expect(errors).toHaveLength(1);
-      expect(errors[0].code).toBe("INTERNAL_ERROR");
+      expect(errors[0].code).toBe("internal");
 
       client.close();
     });

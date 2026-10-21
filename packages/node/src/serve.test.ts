@@ -209,7 +209,7 @@ function serve(config: { functions: IronflowFunction[]; signingKey?: string; ski
       return sendResponse(500, {
         error: {
           message: error instanceof Error ? error.message : "Internal server error",
-          code: "INTERNAL_ERROR",
+          code: "internal",
         },
       });
     }

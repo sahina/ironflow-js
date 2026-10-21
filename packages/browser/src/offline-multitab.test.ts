@@ -6,7 +6,7 @@
  * shared between them so the exclusion is real rather than assumed.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { IronflowError } from "@ironflow/core";
+import { IronflowError, connectCodeForStatus } from "@ironflow/core";
 import { OfflineQueue } from "./queue/queue.js";
 import { createClient, type OfflineClient } from "./offline.js";
 import type { QueuedWrite, QueueStats, WriteStatus } from "./queue/types.js";
@@ -47,7 +47,8 @@ function sharedLocks() {
 
 function httpError(status: number) {
   return new IronflowError(`Request failed: ${status}`, {
-    code: `HTTP_${status}`,
+    code: connectCodeForStatus(status),
+    status,
     retryable: status >= 500 || status === 429,
   });
 }
@@ -190,7 +191,7 @@ describe("re-authentication", () => {
   }
 
   function unauthorized(): Response {
-    const body = JSON.stringify({ message: "token expired", code: "HTTP_401" });
+    const body = JSON.stringify({ message: "token expired", code: "unauthenticated" });
     return {
       ok: false,
       status: 401,

@@ -1384,7 +1384,7 @@ export type FunctionHistoryEntry = Message<"ironflow.v1.FunctionHistoryEntry"> &
   functionId: string;
 
   /**
-   * The function config as it was BEFORE this change
+   * The function config as it is AFTER this change
    *
    * @generated from field: ironflow.v1.Function function_snapshot = 4;
    */

@@ -3,6 +3,7 @@ import {
   projectionStatusFromWire,
 } from "@ironflow/core";
 import { stepInspectionFromWire, tenantFromWire } from "@ironflow/core";
+import { notReadyError, type ServerReadiness } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { schemaFromWire, type SchemaWire } from "@ironflow/core";
 import {
@@ -21,7 +22,7 @@ import {
   type SchemaHistoryPage,
 } from "@ironflow/core";
 import { collectEntityHistory, type EntityHistoryPageWire } from "@ironflow/core";
-import { connectHTTPError, restRetryable, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
+import { connectHTTPError, connectCodeForStatus, restRetryable, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 /**
  * Ironflow Browser Client
  *
@@ -189,6 +190,18 @@ function protoBytesJSON(b64?: string): unknown {
   if (!b64) return null;
   const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+/**
+ * The inverse of protoBytesJSON, for a proto `bytes` field. protojson rejects
+ * raw JSON text there before the handler runs. `null` is a document; only
+ * `undefined` means no value.
+ */
+function encodeProtoBytes(value: unknown): string {
+  if (value === undefined) return "";
+  let binary = "";
+  for (const byte of new TextEncoder().encode(JSON.stringify(value))) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 function auditEventFromWire(raw: Record<string, unknown>): AuditEvent {
@@ -762,7 +775,7 @@ class IronflowClient {
           | undefined;
         throw new IronflowError(
           error?.message || `Pause run failed: ${response.status}`,
-          { code: error?.code || "PAUSE_FAILED" }
+          { code: connectCodeForStatus(response.status, error?.code), status: response.status }
         );
       }
 
@@ -782,6 +795,9 @@ class IronflowClient {
       output: unknown;
       injected: boolean;
       completedAt: string;
+      stepType: string;
+      status: string;
+      error: unknown;
     }>;
     nextStepHint: string;
     pauseReason: string;
@@ -813,32 +829,39 @@ class IronflowClient {
           | undefined;
         throw new IronflowError(
           error?.message || `Get paused state failed: ${response.status}`,
-          { code: error?.code || "GET_PAUSED_STATE_FAILED" }
+          { code: connectCodeForStatus(response.status, error?.code), status: response.status }
         );
       }
 
+      // protojson: lowerCamel keys, zero values omitted, bytes base64-encoded.
       const data = (await response.json()) as {
-        steps: Array<{
+        steps?: Array<{
           id: string;
           name: string;
-          output: string;
-          injected: boolean;
-          completed_at: string;
+          output?: string;
+          injected?: boolean;
+          completedAt?: string;
+          stepType?: string;
+          status?: string;
+          error?: string;
         }>;
-        next_step_hint: string;
-        pause_reason: string;
+        nextStepHint?: string;
+        pauseReason?: string;
       };
 
       return {
         steps: (data.steps || []).map((s) => ({
           id: s.id,
           name: s.name,
-          output: s.output ? JSON.parse(s.output) : null,
-          injected: s.injected,
-          completedAt: s.completed_at,
+          output: protoBytesJSON(s.output),
+          injected: s.injected ?? false,
+          completedAt: s.completedAt ?? "",
+          stepType: s.stepType ?? "",
+          status: s.status ?? "",
+          error: protoBytesJSON(s.error),
         })),
-        nextStepHint: data.next_step_hint,
-        pauseReason: data.pause_reason,
+        nextStepHint: data.nextStepHint ?? "",
+        pauseReason: data.pauseReason ?? "",
       };
     } finally {
       clearTimeout(timeoutId);
@@ -874,7 +897,7 @@ class IronflowClient {
         body: JSON.stringify({
           run_id: runId,
           step_id: stepId,
-          new_output: JSON.stringify(newOutput),
+          new_output: encodeProtoBytes(newOutput),
           reason: reason ?? "",
         }),
         signal: controller.signal,
@@ -886,20 +909,19 @@ class IronflowClient {
           | undefined;
         throw new IronflowError(
           error?.message || `Inject step output failed: ${response.status}`,
-          { code: error?.code || "INJECT_FAILED" }
+          { code: connectCodeForStatus(response.status, error?.code), status: response.status }
         );
       }
 
+      // protojson: camelCase names and a base64 bytes field.
       const data = (await response.json()) as {
-        step_id: string;
-        previous_output: string;
+        stepId: string;
+        previousOutput?: string;
       };
 
       return {
-        stepId: data.step_id,
-        previousOutput: data.previous_output
-          ? JSON.parse(data.previous_output)
-          : null,
+        stepId: data.stepId,
+        previousOutput: protoBytesJSON(data.previousOutput),
       };
     } finally {
       clearTimeout(timeoutId);
@@ -944,7 +966,7 @@ class IronflowClient {
           | undefined;
         throw new IronflowError(
           error?.message || `Get run state failed: ${response.status}`,
-          { code: error?.code || "GET_RUN_STATE_FAILED" }
+          { code: connectCodeForStatus(response.status, error?.code), status: response.status }
         );
       }
 
@@ -1034,7 +1056,7 @@ class IronflowClient {
           | undefined;
         throw new IronflowError(
           error?.message || `Get run timeline failed: ${response.status}`,
-          { code: error?.code || "GET_TIMELINE_FAILED" }
+          { code: connectCodeForStatus(response.status, error?.code), status: response.status }
         );
       }
 
@@ -1103,7 +1125,7 @@ class IronflowClient {
           | undefined;
         throw new IronflowError(
           error?.message || `Get step output failed: ${response.status}`,
-          { code: error?.code || "GET_STEP_OUTPUT_FAILED" }
+          { code: connectCodeForStatus(response.status, error?.code), status: response.status }
         );
       }
 
@@ -1253,7 +1275,7 @@ class IronflowClient {
       if (!response.ok) {
         throw new IronflowError(
           `List workers failed: ${response.status}`,
-          { code: "LIST_WORKERS_FAILED" }
+          { code: connectCodeForStatus(response.status), status: response.status }
         );
       }
 
@@ -1288,8 +1310,38 @@ class IronflowClient {
       if (!response.ok) {
         throw new IronflowError(
           `Health check failed: ${response.status}`,
-          { code: "HEALTH_FAILED" }
+          { code: connectCodeForStatus(response.status), status: response.status }
         );
+      }
+
+      return response.json();
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Readiness probe, GET /ready: the server's database and NATS answer.
+   * `health()` reports liveness only. A server that is not ready makes the
+   * call throw an IronflowError with code `NOT_READY`, `status` 503 and the
+   * failing dependencies in `details.issues`. It makes one attempt.
+   */
+  async ready(): Promise<ServerReadiness> {
+    this.ensureConfigured();
+
+    const url = `${this.config!.serverUrl}/ready`;
+    const timeout = this.config!.timeout ?? DEFAULT_TIMEOUTS.CLIENT;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+    try {
+      const response = await sdkFetch(url, {
+        method: "GET",
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        throw notReadyError(response.status, await response.json().catch(() => null));
       }
 
       return response.json();
@@ -1322,7 +1374,7 @@ class IronflowClient {
       if (!response.ok) {
         throw new IronflowError(
           `Get capabilities failed: ${response.status}`,
-          { code: "CAPABILITIES_FAILED" }
+          { code: connectCodeForStatus(response.status), status: response.status }
         );
       }
 
@@ -3308,7 +3360,7 @@ class IronflowClient {
           throw new IronflowError(
             errorData.message ?? `Request failed: ${response.status}`,
             {
-              code: errorData.code ?? `HTTP_${response.status}`,
+              code: connectCodeForStatus(response.status, errorData.code),
               status: response.status,
               retryable: isRetryableStatus(response.status, safeJsonParse(responseBody) as { retryable?: unknown } | undefined),
             }
@@ -3401,7 +3453,7 @@ class IronflowClient {
           throw connectHTTPError(response.status, errorBody?.message ?? `Request failed: ${response.status}`, errorBody?.code, { retryable: isRetryableStatus(response.status, errorBody) });
         }
         throw new IronflowError(errorBody?.message ?? `Request failed: ${response.status}`, {
-          code: errorBody?.code ?? `HTTP_${response.status}`,
+          code: connectCodeForStatus(response.status, errorBody?.code),
           status: response.status,
           retryable: isRetryableStatus(response.status, errorBody),
         });
@@ -3462,7 +3514,7 @@ class IronflowClient {
             throw new PreconditionRequiredError(errorMessage);
           default:
             throw new IronflowError(errorMessage, {
-              code: errorJson?.code ?? `HTTP_${response.status}`,
+              code: connectCodeForStatus(response.status, errorJson?.code),
               status: response.status,
               retryable: isRetryableStatus(response.status, errorJson),
             });

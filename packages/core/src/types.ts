@@ -201,7 +201,7 @@ export interface RetryConfig {
 export interface ConcurrencyConfig {
   /** Maximum concurrent executions */
   limit: number;
-  /** JSON path for grouping (e.g., "event.data.customerId") */
+  /** Path into the event data for grouping (e.g., "customerId" or "customer.id"), not "event.data.customerId" */
   key?: string;
 }
 
@@ -1585,6 +1585,16 @@ export interface RebuildJob {
 // ============================================================================
 
 /**
+ * Answer of the readiness probe, GET /ready.
+ */
+export interface ServerReadiness {
+  /** "ready". A server that is not ready makes the call throw. */
+  status: string;
+  /** Non-fatal advisories, for example a degraded audit delivery. */
+  warnings?: Record<string, string>;
+}
+
+/**
  * Server capabilities returned by the capabilities endpoint
  */
 export interface ServerCapabilities {
@@ -1647,7 +1657,8 @@ export interface AuditTrailResult {
 // ============================================================================
 
 /**
- * A secret with its value (returned on get/set/update).
+ * A secret's metadata. Secret values are write-only: no response carries
+ * `value`, so it is undefined at runtime.
  */
 export interface Secret {
   name: string;
@@ -1977,7 +1988,7 @@ export interface UpdateWebhookSourceInput {
   metadata?: Record<string, unknown>;
   /**
    * Optimistic-concurrency token: pass the `updatedAt` you last read and the
-   * write is rejected with ABORTED if the row moved. Worth sending precisely
+   * write is rejected with aborted if the row moved. Worth sending precisely
    * because `verifyConfig` is preserve-on-omit — an unguarded rename can
    * otherwise revert someone else's descriptor change. Omit to skip the check.
    */

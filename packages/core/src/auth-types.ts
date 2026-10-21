@@ -13,6 +13,10 @@ export interface APIKey {
   name: string;
   key_prefix: string;
   role_ids?: string[];
+  /** The environment the key is bound to. */
+  environment_id?: string;
+  /** The agent tools the key may call. */
+  tool_scopes?: string[];
   created_at: string;
   expires_at?: string;
   last_used_at?: string;
@@ -27,6 +31,8 @@ export interface CreateAPIKeyInput {
   env_id?: string;
   role_ids?: string[];
   expires_in?: string;
+  /** Limit the agent tools the key may call. A caller grants only scopes it holds, unless it is an admin. */
+  tool_scopes?: string[];
 }
 
 // ============================================================================

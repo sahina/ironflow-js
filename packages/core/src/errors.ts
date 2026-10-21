@@ -17,10 +17,10 @@ export class IronflowError extends Error {
   /**
    * HTTP status, when the error came from a response.
    *
-   * Classification must key off this rather than `code`: `code` is built as
-   * `errorBody?.code ?? \`HTTP_${status}\``, so any proxy or Connect handler that
-   * puts its own `code` in the body silently replaces it. A 401 arriving as
-   * `{"code":"unauthenticated"}` would otherwise miss every string comparison.
+   * Classification must key off this rather than `code`: `code` is the body's
+   * own code, so a proxy or Connect handler that puts its own `code` in the body
+   * silently replaces the one the status would give. A 401 arriving as
+   * `{"code":"proxy_denied"}` would otherwise miss every string comparison.
    */
   readonly status?: number;
   /** Whether this error is retryable */
@@ -452,7 +452,7 @@ export class MemoryCatchupTimeoutError extends IronflowError {
 export class UnauthenticatedError extends IronflowError {
   constructor(message = "Authentication required") {
     super(message, {
-      code: "UNAUTHENTICATED",
+      code: "unauthenticated",
       retryable: false,
     });
     this.name = "UnauthenticatedError";
@@ -478,7 +478,7 @@ export class EnterpriseRequiredError extends IronflowError {
 export class UnauthorizedError extends IronflowError {
   constructor(message = "Insufficient permissions") {
     super(message, {
-      code: "UNAUTHORIZED",
+      code: "permission_denied",
       retryable: false,
     });
     this.name = "UnauthorizedError";
@@ -501,9 +501,9 @@ export class UnauthorizedError extends IronflowError {
  */
 export class ConflictError extends IronflowError {
   // `retryable` carries the server's flag from a REST error body; absent, a conflict is permanent.
-  constructor(message = "Conflicts with an operation already in flight", retryable = false) {
+  constructor(message = "Conflicts with an operation already in flight", retryable = false, code = "already_exists") {
     super(message, {
-      code: "CONFLICT",
+      code,
       retryable,
     });
     this.name = "ConflictError";
@@ -678,6 +678,59 @@ export class UnsupportedMediaTypeError extends IronflowError {
 }
 
 /**
+ * The error `ready()` throws when the readiness probe answers with a failure:
+ * code NOT_READY, the HTTP status, and the failing dependencies in
+ * `details.issues` (the server's `issues` map, `{ nats: "disconnected" }`).
+ */
+export function notReadyError(status: number, body?: { issues?: Record<string, string> } | null): IronflowError {
+  const issues = body?.issues ?? {};
+  const named = Object.entries(issues)
+    .map(([dependency, problem]) => `${dependency}: ${problem}`)
+    .join(", ");
+  return new IronflowError(`Server not ready: ${status}${named ? ` (${named})` : ""}`, {
+    code: "NOT_READY",
+    status,
+    retryable: true,
+    details: { issues },
+  });
+}
+
+// Generic codes a server released before #3054 sent in capitals, mapped to the
+// Connect code they name. A domain code (BUCKET_NOT_EMPTY) is not in the table.
+const LEGACY_GENERIC_CODES: Record<string, string> = {
+  INVALID: "invalid_argument",
+  FORBIDDEN: "permission_denied",
+  NOT_FOUND: "not_found",
+  CONFLICT: "already_exists",
+  INTERNAL: "internal",
+};
+
+/**
+ * The error code of a failed response. The body's own `code` wins (a domain code
+ * such as `BUCKET_NOT_EMPTY` keeps its name; a capitalised generic code from an
+ * older server becomes its Connect code). A body with no code, from an older
+ * server or a proxy, gets the Connect code the protocol maps the status to, so a
+ * caller never meets an invented `HTTP_<status>`. The status table is the
+ * server's `errorenvelope.httpCode`; 409 is `already_exists` because `aborted`
+ * always arrives in the body.
+ */
+// Keep in step with restErrorCode (sdk/go/ironflow/errors.go), connect_code_for_status
+// (sdk/python/ironflow/_http.py) and errorenvelope.httpCode (internal/errorenvelope).
+export function connectCodeForStatus(status: number, code?: string | null): string {
+  if (code) return Object.hasOwn(LEGACY_GENERIC_CODES, code) ? LEGACY_GENERIC_CODES[code]! : code;
+  if (status === 401) return "unauthenticated";
+  if (status === 403) return "permission_denied";
+  if (status === 404) return "not_found";
+  if (status === 408 || status === 504) return "deadline_exceeded";
+  if (status === 402 || status === 412 || status === 507) return "failed_precondition";
+  if (status === 409) return "already_exists";
+  if (status === 429) return "resource_exhausted";
+  if (status === 501) return "unimplemented";
+  if (status === 503) return "unavailable";
+  return status >= 500 ? "internal" : "invalid_argument";
+}
+
+/**
  * Whether a REST error is worth resending. The server's boolean `retryable` wins;
  * an older server sends none, so the status rule applies. 501 never heals on retry.
  */
@@ -696,10 +749,11 @@ export function fileErrorFor(status: number, message: string, code?: string, ret
     case 415:
       return new UnsupportedMediaTypeError(message);
     case 409:
-      return new ConflictError(message, retryable);
+      // A domain code (BUCKET_NOT_EMPTY) keeps its name.
+      return new ConflictError(message, retryable, connectCodeForStatus(409, code));
   }
   return new IronflowError(message, {
-    code: code ?? `HTTP_${status}`,
+    code: connectCodeForStatus(status, code),
     status,
     retryable: retryable ?? restRetryable(status),
   });

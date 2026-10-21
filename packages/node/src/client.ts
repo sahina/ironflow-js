@@ -35,7 +35,7 @@ import {
   type SchemaHistoryEntry,
   type SchemaHistoryPage,
 } from "@ironflow/core";
-import { connectHTTPError, restRetryable, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
+import { connectHTTPError, connectCodeForStatus, notReadyError, restRetryable, ERROR_REASON_HEADER, waitResultFromWire, type WaitWireResult } from "@ironflow/core";
 import { sdkFetch } from "./sdk-fetch.js";
 /**
  * Ironflow Node.js Client
@@ -109,6 +109,7 @@ import {
   type TopicInfo,
   type TopicStats,
   type ServerCapabilities,
+  type ServerReadiness,
   type APIKey,
   type APIKeyWithSecret,
   type CreateAPIKeyInput,
@@ -496,14 +497,15 @@ export class IronflowClient {
     if (request.recordingProfile != null) body.recordingProfile = request.recordingProfile;
     if (request.metadata) body.metadata = request.metadata;
 
-    const response = await this.request<{ created: boolean }>(
+    const response = await this.request<{ created?: boolean }>(
 
       API_ENDPOINTS.REGISTER_FUNCTION,
       body,
       "registerFunction"
     );
 
-    return { created: response.created };
+    // protojson omits a false bool, so an update arrives with no `created`.
+    return { created: response.created ?? false };
   }
 
   /** Get a registered function by ID. */
@@ -978,6 +980,21 @@ export class IronflowClient {
       firstSeq: Number(response.firstSeq ?? 0),
       lastSeq: Number(response.lastSeq ?? 0),
     };
+  }
+
+  /**
+   * Read the readiness probe, GET /ready: the server's database and NATS
+   * answer. `health()` reports liveness only. A server that is not ready makes
+   * the call throw an IronflowError with code `NOT_READY`, `status` 503 and the
+   * failing dependencies in `details.issues`. It makes one attempt: a probe
+   * must answer at once, so a 503 is not retried.
+   */
+  async ready(): Promise<ServerReadiness> {
+    return this.send(`${this.serverUrl}/ready`, { method: "GET" }, this.timeout, false, async (response) => {
+      const body = (await response.json().catch(() => null)) as (ServerReadiness & { issues?: Record<string, string> }) | null;
+      if (!response.ok) throw notReadyError(response.status, body);
+      return body as ServerReadiness;
+    });
   }
 
   /** Return the transports and optional features exposed by this server. */
@@ -2066,7 +2083,7 @@ export class IronflowClient {
     /**
      * Register an immutable deployment. Registering the identical tuple again
      * returns `created: false`; a different artifact, snapshot, mode or
-     * endpoint under an existing deployment ID fails with ALREADY_EXISTS.
+     * endpoint under an existing deployment ID fails with already_exists.
      */
     register: async (input: RegisterDeploymentInput): Promise<RegisterDeploymentResult> => {
       const raw = await this.request<{ deployment?: unknown; created?: boolean }>(
@@ -2166,7 +2183,7 @@ export class IronflowClient {
    * ```
    */
   readonly secrets = {
-    /** Get a secret by name (returns value) */
+    /** Get a secret's metadata by name. The server never returns the value, so `value` is undefined. */
     get: async (name: string): Promise<Secret> => {
       return this.restRequest<Secret>("GET", `/api/v1/secrets/${encodeURIComponent(name)}`, undefined, "secrets.get");
     },
@@ -3071,15 +3088,16 @@ export class IronflowClient {
         id: string;
         name: string;
         output: string;
-        injected: boolean;
-        completedAt: string;
+        // protojson omits false and empty values.
+        injected?: boolean;
+        completedAt?: string;
         stepType?: string;
         status?: string;
         // Proto bytes field: arrives base64-encoded, like output.
         error?: string;
       }>;
-      nextStepHint: string;
-      pauseReason: string;
+      nextStepHint?: string;
+      pauseReason?: string;
     }>("/ironflow.v1.IronflowService/GetPausedState", { run_id: runId }, "getPausedState");
 
     return {
@@ -3087,16 +3105,16 @@ export class IronflowClient {
         id: s.id,
         name: s.name,
         output: decodeProtoBytes(s.output),
-        injected: s.injected,
-        completedAt: s.completedAt,
+        injected: s.injected ?? false,
+        completedAt: s.completedAt ?? "",
         // Without these a caller cannot tell a failed step from a completed one,
         // which is the whole reason failed steps are exposed here (#1919).
         stepType: s.stepType ?? "",
         status: s.status ?? "",
         error: decodeProtoBytes(s.error),
       })),
-      nextStepHint: response.nextStepHint,
-      pauseReason: response.pauseReason,
+      nextStepHint: response.nextStepHint ?? "",
+      pauseReason: response.pauseReason ?? "",
     };
   }
 
@@ -3173,7 +3191,11 @@ export class IronflowClient {
         status = response.status;
 
         if (!response.ok) {
-          throw new Error(`List workers failed: ${response.status}`);
+          throw new IronflowError(`List workers failed: ${response.status}`, {
+            code: connectCodeForStatus(response.status),
+            status: response.status,
+            retryable: restRetryable(response.status),
+          });
         }
 
         const data = (await response.json()) as { workers: unknown[] };
@@ -3233,9 +3255,11 @@ export class IronflowClient {
           // 409 with opposite retry advice and the status cannot tell them
           // apart (#2074).
           let connectCode: string | undefined;
+          let parsedBody: Record<string, unknown> | undefined;
           if (errorBody) {
             try {
               const errorJson = JSON.parse(errorBody);
+              parsedBody = errorJson;
               if (typeof errorJson.code === "string") {
                 connectCode = errorJson.code;
               }
@@ -3260,7 +3284,8 @@ export class IronflowClient {
               reason: response.headers.get(ERROR_REASON_HEADER) ?? undefined,
             });
           }
-          this.throwTypedError(response.status, errorMessage, connectCode);
+          // The body goes through so the Connect code reaches the caller (#3066).
+          this.throwTypedError(response.status, errorMessage, connectCode, parsedBody);
         }
 
         return response.json() as Promise<T>;
@@ -3276,8 +3301,8 @@ export class IronflowClient {
   /**
    * Throw a typed error based on the HTTP status, and — where the status is
    * ambiguous — the Connect code the error body carries. Only 409 needs the
-   * second argument today (#2074); `connectCode` is undefined on the REST path,
-   * whose bodies carry no code.
+   * second argument today (#2074). The default case answers the body's code, or
+   * the Connect code of the status when the body names none.
    */
   private throwTypedError(status: number, message: string, connectCode?: string, body?: Record<string, unknown>): never {
     switch (status) {
@@ -3290,15 +3315,16 @@ export class IronflowClient {
       case 409:
         // Two Connect codes land on 409 and want opposite things (#2074).
         // `aborted` is a lost CAS race: nothing was applied, retry. Anything
-        // else — `already_exists`, or a REST body carrying no code at all —
-        // is a deduplicated resumeRun (#1963): wait, do not retry. Without
+        // else — `already_exists`, `failed_precondition` or a body with no code —
+        // is a deduplicated resumeRun (#1963) or a failed precondition: wait or
+        // fix the state, do not retry. Without
         // this case a 409 arrived as a bare IronflowError carrying no status,
         // so the only way to tell either from a real failure was to match the
         // message.
         if (connectCode === "aborted") {
           throw new ContendedError(message);
         }
-        throw new ConflictError(message, body?.retryable === true);
+        throw new ConflictError(message, body?.retryable === true, connectCodeForStatus(409, typeof body?.code === "string" ? body.code : undefined));
       case 412:
         throw new PreconditionFailedError(message);
       case 428:
@@ -3309,7 +3335,7 @@ export class IronflowClient {
         throw new UnsupportedMediaTypeError(message);
       default: {
         // The server's code (policy_set_not_propagated, ...) is what callers branch on.
-        const code = typeof body?.code === "string" ? body.code : undefined;
+        const code = connectCodeForStatus(status, typeof body?.code === "string" ? body.code : undefined);
         const error = new IronflowError(message, { status, code, retryable: restRetryable(status, body) });
         if (typeof body?.retry_after === "number") bodyRetryAfter.set(error, body.retry_after);
         throw error;
@@ -3361,7 +3387,7 @@ export class IronflowClient {
             .json()
             .catch(() => ({ error: response.statusText }))) as Record<string, unknown>;
           const message = (errBody.error as string) || (errBody.message as string) || response.statusText;
-          this.throwTypedError(response.status, message, undefined, errBody);
+          this.throwTypedError(response.status, message, typeof errBody.code === "string" ? errBody.code : undefined, errBody);
         }
 
         if (response.status === 204) return undefined as T;

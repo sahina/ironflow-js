@@ -1722,7 +1722,7 @@ try {
 } catch (error) {
   if (isIronflowError(error)) {
     console.log(error.message);    // Human-readable message
-    console.log(error.code);       // Machine-readable code (e.g., 'HTTP_500', 'TIMEOUT')
+    console.log(error.code);       // Machine-readable code (e.g., 'internal', 'not_found', 'TIMEOUT')
 
     if (isRetryable(error)) {
       // Safe to retry (5xx errors, timeouts, connection failures)

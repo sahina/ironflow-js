@@ -47,6 +47,8 @@ import {
 import { SDK_VERSION } from "./version.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
+export type { WorkerConfig, Worker } from "./types.js";
+
 // Re-exported for back-compat: both live in internal/register-functions.ts,
 // which the streaming worker also uses (#2027).
 export { CODE_HASH_META_KEY, functionCodeHash };

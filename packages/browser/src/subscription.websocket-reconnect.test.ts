@@ -268,7 +268,7 @@ describe("SubscriptionManager WebSocket reconnect", () => {
         {
           pattern: "orders.*",
           status: "error",
-          code: "INVALID_ARGUMENT",
+          code: "invalid_argument",
           message: "old reconnect rejected",
         },
       ],
@@ -315,7 +315,7 @@ describe("SubscriptionManager WebSocket reconnect", () => {
         {
           pattern: "orders.*",
           status: "error",
-          code: "INVALID_ARGUMENT",
+          code: "invalid_argument",
           message: "cursor rejected",
         },
       ],

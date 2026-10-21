@@ -12,6 +12,8 @@ import type {
   SubscribeOptions,
 } from "./types.js";
 
+export type { AckMode, AckType, BackpressureMode, EventMetadata, SubscribeOptions };
+
 // ============================================================================
 // Push Mode Protocol (HTTP)
 // ============================================================================
