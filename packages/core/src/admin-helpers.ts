@@ -381,7 +381,7 @@ export interface DebounceEntry {
 /** The query string for a capacity view, with its leading `?`, or `""`. */
 export function capacityQuery(options: CapacityListOptions = {}): string {
   const q = new URLSearchParams();
-  if (options.env) q.set("env", options.env);
+  if (options.env) q.set("env_id", options.env);
   if (options.function) q.set("function", options.function);
   if (options.limit !== undefined) q.set("limit", String(options.limit));
   const s = q.toString();

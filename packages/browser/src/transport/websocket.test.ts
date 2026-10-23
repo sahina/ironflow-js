@@ -101,7 +101,7 @@ class WebSocketTransport {
     const params: string[] = [];
 
     if (options.environment) {
-      params.push(`env=${encodeURIComponent(options.environment)}`);
+      params.push(`env_id=${encodeURIComponent(options.environment)}`);
     }
 
     if (params.length > 0) {
@@ -695,7 +695,7 @@ describe("WebSocketTransport", () => {
         auth: { apiKey: "my-key" },
       });
 
-      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?env=staging");
+      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?env_id=staging");
       expect(transport.getProtocols()).toEqual([
         "ironflow.v1",
         "ironflow.auth.bearer.bXkta2V5",
@@ -713,7 +713,7 @@ describe("WebSocketTransport", () => {
         environment: "production",
       });
 
-      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?env=production");
+      expect(transport.getWsUrl()).toBe("ws://localhost:9123/ws?env_id=production");
     });
   });
 });

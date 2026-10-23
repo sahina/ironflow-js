@@ -49,7 +49,7 @@ users, tenants, policies. On that ops surface the generated client is **wider th
 Go and Node SDKs**. Everything workflow-shaped is proto-only (next section).
 
 `other-languages.md` carries a worked Kiota example and a "Known gaps in generated
-clients" table — absent `servers`, under-declared `X-Ironflow-Environment`, no
+clients" table — absent `servers`, under-declared `X-Ironflow-Environment-ID`, no
 enums on `status` and `yield.type`, and `register`/`heartbeat` accepting both POST
 and PUT. Point the reader at that table rather than listing the gaps yourself.
 
@@ -120,7 +120,7 @@ typed endpoints is the most credibility-earning sentence in the report.
 
 Keep this short and link out; `other-languages.md` has the full table.
 
-- **`X-Ironflow-Environment` is under-declared in the spec.** Set it as a default
+- **`X-Ironflow-Environment-ID` is under-declared in the spec.** Set it as a default
   header in the transport core or writes land in the default environment. Most
   likely first-week surprise.
 - **Authenticate with a long-lived `ifkey_` bearer token.** The only login route in the

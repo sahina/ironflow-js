@@ -907,7 +907,28 @@ describe("serve (real module)", () => {
       body: JSON.stringify(createRealPushBody()),
     });
     const response = await handler(request) as Response;
-    expect(response.headers.get("x-ironflow-environment")).toBe("testing");
+    expect(response.headers.get("x-ironflow-environment-id")).toBe("testing");
+    // The server answers 400 to the pre-#3088 header.
+    expect(response.headers.get("x-ironflow-environment")).toBeNull();
+  });
+
+  it("sends no environment response header when none is configured", async () => {
+    const saved = process.env.IRONFLOW_ENV;
+    delete process.env.IRONFLOW_ENV;
+    try {
+      const handler = realServe({ functions: [testFn], skipVerification: true, logger: false });
+      const request = new Request("http://localhost/api/ironflow", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(createRealPushBody()),
+      });
+      const response = await handler(request) as Response;
+      expect(response.headers.get("x-ironflow-environment-id")).toBeNull();
+      expect(response.headers.get("x-ironflow-environment")).toBeNull();
+    } finally {
+      if (saved === undefined) delete process.env.IRONFLOW_ENV;
+      else process.env.IRONFLOW_ENV = saved;
+    }
   });
 
   describe("step callback auth", () => {
@@ -988,7 +1009,7 @@ describe("serve (real module)", () => {
         );
 
         const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-        expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe(want);
+        expect((init.headers as Record<string, string>)["X-Ironflow-Environment-ID"]).toBe(want);
         expect(runEnv).toBe(want);
       } finally {
         if (saved === undefined) delete process.env.IRONFLOW_ENV;

@@ -58,7 +58,7 @@ describe("WebSocketTransport authentication", () => {
     const connecting = transport.connect();
     const socket = assertDefined(MockWebSocket.instances[0]);
 
-    expect(socket.url).toBe("wss://ironflow.example.com/ws?env=production");
+    expect(socket.url).toBe("wss://ironflow.example.com/ws?env_id=production");
     expect(socket.url).not.toContain("ifkey");
     expect(socket.protocols).toEqual([
       "ironflow.v1",

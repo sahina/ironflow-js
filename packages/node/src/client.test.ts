@@ -351,7 +351,10 @@ describe("IronflowClient", () => {
     it("should trigger a batch of events", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ results: [{ runIds: ["run-1"], eventId: "evt-1" }] }),
+        json: () =>
+          Promise.resolve({
+            results: [{ runIds: ["run-1"], eventId: "evt-1" }, { error: { code: "invalid_argument", message: "reserved root" } }],
+          }),
       });
       vi.stubGlobal("fetch", mockFetch);
       const client = createClient({ serverUrl: "http://localhost:9123" });
@@ -360,7 +363,10 @@ describe("IronflowClient", () => {
         { event: "order.placed", data: { id: "1" }, version: 2, idempotencyKey: "order-1" },
       ]);
 
-      expect(result).toEqual([{ runIds: ["run-1"], eventId: "evt-1" }]);
+      expect(result).toEqual([
+        { runIds: ["run-1"], eventId: "evt-1" },
+        { runIds: [], eventId: "", error: { code: "invalid_argument", message: "reserved root" } },
+      ]);
       const [url, init] = assertDefined(mockFetch.mock.calls[0]);
       expect(url).toBe("http://localhost:9123/ironflow.v1.IronflowService/TriggerBatch");
       expect(JSON.parse(init.body as string)).toEqual({
@@ -3849,7 +3855,7 @@ describe("IronflowClient", () => {
         expect.stringContaining("/api/v1/secrets/old"),
         expect.objectContaining({
           method: "PATCH",
-          headers: expect.objectContaining({ "X-Ironflow-Environment": "current" }),
+          headers: expect.objectContaining({ "X-Ironflow-Environment-ID": "current" }),
           body: JSON.stringify({ name: "renamed" }),
         })
       );
@@ -4114,6 +4120,9 @@ describe("environment (#2471)", () => {
   });
 
   const envHeader = (call: unknown[]): string | undefined =>
+    ((call[1] as RequestInit).headers as Record<string, string>)["X-Ironflow-Environment-ID"];
+  // The server answers 400 to the pre-#3088 header, so it must never be sent.
+  const oldEnvHeader = (call: unknown[]): string | undefined =>
     ((call[1] as RequestInit).headers as Record<string, string>)["X-Ironflow-Environment"];
 
   it("sends the configured environment on Connect, REST and listWorkers calls", async () => {
@@ -4128,6 +4137,7 @@ describe("environment (#2471)", () => {
     expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(3);
     for (const call of mockFetch.mock.calls) {
       expect(envHeader(call)).toBe("staging");
+      expect(oldEnvHeader(call)).toBeUndefined();
     }
   });
 

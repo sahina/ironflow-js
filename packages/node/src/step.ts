@@ -820,16 +820,13 @@ async function executePublish(
     // An API key without an environment scope falls back to env_default
     // server-side, so the worker's environment must ride along (#2470).
     if (ctx.environment) {
-      headers[HEADERS.ENVIRONMENT] = ctx.environment;
+      headers[HEADERS.ENVIRONMENT_ID] = ctx.environment;
     }
     // Attribute the publish to this run so the flow map can learn
     // function->topic edges (#1706). This request is hand-rolled rather than
     // routed through the client, so it does not get the header for free.
     if (ctx.runId) {
       headers["X-Ironflow-Run-ID"] = ctx.runId;
-    }
-    if (ctx.environment) {
-      headers["X-Ironflow-Environment"] = ctx.environment;
     }
 
     const response = await sdkFetch(url, {

@@ -183,7 +183,7 @@ export class SubscriptionClient {
     const baseWsUrl = getWebSocketUrl(config.serverUrl);
     const params: string[] = [];
     if (config.environment) {
-      params.push(`env=${encodeURIComponent(config.environment)}`);
+      params.push(`env_id=${encodeURIComponent(config.environment)}`);
     }
     const apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
     if (apiKey) {

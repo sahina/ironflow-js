@@ -556,7 +556,7 @@ describe("JobAssignmentSchema", () => {
   it("keeps event.source on the wire (cron exemption, #1948)", () => {
     const parsed = JobAssignmentSchema.parse({
       job_id: "job-1", run_id: "run-1", function_id: "fn-1", attempt: 1,
-      event: { id: "evt-1", name: "ironflow/cron.fn-1", data: { type: "cron" }, timestamp: "2024-01-01T00:00:00Z", source: "cron" },
+      event: { id: "evt-1", name: "ironflow.cron.fn-1", data: { type: "cron" }, timestamp: "2024-01-01T00:00:00Z", source: "cron" },
       completed_steps: [],
     });
     expect(parsed.event.source).toBe("cron");

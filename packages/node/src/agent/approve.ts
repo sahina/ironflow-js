@@ -1,23 +1,21 @@
 /**
  * approve() — durable human-approval gate.
  *
- * Wraps step.waitForEvent on a deterministic event name derived from the
- * agent run + approval name. TTL expiry fails the run with
- * "waitForEvent timed out" on step "approve.{name}". The engine does not
+ * Sugar over step.waitForEvent. The caller chooses the event name; the
+ * engine has no approval concept. The approver emits that same name with
+ * { runId, approved } through any client (REST POST /api/v1/events, Connect
+ * Emit, CLI, SDK, webhook). TTL expiry fails the run with
+ * "waitForEvent timed out" on step "approve.{event}". The engine does not
  * resume the handler, so approve() does not return a timeout result.
  *
- * Approval events follow the convention:
- *   name:      "agent.approve.{name}"
- *   filter:    runId === ctx.run.id
+ * The wait matches the event name and runId === ctx.run.id:
  *   data shape:
- *     { approved: boolean, approver?: string, payload?, reason? }
+ *     { runId: string, approved: boolean, approver?: string, payload?, reason? }
  */
 
 import type { StepClient } from "@ironflow/core";
 import { normalizeDuration } from "./internal.js";
 import type { ApproveFn, ApproveOptions, ApproveResult } from "./types.js";
-
-const APPROVE_EVENT_PREFIX = "agent.approve.";
 
 /**
  * Build an ApproveFn bound to the given step + run.
@@ -26,13 +24,16 @@ const APPROVE_EVENT_PREFIX = "agent.approve.";
  */
 export function makeApprove(step: StepClient, runId: string): ApproveFn {
   return async function approve<TPayload = unknown, TResult = unknown>(
-    name: string,
+    eventName: string,
     options: ApproveOptions<TPayload>
   ): Promise<ApproveResult<TResult>> {
-    const eventName = APPROVE_EVENT_PREFIX + name;
+    if (typeof eventName !== "string" || eventName.trim() === "") {
+      throw new Error("approve(): event must be a non-empty string");
+    }
 
+    // The SDK escapes the step name into the step ID, so any event name is a valid step name.
     const event = await step.waitForEvent<ApprovalEventData<TResult>>(
-      `approve.${name}`,
+      `approve.${eventName}`,
       {
         event: eventName,
         payload: options.payload,
@@ -46,6 +47,7 @@ export function makeApprove(step: StepClient, runId: string): ApproveFn {
     return {
       approved: Boolean(data?.approved),
       approver: data?.approver,
+      emittedBy: event.emittedBy,
       payload: data?.payload,
       reason: data?.reason,
     };

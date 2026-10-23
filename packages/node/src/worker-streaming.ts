@@ -128,7 +128,7 @@ class StreamingWorker implements Worker {
   private readonly drainTimeout: number;
   private readonly logger: Logger;
   private readonly apiKey?: string;
-  private readonly environment: string;
+  private readonly environment: string | undefined;
 
   private state: WorkerState = "idle";
   private activeJobs: Map<string, ActiveJob> = new Map();
@@ -373,7 +373,7 @@ class StreamingWorker implements Worker {
           // Scope the stream to the same environment the definitions were
           // registered into — otherwise the worker waits in env_default for
           // jobs created elsewhere (#2027).
-          req.header.set(HEADERS.ENVIRONMENT, environment);
+          if (environment) req.header.set(HEADERS.ENVIRONMENT_ID, environment);
           req.header.set(SDK_HEADER.name, SDK_HEADER.value);
           return next(req);
         },

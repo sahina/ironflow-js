@@ -80,7 +80,7 @@ export class BrowserFilesClient {
 
   private async attempt(path: string, init: RequestInit, buffer: boolean): Promise<Response> {
     const headers = new Headers(init.headers);
-    headers.set(HEADERS.ENVIRONMENT, this.config.environment);
+    if (this.config.environment) headers.set(HEADERS.ENVIRONMENT_ID, this.config.environment);
     const credential = this.config.auth?.apiKey || this.config.auth?.token;
     if (credential) headers.set("Authorization", `Bearer ${credential}`);
 

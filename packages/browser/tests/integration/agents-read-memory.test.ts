@@ -130,7 +130,7 @@ describe.skipIf(!INTEGRATION)("agents.readMemory — integration", () => {
     )}`;
     const response = await fetch(url, {
       method: "GET",
-      headers: { "X-Ironflow-Environment": foreignEnv },
+      headers: { "X-Ironflow-Environment-ID": foreignEnv },
     });
     expect(response.status).toBe(404);
   });

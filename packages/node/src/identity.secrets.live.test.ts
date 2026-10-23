@@ -20,7 +20,7 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("secrets — live 
     // The typed Secret has no description or revision, so read them off the wire.
     const meta = async (name: string) => {
       const res = await fetch(`${SERVER}/api/v1/secrets/${name}`, {
-        headers: { Authorization: `Bearer ${tenant.apiKey.key}`, "X-Ironflow-Environment": "current" },
+        headers: { Authorization: `Bearer ${tenant.apiKey.key}`, "X-Ironflow-Environment-ID": "current" },
       });
       return { status: res.status, body: (await res.json()) as { revision?: number; description?: string } };
     };

@@ -14,8 +14,8 @@ import type {
   Subscription,
   SubscriptionCallbacks,
 } from "@ironflow/core";
-import { IronflowError, DEFAULT_TIMEOUTS, HEADERS, restRetryable, connectCodeForStatus } from "@ironflow/core";
-import type { IronflowConfig } from "./config.js";
+import { IronflowError, DEFAULT_TIMEOUTS, restRetryable, connectCodeForStatus } from "@ironflow/core";
+import { environmentHeader, type IronflowConfig } from "./config.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
 /**
@@ -87,7 +87,7 @@ export class BrowserConfigClient {
 
     try {
       const headers: Record<string, string> = {
-        [HEADERS.ENVIRONMENT]: this.config.environment,
+        ...environmentHeader(this.config.environment),
       };
 
       const credential =

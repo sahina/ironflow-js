@@ -75,6 +75,7 @@ import {
   type InvokeSyncOptions,
   type InvokeSyncResult,
   type TriggerBatchEvent,
+  type TriggerBatchResult,
   type StoredEvent,
   type ListEventsOptions,
   type ListEventsResult,
@@ -253,7 +254,7 @@ export interface IronflowClientConfig {
   /** API key for authentication. Empty or unset falls back to the IRONFLOW_API_KEY env var; optional for local dev. */
   apiKey?: string;
   /**
-   * Environment for REST and Connect requests, sent as `X-Ironflow-Environment`.
+   * Environment for REST and Connect requests, sent as `X-Ironflow-Environment-ID`.
    * KV, config and secrets requests do not send it. Unset sends
    * no header: the server uses the API key's environment, or the default one when
    * auth is off. The client does not read `IRONFLOW_ENV`: a process can set it
@@ -644,9 +645,13 @@ export class IronflowClient {
   }
 
   /** Trigger multiple events in one request. */
-  async triggerBatch(events: TriggerBatchEvent[]): Promise<EmitResult[]> {
+  async triggerBatch(events: TriggerBatchEvent[]): Promise<TriggerBatchResult[]> {
     const response = await this.request<{
-      results?: Array<{ runIds?: string[]; eventId: string }>;
+      results?: Array<{
+        runIds?: string[];
+        eventId?: string;
+        error?: { code?: string; message?: string };
+      }>;
     }>(
       "/ironflow.v1.IronflowService/TriggerBatch",
       {
@@ -664,7 +669,11 @@ export class IronflowClient {
     );
     return (response.results ?? []).map((result) => ({
       runIds: result.runIds ?? [],
-      eventId: result.eventId,
+      eventId: result.eventId ?? "",
+      // proto3 JSON omits an empty message, so default both fields.
+      ...(result.error
+        ? { error: { code: result.error.code ?? "unknown", message: result.error.message ?? "" } }
+        : {}),
     }));
   }
 
@@ -3182,7 +3191,7 @@ export class IronflowClient {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
     if (this.environment) {
-      headers["X-Ironflow-Environment"] = this.environment;
+      headers["X-Ironflow-Environment-ID"] = this.environment;
     }
 
     let status: number | undefined;
@@ -3233,7 +3242,7 @@ export class IronflowClient {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
     if (this.environment) {
-      headers["X-Ironflow-Environment"] = this.environment;
+      headers["X-Ironflow-Environment-ID"] = this.environment;
     }
 
     const runId = getCurrentRunId();
@@ -3359,12 +3368,12 @@ export class IronflowClient {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
     if (this.environment) {
-      headers["X-Ironflow-Environment"] = this.environment;
+      headers["X-Ironflow-Environment-ID"] = this.environment;
     }
     if (path === "/api/v1/secrets" || path.startsWith("/api/v1/secrets/")) {
       // Secret routes require an explicit environment header, while the
       // authenticated API key remains the authority for the actual scope.
-      headers["X-Ironflow-Environment"] = "current";
+      headers["X-Ironflow-Environment-ID"] = "current";
     }
 
     const options: RequestInit = { method: httpMethod, headers };

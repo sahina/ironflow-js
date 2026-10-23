@@ -58,7 +58,7 @@ export class WebSocketTransport implements Transport {
     const params: string[] = [];
 
     if (options.environment) {
-      params.push(`env=${encodeURIComponent(options.environment)}`);
+      params.push(`env_id=${encodeURIComponent(options.environment)}`);
     }
     if (params.length > 0) {
       const separator = baseWsUrl.includes("?") ? "&" : "?";

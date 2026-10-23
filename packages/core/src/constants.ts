@@ -204,12 +204,9 @@ export const HTTP_HEADERS = {
 
 /** Ironflow-specific headers */
 export const HEADERS = {
-  /** Header for environment isolation */
-  ENVIRONMENT: "X-Ironflow-Environment",
+  /** Header that selects the request environment by ID */
+  ENVIRONMENT_ID: "X-Ironflow-Environment-ID",
 } as const;
-
-/** Default environment name */
-export const DEFAULT_ENVIRONMENT = "default";
 
 /** JSON headers for fetch requests */
 export const JSON_HEADERS = {

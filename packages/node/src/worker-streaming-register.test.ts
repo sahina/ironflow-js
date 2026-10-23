@@ -72,7 +72,20 @@ describe("streaming worker function registration (#2027)", () => {
     );
     const headers = reg![1].headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer secret-key");
-    expect(headers["X-Ironflow-Environment"]).toBe("staging");
+    expect(headers["X-Ironflow-Environment-ID"]).toBe("staging");
+    // The server answers 400 to the pre-#3088 header.
+    expect(headers["X-Ironflow-Environment"]).toBeUndefined();
+  });
+
+  it("sends no environment header when none is configured", async () => {
+    vi.stubEnv("IRONFLOW_ENV", "");
+    const calls = await connectCalls("secret-key");
+    const reg = calls.find(([url]) =>
+      url.endsWith("/ironflow.v1.IronflowService/RegisterFunction")
+    );
+    const headers = reg![1].headers as Record<string, string>;
+    expect(headers["X-Ironflow-Environment-ID"]).toBeUndefined();
+    expect(headers["X-Ironflow-Environment"]).toBeUndefined();
   });
 
   it("stops instead of reconnecting when registration is unauthorized", async () => {

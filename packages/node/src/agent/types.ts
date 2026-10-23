@@ -166,6 +166,11 @@ export interface ApproveResult<TPayload = unknown> {
   approved: boolean;
   /** User who approved/rejected, if recorded by the approver. */
   approver?: string;
+  /**
+   * Authenticated emitter of the approval event, set by the engine (e.g.
+   * "apikey:<id>", "user:<id>"). Unlike `approver`, the caller cannot choose it.
+   */
+  emittedBy?: string;
   /** Payload echoed back from the approval event. */
   payload?: TPayload;
   /** Optional reason supplied by the approver. */
@@ -173,13 +178,15 @@ export interface ApproveResult<TPayload = unknown> {
 }
 
 /**
- * Approval helper. TTL expiry fails the run with "waitForEvent timed out"
- * on step "approve.{name}"; the handler cannot catch it or branch on a result.
- * To handle a deadline in the handler, arrange for an explicit rejection
- * event to arrive before the TTL expires.
+ * Approval helper. Waits for the event name that the caller chooses, matched
+ * on `data.runId` equal to this run's ID. The approver emits that name with
+ * `{ runId, approved }` through any client. TTL expiry fails the run with
+ * "waitForEvent timed out" on step "approve.{event}"; the handler cannot catch
+ * it or branch on a result. To handle a deadline in the handler, arrange for
+ * an explicit rejection event to arrive before the TTL expires.
  */
 export type ApproveFn = <TPayload = unknown, TResult = unknown>(
-  name: string,
+  event: string,
   options: ApproveOptions<TPayload>
 ) => Promise<ApproveResult<TResult>>;
 
@@ -353,7 +360,7 @@ export interface ExposeMcpConfig {
   apiKey?: string;
   /**
    * Environment for RegisterTool and UnregisterTool, sent as
-   * `X-Ironflow-Environment`. Defaults to `IRONFLOW_ENV`. With neither set no
+   * `X-Ironflow-Environment-ID`. Defaults to `IRONFLOW_ENV`. With neither set no
    * header is sent and the server uses the API key's environment.
    */
   environment?: string;

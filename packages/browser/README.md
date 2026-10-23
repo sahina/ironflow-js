@@ -46,7 +46,7 @@ import { ironflow } from '@ironflow/browser';
 ironflow.configure({
   serverUrl: 'http://localhost:9123',   // Default: 'http://localhost:9123'
   transport: 'connectrpc',              // Default: 'connectrpc'. Options: 'connectrpc' | 'websocket'
-  environment: 'default',               // Default: 'default'. Target environment for isolation.
+  environment: 'env_staging',           // Target environment ID. Unset sends no header: the server uses the API key's environment.
   timeout: 30000,                       // Request timeout in ms (default: 30000)
   retry: { maxAttempts: 3 },            // Optional. Retry policy for file uploads and sign calls only (see File Storage).
   auth: {
@@ -382,7 +382,8 @@ for (const r of results) {
   console.log(r.runId, r.functionId, r.status, r.output, r.waitTimedOut);
 }
 
-// One round trip, one EmitResult per event, in order
+// One round trip, one TriggerBatchResult per event, in order.
+// A failed item carries `error` ({ code, message }); the others still emit.
 const results = await ironflow.triggerBatch([
   { event: 'order.placed', data: { orderId: '1' } },
   { event: 'order.placed', data: { orderId: '2' }, idempotencyKey: 'order-2' },
@@ -1675,7 +1676,7 @@ const options: TransportOptions = {
   reconnectDelay: 1000,
   maxReconnectDelay: 30000,
   reconnectBackoff: 2,
-  environment: 'default',
+  environment: 'env_default',
   connectionTimeout: 10000,
 };
 
@@ -1769,7 +1770,7 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Function types:** `FunctionStatus`, `RegisteredFunction`, `FunctionChangeType`, `FunctionHistoryEntry`, `ListFunctionHistoryOptions`, `ListFunctionHistoryResult`
 
-**Event types:** `IronflowEvent`, `EmitOptions`, `EmitResult`, `TriggerBatchEvent`, `StoredEvent`, `ListEventsOptions`, `ListEventsResult`, `EventNameCount`, `ListEventNamesOptions`, `ListEventNamesResult`
+**Event types:** `IronflowEvent`, `EmitOptions`, `EmitResult`, `TriggerBatchEvent`, `TriggerBatchResult`, `StoredEvent`, `ListEventsOptions`, `ListEventsResult`, `EventNameCount`, `ListEventNamesOptions`, `ListEventNamesResult`
 
 **Pub/Sub types:** `PublishOptions`, `PublishResult`
 

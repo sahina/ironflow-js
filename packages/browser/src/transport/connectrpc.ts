@@ -210,7 +210,7 @@ export class ConnectRPCTransport implements Transport {
 
       if (envHeader) {
         interceptors.push((next) => async (req) => {
-          req.header.set(HEADERS.ENVIRONMENT, envHeader);
+          req.header.set(HEADERS.ENVIRONMENT_ID, envHeader);
           return next(req);
         });
       }

@@ -17,8 +17,8 @@ import type {
   KVWatchOptions,
   KVWatcher,
 } from "@ironflow/core";
-import { IronflowError, DEFAULT_TIMEOUTS, HEADERS, restRetryable, connectCodeForStatus } from "@ironflow/core";
-import type { IronflowConfig } from "./config.js";
+import { IronflowError, DEFAULT_TIMEOUTS, restRetryable, connectCodeForStatus } from "@ironflow/core";
+import { environmentHeader, type IronflowConfig } from "./config.js";
 import { webSocketProtocols } from "./websocket-auth.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
@@ -147,7 +147,7 @@ export class BrowserKVBucketHandle {
     const params: string[] = [];
 
     if (this.config.environment) {
-      params.push(`env=${encodeURIComponent(this.config.environment)}`);
+      params.push(`env_id=${encodeURIComponent(this.config.environment)}`);
     }
 
     const credential =
@@ -212,7 +212,7 @@ export class BrowserKVBucketHandle {
 
     try {
       const headers: Record<string, string> = {
-        [HEADERS.ENVIRONMENT]: this.config.environment,
+        ...environmentHeader(this.config.environment),
       };
 
       if (body !== undefined) {
@@ -358,7 +358,7 @@ export class BrowserKVClient {
 
     try {
       const headers: Record<string, string> = {
-        [HEADERS.ENVIRONMENT]: this.config.environment,
+        ...environmentHeader(this.config.environment),
       };
 
       if (body !== undefined) {

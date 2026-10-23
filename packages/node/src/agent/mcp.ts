@@ -208,7 +208,7 @@ async function postJSON(
     Authorization: `Bearer ${apiKey}`,
   };
   if (environment) {
-    headers["X-Ironflow-Environment"] = environment;
+    headers["X-Ironflow-Environment-ID"] = environment;
   }
   const resp = await sdkFetch(url, {
     method: "POST",

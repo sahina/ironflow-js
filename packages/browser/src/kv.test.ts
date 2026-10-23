@@ -589,7 +589,7 @@ describe("IronflowError handling", () => {
 // ===========================================================================
 
 describe("environment header", () => {
-  it("includes X-Ironflow-Environment on all requests", async () => {
+  it("includes X-Ironflow-Environment-ID on all requests", async () => {
     mockFetch.mockResolvedValueOnce(
       jsonResponse({ buckets: [], count: 0 })
     );
@@ -598,10 +598,10 @@ describe("environment header", () => {
     await client.listBuckets();
 
     const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
-    expect(headers[HEADERS.ENVIRONMENT]).toBe("staging");
+    expect(headers[HEADERS.ENVIRONMENT_ID]).toBe("staging");
   });
 
-  it("includes X-Ironflow-Environment on bucket handle requests", async () => {
+  it("includes X-Ironflow-Environment-ID on bucket handle requests", async () => {
     mockFetch.mockResolvedValueOnce(
       jsonResponse({ key: "k", value: "v", revision: 1, created_at: "", operation: "put" })
     );
@@ -613,7 +613,7 @@ describe("environment header", () => {
     await handle.get("k");
 
     const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
-    expect(headers[HEADERS.ENVIRONMENT]).toBe("prod");
+    expect(headers[HEADERS.ENVIRONMENT_ID]).toBe("prod");
   });
 });
 
@@ -663,7 +663,7 @@ describe("watch", () => {
     expect(MockWebSocket.instances).toHaveLength(1);
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=test-env"
+      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env_id=test-env"
     );
   });
 
@@ -674,7 +674,7 @@ describe("watch", () => {
 
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "wss://example.com/api/v1/kv/buckets/bucket/watch?env=test-env"
+      "wss://example.com/api/v1/kv/buckets/bucket/watch?env_id=test-env"
     );
   });
 
@@ -684,7 +684,7 @@ describe("watch", () => {
 
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=test-env&key=user.*"
+      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env_id=test-env&key=user.*"
     );
   });
 
@@ -700,7 +700,7 @@ describe("watch", () => {
 
     const ws = assertDefined(MockWebSocket.instances[0]);
     expect(ws.url).toBe(
-      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env=prod%2Fus"
+      "ws://localhost:9123/api/v1/kv/buckets/test-bucket/watch?env_id=prod%2Fus"
     );
     expect(ws.protocols).toEqual([
       "ironflow.v1",
@@ -716,7 +716,7 @@ describe("watch", () => {
     handle.watch({ onUpdate: vi.fn() });
 
     const ws = assertDefined(MockWebSocket.instances[0]);
-    expect(ws.url).toContain("env=test-env");
+    expect(ws.url).toContain("env_id=test-env");
     expect(ws.url).not.toContain("token=");
     expect(ws.protocols).toEqual([
       "ironflow.v1",

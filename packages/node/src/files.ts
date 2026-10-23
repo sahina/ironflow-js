@@ -96,7 +96,7 @@ export class FilesClient {
   private async exchange(path: string, init: RequestInit, replayable: boolean, buffer: boolean): Promise<Response> {
     const headers = new Headers(init.headers);
     if (this.config.apiKey) headers.set("Authorization", `Bearer ${this.config.apiKey}`);
-    if (this.config.environment) headers.set(HEADERS.ENVIRONMENT, this.config.environment);
+    if (this.config.environment) headers.set(HEADERS.ENVIRONMENT_ID, this.config.environment);
     const max = replayable ? this.retry.maxAttempts : 1;
     let delay = this.retry.initialDelayMs;
     // A stream is spent after one attempt; say so instead of surfacing a bare 503.

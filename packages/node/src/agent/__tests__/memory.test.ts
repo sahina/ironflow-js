@@ -312,7 +312,7 @@ describe("default memory backend environment (#2471)", () => {
 
     expect(mockFetch.mock.calls.length).toBeGreaterThanOrEqual(2);
     for (const [, init] of mockFetch.mock.calls as [string, RequestInit][]) {
-      expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe("staging");
+      expect((init.headers as Record<string, string>)["X-Ironflow-Environment-ID"]).toBe("staging");
     }
   });
 
@@ -336,7 +336,7 @@ describe("default memory backend environment (#2471)", () => {
 
     expect(mockFetch).toHaveBeenCalled();
     for (const [, init] of mockFetch.mock.calls as [string, RequestInit][]) {
-      expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe("staging");
+      expect((init.headers as Record<string, string>)["X-Ironflow-Environment-ID"]).toBe("staging");
     }
   });
 });

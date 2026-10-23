@@ -117,6 +117,6 @@ describe("pull worker step callback auth (#1672)", () => {
 
   it("sends the worker environment on step.publish (#2471)", async () => {
     const headers = await runPublishJob(undefined, "staging");
-    expect(headers["X-Ironflow-Environment"]).toBe("staging");
+    expect(headers["X-Ironflow-Environment-ID"]).toBe("staging");
   });
 });

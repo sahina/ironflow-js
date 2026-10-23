@@ -92,3 +92,26 @@ describe("event timestamps over JSON (#2191)", () => {
     }
   });
 });
+
+describe("event emitter over JSON (#3109)", () => {
+  it.each(["resume", "replay"] as const)("keeps emittedBy on a %s wait result and leaves it unset when absent", async (mode) => {
+    const run = async (event: Record<string, unknown>) => {
+      const request: PushRequest = {
+        run_id: "run-1",
+        function_id: "fn",
+        attempt: 2,
+        event: reply,
+        steps: mode === "replay"
+          ? [{ id: "run-1:reply:0", name: "reply", status: "completed", output: event }]
+          : [],
+        resume: mode === "resume"
+          ? { step_id: "run-1:reply:0", type: "wait_for_event", data: event }
+          : undefined,
+      };
+      return createStepClient(new ExecutionContext(request)).waitForEvent("reply", { event: reply.name });
+    };
+
+    expect((await run({ ...reply, emittedBy: "apikey:k1" })).emittedBy).toBe("apikey:k1");
+    expect((await run(reply)).emittedBy).toBeUndefined();
+  });
+});

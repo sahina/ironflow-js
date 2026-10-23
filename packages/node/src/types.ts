@@ -22,7 +22,7 @@ export interface ServeConfig {
   skipVerification?: boolean;
   /** Logger instance (or false to disable) */
   logger?: Logger | false;
-  /** Target environment (default: IRONFLOW_ENV or "default") */
+  /** Target environment ID (default: IRONFLOW_ENV; unset sends no header) */
   environment?: string;
   /** Event definition registry for automatic upcasting of event data */
   eventDefinitions?: EventDefinitionRegistry;
@@ -84,7 +84,7 @@ export interface WorkerConfig {
   labels?: Record<string, string>;
   /** Logger instance (or false to disable) */
   logger?: Logger | false;
-  /** Target environment (default: IRONFLOW_ENV or "default") */
+  /** Target environment ID (default: IRONFLOW_ENV; unset sends no header) */
   environment?: string;
   /** Event definition registry for automatic upcasting of event data */
   eventDefinitions?: EventDefinitionRegistry;

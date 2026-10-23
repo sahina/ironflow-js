@@ -295,6 +295,8 @@ const approvalWorkflow = createFunction(
 | `timeout` | `Duration` | `"7d"` | How long to wait before timing out. |
 | `payload` | `unknown` | -- | Stored as the waiting step's `input`, visible via `getRunSteps` and the dashboard. Does not affect matching. |
 
+`waitForEvent` returns `emittedBy` on the event. It is the authenticated emitter that the engine recorded, for example `apikey:<id>` or `user:<id>`. The engine sets it from the credential of the caller, so the event body cannot change it. It is `undefined` when the engine reports none. An operator with `runs:cancel` can inject or patch a step output, so `emittedBy` proves the emitter only for a step that an event resolved.
+
 ### step.invoke(functionId, input?, options?)
 
 Call another Ironflow function and wait for its result. Creates a child run.
@@ -531,7 +533,7 @@ The `serve()` function creates a universal HTTP handler for serverless deploymen
 | `signingKey` | `string` | HMAC-SHA256 signing key for request verification. Verification needs the raw request body: do not run a JSON body parser such as `express.json()` before `serve()`. |
 | `skipVerification` | `boolean` | Skip signature verification (dev only). |
 | `logger` | `Logger \| false` | Custom logger or `false` to disable. |
-| `environment` | `string` | Target environment (default: `IRONFLOW_ENV` or `"default"`). |
+| `environment` | `string` | Target environment ID (default: `IRONFLOW_ENV`). Unset sends no environment header. |
 | `eventDefinitions` | `EventDefinitionRegistry` | Registry for automatic event upcasting. |
 | `serverUrl` | `string` | Ironflow server URL (for emitting webhook events). |
 | `webhooks` | `IronflowWebhook[]` | Webhook sources to handle. |
@@ -604,7 +606,7 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `pollWaitSeconds` | `number` | `20` | Seconds the server may hold an empty job poll open, so a new job reaches the worker at once. `0` disables long polling; the server caps it at 25. A proxy with a read timeout below this value must be raised, or this value lowered. REST polling worker only -- `createStreamingWorker` ignores it. |
 | `labels` | `Record<string, string>` | -- | Worker labels for routing. |
 | `logger` | `Logger \| false` | -- | Custom logger or `false` to disable. |
-| `environment` | `string` | `IRONFLOW_ENV` or `"default"` | Target environment. |
+| `environment` | `string` | `IRONFLOW_ENV` | Target environment ID. Unset sends no environment header. |
 | `eventDefinitions` | `EventDefinitionRegistry` | -- | Registry for automatic event upcasting. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `checkpointInterval` | `number` | `1000` | Debounce window in ms for checkpointing completed steps to the server while a job is still running; `0` disables. Without it a killed worker loses all in-flight progress and the reclaimed run re-executes every step. REST polling worker only -- `createStreamingWorker` ignores it. |
@@ -672,7 +674,7 @@ The HTTP client for interacting with the Ironflow server from your backend code.
 |-------|------|---------|-------------|
 | `serverUrl` | `string` | `IRONFLOW_SERVER_URL`, then `http://localhost:9123` | Server URL. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
-| `environment` | `string` | -- | Sent as `X-Ironflow-Environment` on REST and Connect requests. KV, config and secrets requests do not send it. Unset sends no header: the server uses the API key's environment, or the default one when auth is off. The client does not read `IRONFLOW_ENV`. |
+| `environment` | `string` | -- | Sent as `X-Ironflow-Environment-ID` on REST and Connect requests. KV, config and secrets requests do not send it. Unset sends no header: the server uses the API key's environment, or the default one when auth is off. The client does not read `IRONFLOW_ENV`. |
 | `timeout` | `number` | `30000` | Request timeout in ms. |
 | `onError` | `OnErrorHandler` | -- | Global error handler (optional). |
 | `retry` | `ClientRetryConfig` | 3 attempts, 100 ms, factor 2, max 10 s | Retry with backoff. A call that changes nothing is retried on a network error, timeout, `408`, `429` or `5xx`; all other calls on `429` only. Honors `Retry-After`. `maxAttempts: 1` disables. |
@@ -760,7 +762,7 @@ and the run is cancelled -- use `emit()` plus a subscription for waits that long
 
 ### triggerBatch(events)
 
-Emit many events in one round trip. Returns one `EmitResult` per event, in order.
+Emit many events in one round trip. Returns one `TriggerBatchResult` per event, in order. A failed item carries `error` (`code` and `message`) and no event ID; the other items still emit.
 
 ```typescript
 const results = await client.triggerBatch([
@@ -2062,7 +2064,7 @@ A nonempty explicit `serverUrl` overrides both URL variables. Empty URL values a
 | `IRONFLOW_SIGNING_KEY` | The Node SDK does not read this variable. Your code reads it and passes it to `serve` as `signingKey`. With no key, the handler does not verify requests. | -- |
 | `IRONFLOW_API_KEY` | API key for authentication (worker and client) | -- |
 | `IRONFLOW_LOG_LEVEL` | Log level: `debug`, `info`, `warn`, `error`, `silent` | `info` |
-| `IRONFLOW_ENV` | Target environment name | `default` |
+| `IRONFLOW_ENV` | Target environment ID | -- |
 | `IRONFLOW_NO_DISCOVERY` | Set to `1` to turn off the engine discovery file (ADR 0098). | -- |
 
 When none of `IRONFLOW_SERVER_URL` and `IRONFLOW_API_KEY` is set, the SDK reads the nearest `.ironflow/engine.json` (loopback `http` URLs only) to fill the unset variables. Environment values always win.
@@ -2123,7 +2125,7 @@ const supportAgent = agent(
     });
 
     // Pause for human approval (durable)
-    const decision = await approve('refund-approval', {
+    const decision = await approve('refund.approved', {
       ttl: '24h',
       payload: { prompt: 'Refund this order?' },
     });
@@ -2139,16 +2141,42 @@ const supportAgent = agent(
 );
 ```
 
+### Approver events
+
+`approve(event, { ttl, payload })` waits for the event name you pass. The engine
+has no approval concept: the event is an ordinary event that matches `data.runId`
+to this run. The approver sends the same name with `{ runId, approved }`, with
+`approver`, `payload` and `reason` as optional fields. Any client can send it:
+REST `POST /api/v1/events`, Connect `Emit`, the CLI, an SDK or a webhook.
+
+```typescript
+await client.emit('refund.approved', {
+  runId,
+  approved: true,
+  approver: 'ops@example.com',
+});
+```
+
+The result also has `emittedBy`: the authenticated emitter of the approval
+event, set by the engine from the credential of the caller. `approver` is free
+text from the event data, and the caller chooses it. To check who approved, read
+`emittedBy`.
+An operator with `runs:cancel` can inject or patch a step output, so
+`emittedBy` proves the emitter only for a step that an event resolved.
+
+An empty event name throws `approve(): event must be a non-empty string`. The
+step ID is `approve.<event>`, and the SDK escapes the event name in it.
+
 ### Early approvals
 
 An approval can arrive before the run reaches `approve()`. The engine checks
-retained events stored since the run was created, matching the approval name
+retained events stored since the run was created, matching the event name
 and `data.runId`. An early approval does not need to be resent. The same
 history and retention rules as `step.waitForEvent()` apply.
 
 ### Approval request payloads
 
-`approve(name, { ttl, payload })` stores the request payload in the waiting step's
+`approve(event, { ttl, payload })` stores the request payload in the waiting step's
 `input`. Read it with `client.getRunSteps(runId)` or expand the step in the
 dashboard to view its Input. The returned decision's `payload` comes from the
 approver's event and is separate from this request.
@@ -2157,11 +2185,11 @@ approver's event and is separate from this request.
 
 `approve()` returns a decision only when an approval or rejection event arrives.
 If its `ttl` expires, the engine fails the run with `waitForEvent timed out` on
-step `approve.{name}`. The handler does not resume, so it cannot catch the timeout
+step `approve.{event}`. The handler does not resume, so it cannot catch the timeout
 or receive `{ approved: false, reason: "timeout" }`.
 
 If the handler needs to escalate or take another action at a deadline, arrange
-for an external process to emit `agent.approve.{name}` with the matching `runId`,
+for an external process to emit the same event name with the matching `runId`,
 `approved: false`, and an application-defined `reason` before the TTL expires.
 The returned `reason` comes from that event.
 

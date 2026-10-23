@@ -371,6 +371,13 @@ export interface IronflowEvent<T = unknown> {
   source?: string;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
+  /**
+   * Authenticated emitter the engine recorded (e.g. "apikey:<id>", "user:<id>",
+   * "webhook:<source-id>", "nats", "platform"). Set by the engine from the
+   * caller's credential; the event body cannot change it. Only on events
+   * returned by waiting steps.
+   */
+  emittedBy?: string;
 }
 
 /**
@@ -921,6 +928,15 @@ export interface TriggerBatchEvent {
   version?: number;
   idempotencyKey?: string;
   metadata?: Record<string, unknown>;
+}
+
+/** Result of one `triggerBatch()` item. `error` is set when the item did not emit; the other items still do. */
+export interface TriggerBatchResult extends EmitResult {
+  error?: {
+    /** Connect error code, e.g. `invalid_argument` */
+    code: string;
+    message: string;
+  };
 }
 
 /** An event persisted in Ironflow's event log. */

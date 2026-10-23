@@ -40,6 +40,7 @@ import type {
   PublishOptions,
   PublishResult,
   TriggerBatchEvent,
+  TriggerBatchResult,
   StoredEvent,
   ListEventsOptions,
   ListEventsResult,
@@ -161,7 +162,7 @@ import type {
   IronflowConfig,
   IronflowConfigOptions,
 } from "./config.js";
-import { mergeConfig, warnAboutLongLivedBrowserKey } from "./config.js";
+import { environmentHeader, mergeConfig, warnAboutLongLivedBrowserKey } from "./config.js";
 import {
   SubscriptionManager,
   type BrowserSubscribeOptions,
@@ -394,7 +395,7 @@ class IronflowClient {
         "Content-Type": "application/json",
       };
       if (this.config?.environment) {
-        detectHeaders[HEADERS.ENVIRONMENT] = this.config.environment;
+        detectHeaders[HEADERS.ENVIRONMENT_ID] = this.config.environment;
       }
 
       const response = await sdkFetch(
@@ -758,7 +759,7 @@ class IronflowClient {
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
       };
       this.applyAuthHeader(headers);
 
@@ -812,7 +813,7 @@ class IronflowClient {
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
       };
       this.applyAuthHeader(headers);
 
@@ -887,7 +888,7 @@ class IronflowClient {
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
       };
       this.applyAuthHeader(headers);
 
@@ -946,7 +947,7 @@ class IronflowClient {
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
       };
       this.applyAuthHeader(headers);
 
@@ -1039,7 +1040,7 @@ class IronflowClient {
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
       };
       this.applyAuthHeader(headers);
 
@@ -1104,7 +1105,7 @@ class IronflowClient {
     try {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
       };
       this.applyAuthHeader(headers);
 
@@ -1262,7 +1263,7 @@ class IronflowClient {
 
     try {
       const headers: Record<string, string> = {
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
       };
       this.applyAuthHeader(headers);
 
@@ -1457,10 +1458,14 @@ class IronflowClient {
   }
 
   /** Trigger multiple events in one request. */
-  async triggerBatch(events: TriggerBatchEvent[]): Promise<EmitResult[]> {
+  async triggerBatch(events: TriggerBatchEvent[]): Promise<TriggerBatchResult[]> {
     this.ensureConfigured();
     const response = await this.streamRequest<{
-      results?: Array<{ runIds?: string[]; eventId: string }>;
+      results?: Array<{
+        runIds?: string[];
+        eventId?: string;
+        error?: { code?: string; message?: string };
+      }>;
     }>("/ironflow.v1.IronflowService/TriggerBatch", {
       events: events.map((event) => ({
         event: event.event,
@@ -1474,7 +1479,11 @@ class IronflowClient {
     });
     return (response.results ?? []).map((result) => ({
       runIds: result.runIds ?? [],
-      eventId: result.eventId,
+      eventId: result.eventId ?? "",
+      // proto3 JSON omits an empty message, so default both fields.
+      ...(result.error
+        ? { error: { code: result.error.code ?? "unknown", message: result.error.message ?? "" } }
+        : {}),
     }));
   }
 
@@ -2211,7 +2220,7 @@ class IronflowClient {
       baseUrl: this.config!.serverUrl,
       interceptors: [
         (next) => async (req) => {
-          req.header.set(HEADERS.ENVIRONMENT, this.config!.environment);
+          if (this.config!.environment) req.header.set(HEADERS.ENVIRONMENT_ID, this.config!.environment);
           req.header.set(SDK_HEADER.name, SDK_HEADER.value);
           const token = this.authCredential();
           if (token) req.header.set("Authorization", `Bearer ${token}`);
@@ -3198,7 +3207,7 @@ class IronflowClient {
    *   caller ──> send(method, path, body, handle)
    *                │
    *                ├─ headers: Content-Type (only when a body is sent),
-   *                │           X-Ironflow-Environment,
+   *                │           X-Ironflow-Environment-ID (only when set),
    *                │           Authorization (apiKey wins over token)
    *                ├─ fetch ──> handle(response) ──> T
    *                │               └─ may throw IronflowError ──┐
@@ -3243,7 +3252,7 @@ class IronflowClient {
 
     try {
       const headers: Record<string, string> = {
-        [HEADERS.ENVIRONMENT]: this.config!.environment,
+        ...environmentHeader(this.config!.environment),
         ...extraHeaders,
       };
 

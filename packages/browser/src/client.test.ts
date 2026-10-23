@@ -1730,7 +1730,9 @@ describe("IronflowClient (real module)", () => {
 
       const headers = assertDefined(mockFetch.mock.calls[0]?.[1]).headers;
       expect(headers["Authorization"]).toBe("Bearer test-key-123");
-      expect(headers["X-Ironflow-Environment"]).toBe("staging");
+      expect(headers["X-Ironflow-Environment-ID"]).toBe("staging");
+      // The server answers 400 to the pre-#3088 header.
+      expect(headers["X-Ironflow-Environment"]).toBeUndefined();
     });
 
     it("includes auth header when token is configured", async () => {
@@ -2940,13 +2942,19 @@ describe("IronflowClient (real module)", () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ results: [{ runIds: ["run-1"], eventId: "evt-1" }] }),
+        json: () =>
+          Promise.resolve({
+            results: [{ runIds: ["run-1"], eventId: "evt-1" }, { error: { code: "invalid_argument", message: "reserved root" } }],
+          }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
       await expect(ironflow.triggerBatch([
         { event: "order.placed", data: { id: "1" }, idempotencyKey: "order-1" },
-      ])).resolves.toEqual([{ runIds: ["run-1"], eventId: "evt-1" }]);
+      ])).resolves.toEqual([
+        { runIds: ["run-1"], eventId: "evt-1" },
+        { runIds: [], eventId: "", error: { code: "invalid_argument", message: "reserved root" } },
+      ]);
 
       const [url, init] = assertDefined(mockFetch.mock.calls[0]);
       expect(url).toBe("http://localhost:9123/ironflow.v1.IronflowService/TriggerBatch");
@@ -3887,7 +3895,7 @@ describe("IronflowClient (real module)", () => {
         "http://localhost:9123/ironflow.v1.ProjectionService/WaitForEvent"
       );
       expect(opts.headers["Authorization"]).toBe("Bearer session-token-123");
-      expect(opts.headers["X-Ironflow-Environment"]).toBe("staging");
+      expect(opts.headers["X-Ironflow-Environment-ID"]).toBe("staging");
     });
 
     it("prefers an API key when both credentials are configured", async () => {
@@ -4233,7 +4241,7 @@ describe("IronflowClient (real module)", () => {
         expect(opts.method).toBe("POST");
         expect(opts.headers["Content-Type"]).toBe("application/json");
         expect(opts.headers["Authorization"]).toBe("Bearer key-123");
-        expect(opts.headers["X-Ironflow-Environment"]).toBe("staging");
+        expect(opts.headers["X-Ironflow-Environment-ID"]).toBe("staging");
 
         const body = JSON.parse(opts.body);
         expect(body.runId).toBe("run-req");
@@ -4491,7 +4499,7 @@ describe("IronflowClient (real module)", () => {
         expect(opts.method).toBe("POST");
         expect(opts.headers["Content-Type"]).toBe("application/json");
         expect(opts.headers["Authorization"]).toBe("Bearer key-tl");
-        expect(opts.headers["X-Ironflow-Environment"]).toBe("production");
+        expect(opts.headers["X-Ironflow-Environment-ID"]).toBe("production");
 
         const body = JSON.parse(opts.body);
         expect(body.runId).toBe("run-tl-req");
@@ -4774,7 +4782,7 @@ describe("IronflowClient (real module)", () => {
         expect(opts.method).toBe("POST");
         expect(opts.headers["Content-Type"]).toBe("application/json");
         expect(opts.headers["Authorization"]).toBe("Bearer key-so");
-        expect(opts.headers["X-Ironflow-Environment"]).toBe("staging");
+        expect(opts.headers["X-Ironflow-Environment-ID"]).toBe("staging");
 
         const body = JSON.parse(opts.body);
         expect(body.runId).toBe("run-so-req");

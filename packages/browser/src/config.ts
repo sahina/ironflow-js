@@ -3,7 +3,7 @@
  */
 
 import type { ClientRetryConfig, Logger } from "@ironflow/core";
-import { DEFAULT_SERVER_URL, DEFAULT_RECONNECT, DEFAULT_ENVIRONMENT } from "@ironflow/core";
+import { DEFAULT_SERVER_URL, DEFAULT_RECONNECT, HEADERS } from "@ironflow/core";
 
 /**
  * Reconnection configuration
@@ -64,8 +64,8 @@ export interface IronflowConfig {
   timeout?: number;
   /** Retry policy for file uploads with a replayable body. Other requests are not retried. */
   retry?: ClientRetryConfig;
-  /** Target environment (default: "default") */
-  environment: string;
+  /** Target environment ID. Unset sends no header: the server uses the API key's environment. */
+  environment?: string;
 }
 
 /**
@@ -88,7 +88,7 @@ export interface IronflowConfigOptions {
   timeout?: number;
   /** Retry policy for file uploads with a replayable body. Other requests are not retried. */
   retry?: ClientRetryConfig;
-  /** Target environment (default: "default") */
+  /** Target environment ID. Unset sends no header: the server uses the API key's environment. */
   environment?: string;
 }
 
@@ -111,8 +111,12 @@ export const DEFAULT_CONFIG: IronflowConfig = {
     pauseOnHidden: true,
     reconnectOnVisible: true,
   },
-  environment: DEFAULT_ENVIRONMENT,
 };
+
+/** The environment header, or nothing when unset: fetch would send the string "undefined". */
+export function environmentHeader(environment?: string): Record<string, string> {
+  return environment ? { [HEADERS.ENVIRONMENT_ID]: environment } : {};
+}
 
 /**
  * Merge user config with defaults
@@ -143,7 +147,7 @@ export function mergeConfig(options: IronflowConfigOptions): IronflowConfig {
     logger: options.logger,
     timeout: options.timeout,
     retry: options.retry,
-    environment: options.environment ?? DEFAULT_CONFIG.environment,
+    environment: options.environment,
   };
 }
 

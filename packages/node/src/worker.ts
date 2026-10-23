@@ -115,7 +115,7 @@ class IronflowWorker implements Worker {
   private readonly pollWaitSeconds: number;
   private readonly drainTimeout: number;
   private readonly logger: Logger;
-  private readonly environment: string;
+  private readonly environment: string | undefined;
   private readonly apiKey?: string;
 
   private state: WorkerState = "idle";

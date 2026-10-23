@@ -9,7 +9,6 @@
 
 import type { IronflowFunction, Logger } from "@ironflow/core";
 import {
-  DEFAULT_ENVIRONMENT,
   HEADERS,
   IronflowError,
   restRetryable,
@@ -40,21 +39,23 @@ export function functionCodeHash(handler: unknown): string {
 /**
  * The environment a worker scopes its requests to.
  */
-export function resolveEnvironment(configured?: string): string {
-  return configured ?? process.env.IRONFLOW_ENV ?? DEFAULT_ENVIRONMENT;
+export function resolveEnvironment(configured?: string): string | undefined {
+  return configured || process.env.IRONFLOW_ENV || undefined;
 }
 
 /**
  * Common headers for a worker's HTTP calls, including environment.
  */
 export function buildWorkerHeaders(
-  environment: string,
+  environment: string | undefined,
   apiKey?: string
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    [HEADERS.ENVIRONMENT]: environment,
   };
+  if (environment) {
+    headers[HEADERS.ENVIRONMENT_ID] = environment;
+  }
   if (apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
   }

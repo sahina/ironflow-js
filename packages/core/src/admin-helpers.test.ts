@@ -96,6 +96,6 @@ describe("ExecuteSQL wire", () => {
 describe("capacityQuery", () => {
   it("encodes only the set filters", () => {
     expect(capacityQuery()).toBe("");
-    expect(capacityQuery({ env: "env_default", function: "fn a", limit: 5 })).toBe("?env=env_default&function=fn+a&limit=5");
+    expect(capacityQuery({ env: "env_default", function: "fn a", limit: 5 })).toBe("?env_id=env_default&function=fn+a&limit=5");
   });
 });

@@ -36,7 +36,7 @@ describe.skipIf(!SEED_PATH)("readiness streams — live server", () => {
     // calls answer the Connect code; the server text names the rule.
     await expect(streams.append(id, { ...event(3), name: "$mine" })).rejects.toMatchObject({
       code: "invalid_argument",
-      message: expect.stringMatching(/prefix is reserved/),
+      message: expect.stringMatching(/Ironflow-owned root/),
     });
     expect((await streams.getInfo(id))!.version).toBe(2);
   });

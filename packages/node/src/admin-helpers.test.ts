@@ -68,7 +68,7 @@ describe("capacity", () => {
     await c.capacity.stats();
     expect(calls(f).map((x) => x.path)).toEqual([
       "/api/v1/capacity/queue?function=fn-1&limit=10",
-      "/api/v1/capacity/lanes?env=env_default",
+      "/api/v1/capacity/lanes?env_id=env_default",
       "/api/v1/capacity/leases",
       "/api/v1/capacity/buckets",
       "/api/v1/capacity/sessions",

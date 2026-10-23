@@ -118,6 +118,7 @@ export type {
   EmitOptions,
   EmitResult,
   TriggerBatchEvent,
+  TriggerBatchResult,
   StoredEvent,
   ListEventsOptions,
   ListEventsResult,

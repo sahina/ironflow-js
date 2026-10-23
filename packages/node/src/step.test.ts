@@ -1521,7 +1521,7 @@ describe("createStepClient (real implementation)", () => {
       expect(mockFetch).toHaveBeenCalledTimes(2);
       for (const [, init] of mockFetch.mock.calls) {
         expect((init as RequestInit).headers).toMatchObject({
-          "X-Ironflow-Environment": "staging",
+          "X-Ironflow-Environment-ID": "staging",
         });
       }
     });
@@ -1567,7 +1567,7 @@ describe("createStepClient (real implementation)", () => {
 
       expect(mockFetch).toHaveBeenCalledTimes(2);
       for (const [, init] of mockFetch.mock.calls as [string, RequestInit][]) {
-        expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe("staging");
+        expect((init.headers as Record<string, string>)["X-Ironflow-Environment-ID"]).toBe("staging");
       }
     });
 

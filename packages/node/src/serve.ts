@@ -26,7 +26,6 @@ import {
   createLogger,
   createNoopLogger,
   HEADERS,
-  DEFAULT_ENVIRONMENT,
   getConfiguredServerUrl,
   type ValidatedPushRequest,
 } from "@ironflow/core";
@@ -100,15 +99,9 @@ export type UniversalHandler = (
  */
 export function serve(config: ServeConfig): UniversalHandler {
   hydrateEnvFromDiscovery();
-  // Resolve environment
-  const environment =
-    config.environment ?? process.env.IRONFLOW_ENV ?? DEFAULT_ENVIRONMENT;
-  // Step callbacks get only an explicitly chosen environment. The "default"
-  // fallback above is for the response header; sending it would 403 a push
-  // app whose API key is scoped to another environment (#2471). `||`, not
-  // `??`: an empty string falls back to IRONFLOW_ENV, as in Go, and an empty
-  // result is unset.
-  const runEnvironment = config.environment || process.env.IRONFLOW_ENV || undefined;
+  // `||`, not `??`: an empty string falls back to IRONFLOW_ENV, as in Go, and
+  // an empty result is unset.
+  const environment = config.environment || process.env.IRONFLOW_ENV || undefined;
 
   // Initialize logger
   let logger: Logger;
@@ -346,7 +339,7 @@ export function serve(config: ServeConfig): UniversalHandler {
 
       // Execute function
       const serverUrl = config.serverUrl || getConfiguredServerUrl();
-      const response = await executeHandler(fn, pushRequest, config.eventDefinitions, serverUrl, runEnvironment);
+      const response = await executeHandler(fn, pushRequest, config.eventDefinitions, serverUrl, environment);
       return sendResponse(200, response);
     } catch (error) {
       // Unexpected error
@@ -515,7 +508,7 @@ function normalizeRequest(
     "Content-Type": "application/json",
   };
   if (environment) {
-    responseHeaders[HEADERS.ENVIRONMENT] = environment;
+    responseHeaders[HEADERS.ENVIRONMENT_ID] = environment;
   }
 
   // Check if it's a native Fetch Request

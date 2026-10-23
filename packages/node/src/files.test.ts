@@ -26,13 +26,13 @@ describe("FilesClient", () => {
   it("sends the environment header when configured", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(json(200, { buckets: [] }));
     await new FilesClient({ serverUrl: "http://localhost:9123", timeout: 5000, environment: "staging" }).listBuckets();
-    expect(new Headers(vi.mocked(fetch).mock.calls[0]![1]!.headers).get("X-Ironflow-Environment")).toBe("staging");
+    expect(new Headers(vi.mocked(fetch).mock.calls[0]![1]!.headers).get("X-Ironflow-Environment-ID")).toBe("staging");
   });
 
   it("client.files() carries the client's environment", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(json(200, { buckets: [] }));
     await createClient({ serverUrl: "http://localhost:9123", environment: "staging" }).files().listBuckets();
-    expect(new Headers(vi.mocked(fetch).mock.calls[0]![1]!.headers).get("X-Ironflow-Environment")).toBe("staging");
+    expect(new Headers(vi.mocked(fetch).mock.calls[0]![1]!.headers).get("X-Ironflow-Environment-ID")).toBe("staging");
   });
 
   it("rejects a dot-segment path without sending a request", async () => {

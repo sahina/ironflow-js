@@ -20,7 +20,9 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
 
-const ENV_HEADER = "X-Ironflow-Environment";
+const ENV_HEADER = "X-Ironflow-Environment-ID";
+// The server answers 400 to the pre-#3088 header, so it must never be sent.
+const OLD_ENV_HEADER = "X-Ironflow-Environment";
 
 /** Build a minimal Response-like object; `text`/`json` are spies so we can assert read behaviour. */
 function mockResponse(
@@ -75,7 +77,8 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
       const headers = lastHeaders(fetchMock);
       expect(headers["Content-Type"]).toBe("application/json");
-      expect(headers[ENV_HEADER]).toBe("default");
+      expect(headers[ENV_HEADER]).toBeUndefined();
+      expect(headers[OLD_ENV_HEADER]).toBeUndefined();
       expect(headers["Authorization"]).toBe("Bearer ifkey_abc");
       expect(lastFetchInit(fetchMock).method).toBe("POST");
     });
@@ -250,7 +253,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
       const headers = lastHeaders(fetchMock);
       expect(headers["Content-Type"]).toBe("application/json");
-      expect(headers[ENV_HEADER]).toBe("default");
+      expect(headers[ENV_HEADER]).toBeUndefined();
       expect(headers["Authorization"]).toBe("Bearer k");
     });
 
@@ -329,7 +332,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
       const headers = lastHeaders(fetchMock);
       expect(headers["Content-Type"]).toBeUndefined();
-      expect(headers[ENV_HEADER]).toBe("default");
+      expect(headers[ENV_HEADER]).toBeUndefined();
       expect(headers["Authorization"]).toBe("Bearer k");
       expect(lastFetchInit(fetchMock).body).toBeUndefined();
     });

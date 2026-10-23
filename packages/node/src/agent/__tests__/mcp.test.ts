@@ -295,7 +295,7 @@ describe("exposeMcp() — runtime", () => {
 
       expect(fetchMock).toHaveBeenCalledTimes(2);
       for (const [, init] of fetchMock.mock.calls as unknown as [string, RequestInit][]) {
-        expect((init.headers as Record<string, string>)["X-Ironflow-Environment"]).toBe(want);
+        expect((init.headers as Record<string, string>)["X-Ironflow-Environment-ID"]).toBe(want);
       }
     } finally {
       if (saved === undefined) delete process.env.IRONFLOW_ENV;

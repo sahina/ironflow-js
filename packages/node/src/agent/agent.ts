@@ -76,7 +76,7 @@ const DEFAULT_MAX_TURNS = 20;
  *       messages: [{ role: "user", content: `Review:\n${diff}` }],
  *       call: () => myProvider.complete(...),
  *     });
- *     const decision = await approve("ship-it", { ttl: "24h", payload: findings });
+ *     const decision = await approve("ship-it.approved", { ttl: "24h", payload: findings });
  *     return { approved: decision.approved };
  *   }
  * );

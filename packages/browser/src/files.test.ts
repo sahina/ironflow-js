@@ -51,7 +51,7 @@ describe("BrowserFilesClient", () => {
     expect(url).toBe("http://localhost:9123/api/v1/files/buckets/docs/objects/a%20b/c.txt");
     const h = new Headers(init.headers);
     expect(h.get("Authorization")).toBe("Bearer jwt");
-    expect(h.get("X-Ironflow-Environment")).toBe("test-env");
+    expect(h.get("X-Ironflow-Environment-ID")).toBe("test-env");
     expect(h.get("Content-Type")).toBe("text/plain");
     expect(init.body).toBe(file);
   });
@@ -199,7 +199,7 @@ describe("signed URL helpers", () => {
     expect(url).toBe("http://h/api/v1/files/signed?token=t");
     const h = new Headers(init.headers);
     expect(h.get("Authorization")).toBeNull();
-    expect(h.get("X-Ironflow-Environment")).toBeNull();
+    expect(h.get("X-Ironflow-Environment-ID")).toBeNull();
     expect(h.get("Content-Type")).toBe("text/plain");
     expect(init.credentials).toBe("omit");
   });

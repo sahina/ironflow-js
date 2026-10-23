@@ -419,7 +419,7 @@ export async function createClient(
 
   const queue = new OfflineQueue({
     dbName:
-      queueConfig.dbName ?? queueDbName(config.serverUrl, config.environment),
+      queueConfig.dbName ?? queueDbName(config.serverUrl, config.environment ?? ""),
     identity: queueConfig.identity,
     maxItems: queueConfig.maxItems,
     maxBytes: queueConfig.maxBytes,
@@ -458,7 +458,7 @@ export async function createClient(
     // reconfigured to another server or environment while writes were queued.
     currentDestination: () => {
       const live = client.getConfig();
-      return { serverUrl: live.serverUrl, environment: live.environment };
+      return { serverUrl: live.serverUrl, environment: live.environment ?? "" };
     },
     send: (path, write) => client[REPLAY_QUEUED_WRITE](path, write.body),
   });

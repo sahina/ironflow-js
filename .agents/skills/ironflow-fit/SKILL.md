@@ -1,6 +1,6 @@
 ---
 name: ironflow-fit
-version: 0.49.0
+version: 0.50.0
 description: |
   Analyze a codebase or workspace and produce a visual HTML report on whether and where
   Ironflow fits — event-driven readiness, ranked opportunities with file:line evidence,

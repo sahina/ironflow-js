@@ -557,6 +557,16 @@ interface TriggerBatchEvent {
 }
 ```
 
+### TriggerBatchResult
+
+One result of a `triggerBatch()` call, in request order. `error` is set when the item did not emit; the other items still do.
+
+```typescript
+interface TriggerBatchResult extends EmitResult {
+  error?: { code: string; message: string };
+}
+```
+
 ---
 
 ## Step Types
@@ -2193,7 +2203,6 @@ import {
   DEFAULT_HOST,          // "localhost"
   DEFAULT_SERVER_URL,    // "http://localhost:9123"
   DEFAULT_WS_URL,        // "ws://localhost:9123/ws"
-  DEFAULT_ENVIRONMENT,   // "default"
 
   DEFAULT_TIMEOUTS,
   // { CLIENT: 30_000, FUNCTION: 600_000, TRIGGER_SYNC: 30_000,
@@ -2249,7 +2258,7 @@ import {
   // SUBSCRIPTION_ERROR, NOT_CONFIGURED
 
   HEADERS,
-  // { ENVIRONMENT: "X-Ironflow-Environment" }
+  // { ENVIRONMENT_ID: "X-Ironflow-Environment-ID" }
 
   WS_MESSAGE_TYPES,
   // { SUBSCRIBE, UNSUBSCRIBE, ACK, EVENT, SUBSCRIPTION_RESULT,

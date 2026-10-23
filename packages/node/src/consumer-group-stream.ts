@@ -217,7 +217,7 @@ class GroupSubscription<T> implements AckableSubscription {
       interceptors: [
         (next) => async (req) => {
           if (apiKey) req.header.set("Authorization", `Bearer ${apiKey}`);
-          req.header.set(HEADERS.ENVIRONMENT, environment);
+          if (environment) req.header.set(HEADERS.ENVIRONMENT_ID, environment);
           req.header.set(SDK_HEADER.name, SDK_HEADER.value);
           return next(req);
         },
