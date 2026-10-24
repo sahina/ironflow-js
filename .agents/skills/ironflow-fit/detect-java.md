@@ -7,7 +7,7 @@ The script owns the regexes; never re-derive them here.
 |---|---|---|---|---|
 | `java.scheduled` | `@Scheduled`, Quartz, Spring Batch | A cron holds business state in memory. A restart mid-run loses it; two instances run it twice unless you added a lock | Cron-triggered function with durable steps; the engine holds the state, not the pod | strong |
 | `java.fire-and-forget` | `@Async`, `CompletableFuture.supplyAsync`, `TaskExecutor` | The work is gone if the JVM dies between the return and the completion. No retry, no record it ever started | Emit an event; the run is persisted before any work happens | strong |
-| `java.transactional` + `java.remote-in-txn` **in the same file** | A remote call inside a database transaction | The classic dual write. The DB commits and the remote call fails, or the reverse. Nothing reconciles them | Outbox for the emit; saga with compensation for multi-service writes | strong |
+| `java.transactional` + `java.remote-in-txn` **in the same file** | A remote call inside a database transaction | The classic dual write. The DB commits and the remote call fails, or the reverse. Nothing reconciles them | Entity stream as the write, or your own outbox row relayed to Ironflow with an idempotency key (Ironflow's outbox covers only its own store); saga for cross-service writes | strong |
 | `java.broker-consumer` | `@RabbitListener`, `@KafkaListener`, `@JmsListener`, Spring Cloud Stream | Nothing — they already do EDA. What they usually lack is replay, a durable run record, and compensation | Verdict becomes **already doing EDA**. Pitch durability and replay, not the pattern | reframe |
 | `java.retry` | `@Retryable`, `RetryTemplate`, resilience4j | Retry lives in the process. A restart mid-backoff drops the attempt; there is no dead-letter and no visibility into what is retrying | Engine-side retry with backoff, a queryable failed run, resume from the last step | strong |
 | `java.status-column` | A status/state enum on an entity | The status column is a hand-rolled state machine. Rows get stuck in intermediate states when a step fails halfway, which is what the reconciliation cron exists to clean up | Entity stream — the lifecycle becomes the events, the column becomes a projection | supporting |
@@ -24,7 +24,7 @@ The script owns the regexes; never re-derive them here.
 
 ## Adoption note
 
-Java is Tier 2. Their side stays Java — see `adoption-paths.md`, and link the team
+Java is Tier 2: no Java SDK ships (the SDK comparison lists it as "later", so label it planned), and a generated client has no worker runtime. Their side stays Java — see `adoption-paths.md`, and link the team
 to <https://docs.ironflow.run/how-to-guides/integration/other-languages/>, which walks client
 generation, `RegisterFunction`, and a push handler end to end. Do not show a Java
 team a TypeScript workflow without the Java half beside it.

@@ -384,8 +384,8 @@ export interface Run {
 export interface ListRunsOptions {
   /** Filter by function ID */
   functionId?: string;
-  /** Filter by status */
-  status?: RunStatus;
+  /** Filter by status. "pending" is retired and the server rejects it. */
+  status?: Exclude<RunStatus, "pending">;
   /** Maximum number of results */
   limit?: number;
   /** Pagination cursor */

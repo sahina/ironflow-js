@@ -61,9 +61,13 @@ export type {
   IronflowClientConfig,
   RegisterFunctionRequest,
   RegisterFunctionResult,
+  // The shapes IronflowClient returns (string timestamps), not core's Date-based ones (#3043).
+  ListRunsOptions,
+  ListRunsResult,
+  Run,
 } from "./client.js";
-// IronflowClient's own request and result shapes. Core exports Run, EmitOptions and the
-// rest under the same names with different fields, so these carry a Client prefix.
+// IronflowClient's own request and result shapes. Core exports EmitOptions and EmitResult
+// under the same names with different fields, so these carry a Client prefix.
 export type {
   EmitOptions as ClientEmitOptions,
   EmitResult as ClientEmitResult,
@@ -131,10 +135,7 @@ export type {
 
   // Run types
   RunInfo,
-  Run,
   RunStatus,
-  ListRunsOptions,
-  ListRunsResult,
   RunStep,
   RunStepsResult,
   RunStreamsResult,

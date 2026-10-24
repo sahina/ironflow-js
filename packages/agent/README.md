@@ -44,7 +44,7 @@ npx -y @ironflow/agent login
 
 The command is the same in zsh.
 
-The key goes to `~/.ironflow/agent/credentials.json` with mode `0600`. If the file is readable by other users, the agent refuses to use it. `npx -y @ironflow/agent logout` removes the key.
+The key goes to `~/.ironflow/agent/credentials.json` with mode `0600`. If the file is readable by other users, the agent refuses to use it. `npx -y @ironflow/agent logout` removes the key. `npx -y @ironflow/agent --help` prints the commands.
 
 You can set an environment variable in the agent config instead. A variable always wins over the stored key.
 
@@ -124,9 +124,9 @@ The file tools and the search tools stay inside your project folder. A path outs
 
 At each prompt you can allow once, allow for this session, or reject. "Allow for this session" is kept in memory and ends with the session. For a file or MCP tool it covers that tool. For the shell, "Allow this exact command this session" covers that command text only: a later `npm test` runs with no prompt, but `npm test -- --run` asks again. A command with `$`, a backtick, a glob, a redirect other than `2>/dev/null` or `2>&1`, or a heredoc can only be allowed once. The grant covers the text, not what the command runs: if `npm test` or `bash x.sh` runs a script, a change to that script also runs with no prompt. No mode approves edits for you. If you reject a call, the agent does not retry it.
 
-An MCP server that your editor passes in cannot use the name `ironflow`. The agent skips it and writes a line to its log. This keeps the read-only Ironflow tools separate from tools it cannot vouch for.
+The agent mounts only HTTP MCP servers from your editor. It skips any other type and writes a line to its log. An MCP server that your editor passes in also cannot use the name `ironflow`. The agent skips it and writes a line to its log. This keeps the read-only Ironflow tools separate from tools it cannot vouch for.
 
-Stop a turn with the editor's stop button. Open prompts close, and the turn ends as cancelled. Past sessions reload from the transcripts in `IRONFLOW_AGENT_HOME`. A transcript (`<IRONFLOW_AGENT_HOME>/sessions/*.jsonl`) holds your prompts, the text of the files the agent read and the output of its tools, in plain text. When it starts, the agent deletes transcripts older than `IRONFLOW_AGENT_SESSION_DAYS` days (30 by default). `ironflow-agent logout --purge` deletes all of them.
+Stop a turn with the editor's stop button. Open prompts close, and the turn ends as cancelled. Past sessions reload from the transcripts in `IRONFLOW_AGENT_HOME`. A transcript (`<IRONFLOW_AGENT_HOME>/sessions/*.jsonl`) holds your prompts, the text of the files the agent read and the output of its tools, in plain text. When it starts, the agent deletes transcripts older than `IRONFLOW_AGENT_SESSION_DAYS` days (30 by default). `ironflow-agent logout --purge` deletes all of them. It also removes the stored key and the `flue.db` file (with its `-wal` and `-shm` files) in `IRONFLOW_AGENT_HOME`.
 
 ## Logs
 

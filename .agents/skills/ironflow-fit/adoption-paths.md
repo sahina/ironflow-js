@@ -22,8 +22,8 @@ and the reader can follow a link.
 
 **Tier 1 — Go, TypeScript, Python.** Hand-written worker runtimes provide
 pull mode and durable-step memoization. Python's client surface is generated.
-Advanced step primitives differ by language; check the SDK comparison before
-promising a specific operation.
+The three are peers: the SDK comparison lists each step primitive per language.
+Check it before promising a specific operation.
 
 **Tier 2 — Rust, C#, Java later.** Generated client, no worker runtime.
 Functions can still execute via **push mode**: the server POSTs to an HTTP
@@ -37,16 +37,23 @@ Three tiers, in this order. State all three; do not stop at the good news.
 
 ### 1. Calling Ironflow — available today, no SDK required
 
-Generate from **both** published artifacts:
+Use **both** surfaces:
 
-- `api/openapi.json` — OpenAPI 3.1, also served at `GET /api/v1/openapi.json`
-- `api/proto/ironflow/v1/*.proto` — Buf, with first-class Java, C#, and Rust codegen
+- **REST** — generate a client from `api/openapi.json`, OpenAPI 3.1, published as
+  `/openapi.json` on the docs site and served by every server at
+  `GET /api/v1/openapi.json`.
+- **ConnectRPC** — send plain proto3-JSON `POST /ironflow.v1.<Service>/<Method>` with the
+  same bearer token and environment header. `other-languages.md` walks `RegisterFunction`
+  as the pattern for every method. Fields are camelCase, 64-bit integers are decimal
+  strings, and empty fields are omitted. The `api/proto/ironflow/v1/*.proto` files are
+  the schema, and Buf can generate Java, C# and Rust clients from them for readers who
+  have the files.
 
-The OpenAPI artifact is **REST only** (ADR 0079; #1972 removed the REST twins of every
-Connect route). It reaches event *reads*, KV with compare-and-set, config, secrets,
+The OpenAPI artifact is **REST only** (ADR 0079; #1972 removed the REST duplicates of Connect
+routes). It reaches event *reads*, KV with compare-and-set, config, secrets,
 workers, and the whole ops/admin surface — DLQ, circuit breakers, capacity, API keys,
 users, tenants, policies. On that ops surface the generated client is **wider than the
-Go and Node SDKs**. Everything workflow-shaped is proto-only (next section).
+Go and Node SDKs**. Everything workflow-shaped is Connect-only (next section).
 
 `other-languages.md` carries a worked Kiota example and a "Known gaps in generated
 clients" table — absent `servers`, under-declared `X-Ironflow-Environment-ID`, no
@@ -59,33 +66,39 @@ Ironflow POSTs to an endpoint they own: a Spring `@RestController`, an ASP.NET
 controller, an axum handler. No runtime, no new dependency. This is the blessed
 Tier-2 authoring path, and it is fully documented — `push-protocol.md` covers the
 request and response shapes, HMAC verification, and, for durable steps, the step-ID
-formula and memoization rules.
+formula and memoization rules. `ironflow conformance push --url <endpoint>` checks a
+handler against that contract with no server, and a language counts as supported for
+push mode when its handler passes level 3
+(<https://docs.ironflow.run/reference/api/push-conformance/>).
 
 ### 3. Pull mode — a Tier-1 SDK worker
 
-Crash-resume and long sleeps over a long-running worker need a Tier-1 runtime.
-Saga compensation is available in Go, Node and Python. A Python polling worker
-can handle its supported durable steps. **Their services stay Java.** The
-worker calls those services; it does not replace them.
+Pull mode, a long-running worker with no request timeout, needs a Tier-1 runtime.
+The durable-step and saga-compensation helpers ship in Go, Node and Python alike.
+Push mode can also memoize steps and yield sleeps and waits, but the handler
+implements the replay rules itself and each call stays inside your platform's
+request timeout. **Their services stay Java.** The worker calls those services; it
+does not replace them.
 
-## Both generators, or the path dead-ends
+## Both surfaces, or the path dead-ends
 
 **The workflow surface is ConnectRPC-only.** Emit, register/list/get/invoke functions,
-list/get/cancel/resume runs and read their steps, entity streams, projections, event
-schemas, publish, read-only SQL and webhook management have no REST route
+list/get/cancel/resume runs, read and patch their steps, the run audit trail, entity
+streams, projections, event schemas, publish, read-only SQL and webhook management
+have no REST route
 (`other-languages.md` §"What the generated client does NOT reach"). A team that
-generates from OpenAPI alone ends up with a client that can rotate API keys but cannot
+uses OpenAPI alone ends up with a client that can rotate API keys but cannot
 emit an event. And a cron is a *field on the function*, so no registration means no
 scheduled work either.
 
-Always instruct both toolchains.
+Always instruct both surfaces.
 
-## Needs the proto toolchain
+## Needs the Connect surface
 
 Emit; register a function; list/get/cancel/resume runs and read steps; register a
 projection **and** the external projection worker loop; entity streams; event schemas;
-publish; `ExecuteSQL`; `TriggerSync` and `TriggerBatch`; webhook management; `PauseRun`
-and `InjectStepOutput`; agent tools.
+publish; `ExecuteSQL`; `TriggerSync` and `TriggerBatch`; webhook management; `PauseRun`,
+`InjectStepOutput` and `PatchStep`; `GetAuditTrail`; agent tools.
 
 ## Unreachable from generated code, at any price
 
@@ -120,9 +133,11 @@ typed endpoints is the most credibility-earning sentence in the report.
 
 Keep this short and link out; `other-languages.md` has the full table.
 
-- **`X-Ironflow-Environment-ID` is under-declared in the spec.** Set it as a default
-  header in the transport core or writes land in the default environment. Most
-  likely first-week surprise.
+- **`X-Ironflow-Environment-ID` is under-declared in the spec.** A generated client
+  will not ask for it. Set it once as a default header in the transport core, to the
+  environment the `ifkey_` key was created for. The key's own environment decides what
+  a call touches: a header naming another environment's ID gets `403`, an environment
+  name gets `400`, and the secrets routes answer `400` without the header. Most likely first-week surprise.
 - **Authenticate with a long-lived `ifkey_` bearer token.** The only login route in the
   spec is the platform-admin one (`/api/v1/platform/auth/login`); there is no tenant
   login, so a generated tenant client works from an API key.
@@ -132,9 +147,14 @@ Keep this short and link out; `other-languages.md` has the full table.
 - **Python installs as `ironflow-py`, not `ironflow`.** `pip install ironflow-py`
   from v0.33.1 (#1913); the import name stays `ironflow`. The bare name on PyPI is an
   unrelated materials-science package. The polling worker ships from v0.40.0.
+- **Ironflow's outbox covers only Ironflow's store.** A write to the reader's own
+  database that must also produce an event is their outbox: an outbox row in the same
+  local transaction, relayed to Ironflow with a stable idempotency key. Making an entity
+  stream the write removes the question. Link
+  <https://docs.ironflow.run/explanation/outbox/>.
 - **A first-party C# SDK was designed and closed** (so "C# later" above means "not
   planned", not "on the roadmap"). Issue #172, `NOT_PLANNED`:
-  "speculative, no demand signal. Reopen if a .NET user materializes." If the reader
+  "speculative, no demand signal. Closing as not planned; reopen if a .NET user materializes." If the reader
   is a .NET shop, they are the demand signal. Say so.
 - Anything described as planned must be **labeled planned**.
 
@@ -150,4 +170,4 @@ Every strong-fit snippet is **two-sided**:
 
 Never show a TypeScript snippet alone to a non-TypeScript codebase. The reader must
 see their own language first, and must see that the TS file orchestrates rather than
-replaces. For Node and Go readers this rule collapses to one snippet.
+replaces. For Node, Go and Python readers this rule collapses to one snippet.

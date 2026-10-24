@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/browser",
-  "version": "0.50.0",
+  "version": "0.51.0",
   "description": "Browser client for Ironflow event-driven backend platform - real-time subscriptions, workflow triggers, and event emission",
   "type": "module",
   "main": "./dist/index.js",
@@ -33,7 +33,7 @@
     "@connectrpc/connect": "^2.2.0",
     "@connectrpc/connect-web": "^2.2.0",
     "@ironflow/core": "workspace:^",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

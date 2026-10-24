@@ -163,8 +163,8 @@ export type DebounceConfig = Message<"ironflow.v1.DebounceConfig"> & {
   periodMs: number;
 
   /**
-   * JSON-path expression for the debounce group key (e.g. "userId",
-   * "data.customerId"). Empty-payload events use a global sentinel.
+   * Path inside the event data for the debounce group key (e.g. "userId",
+   * "customer.id"); no "data." prefix. Empty-payload events use a global sentinel.
    * See internal/eventpath for path syntax.
    *
    * @generated from field: string key = 2;

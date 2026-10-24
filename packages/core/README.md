@@ -48,8 +48,9 @@ Docs: <https://docs.ironflow.run>
 31. [Webhook Management Types](#webhook-management-types)
 32. [User and Tenant Types](#user-and-tenant-types)
 33. [File Storage Types](#file-storage-types)
-34. [Convenience Aliases](#convenience-aliases)
-35. [Sub-Path Exports](#sub-path-exports)
+34. [Admin Helpers](#admin-helpers)
+35. [Convenience Aliases](#convenience-aliases)
+36. [Sub-Path Exports](#sub-path-exports)
 
 ---
 
@@ -163,13 +164,11 @@ interface CancelOnConfig {
 }
 ```
 
-> **Note:** `CancelOnConfig` is declared in `types.ts` but is currently not re-exported from `@ironflow/core`'s root index. Use the inline shape on the `cancelOn` field of `FunctionConfig` until the explicit type re-export lands:
->
-> ```typescript
-> const cancelOn: { event: string; match: string }[] = [
->   { event: 'order.cancelled', match: '$.data.orderId' },
-> ];
-> ```
+```typescript
+const cancelOn: CancelOnConfig[] = [
+  { event: 'order.cancelled', match: 'orderId' }, // path inside event.data
+];
+```
 
 ### Trigger
 
@@ -401,6 +400,12 @@ interface IronflowEvent<T = unknown> {
   source?: string;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
+  /**
+   * Authenticated emitter the engine recorded (e.g. "apikey:<id>", "user:<id>",
+   * "webhook:<source-id>", "nats", "platform"). Set by the engine from the
+   * caller's credential. Only on events returned by waiting steps.
+   */
+  emittedBy?: string;
 }
 ```
 
@@ -429,7 +434,7 @@ interface EventFilter {
   event: string;
   /** JSON path for matching (e.g., "data.orderId"), not an expression. */
   match?: string;
-  /** Non-empty literal compared at match; omitted/empty snapshots the triggering event. */
+  /** Non-empty literal compared at match; omitted/empty snapshots the triggering event. Requires match. */
   matchValue?: string;
   /** Timeout duration (default: "7d") */
   timeout?: Duration;
@@ -709,6 +714,8 @@ interface ParallelOptions {
 type RunStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "paused" | "waiting_for_capacity" | "waiting";
 ```
 
+`"pending"` is retired: the engine no longer produces it, and the server rejects it as a `ListRunsOptions.status` filter. A server newer than the SDK can send a status this union does not list. The SDK passes it through in lower case instead of throwing, so keep a `default` branch when you switch on a status.
+
 ### RunInfo
 
 Minimal run context passed inside `FunctionContext`.
@@ -750,7 +757,7 @@ interface Run {
 ```typescript
 interface ListRunsOptions {
   functionId?: string;
-  status?: RunStatus;
+  status?: Exclude<RunStatus, "pending">;
   limit?: number;
   cursor?: string;
 }
@@ -867,6 +874,8 @@ type AckMode = "auto" | "manual";
 type BackpressureMode = "drop" | "block" | "buffer";
 type AckType = "ack" | "nak" | "term";
 ```
+
+A server newer than the SDK can send an `AckMode`, `BackpressureMode` or `ConsumerGroupStatus` value these unions do not list. The SDK passes it through, so keep a `default` branch when you switch on one.
 
 ### SubscriptionEvent
 
@@ -1208,7 +1217,7 @@ interface KVBucketInfo {
 ```typescript
 interface KVEntry {
   key: string;
-  value: unknown;        // raw bytes as base64 or string
+  value: unknown;        // stored bytes as base64 from get(), or parsed JSON from getJSON()
   revision: number;
   created_at: string;
   operation: string;     // "put" or "delete"
@@ -1247,7 +1256,7 @@ interface KVListBucketsResult {
 interface KVWatchEvent {
   type: "kv_update";
   key: string;
-  value: string;
+  value: string;          // the stored bytes, base64-encoded; "" for a delete
   revision: number;
   operation: "put" | "delete";
   bucket: string;
@@ -1335,7 +1344,7 @@ interface ConfigWatchCallbacks {
 interface ConfigWatchEvent {
   type: string; // always "config_update" for data events
   name: string;
-  data: Record<string, unknown>;
+  data: Record<string, unknown> | null; // null after the config is deleted
   revision: number;
   updatedAt: string; // ISO-8601
 }
@@ -1359,6 +1368,8 @@ interface APIKey {
   name: string;
   key_prefix: string;
   role_ids?: string[];
+  environment_id?: string;  // the environment the key is bound to
+  tool_scopes?: string[];   // the agent tools the key may call
   created_at: string;
   expires_at?: string;
   last_used_at?: string;
@@ -1374,6 +1385,8 @@ interface CreateAPIKeyInput {
   env_id?: string;
   role_ids?: string[];
   expires_in?: string;
+  /** Limit the agent tools the key may call. A caller grants only scopes it holds, unless it is an admin. */
+  tool_scopes?: string[];
 }
 ```
 
@@ -1691,12 +1704,14 @@ Strips the server REST wire envelope into a `ProjectionStateResult`.
 ```typescript
 import { peelProjectionEnvelope } from '@ironflow/core';
 
-const state = peelProjectionEnvelope<{ count: number }>(rawResponse);
+const state = peelProjectionEnvelope<{ count: number }>(rawResponse, requestedPartition);
 ```
+
+`requestedPartition` is optional. It becomes `partition` when the server sends no partition key (default `"__global__"`). A malformed envelope throws a non-retryable `IronflowError` with code `PROJECTION_ENVELOPE_DRIFT`.
 
 ### SQL Projections
 
-For projections backed by relational tables (Cloud / managed PG).
+For projections backed by relational tables.
 
 ```typescript
 interface CreateSQLProjectionInput {
@@ -1856,10 +1871,10 @@ class IronflowError extends Error {
 | Class | Code | Retryable | When Thrown |
 |---|---|---|---|
 | `ConnectionError` | `CONNECTION_LOST` | true | WebSocket/HTTP connection lost |
-| `SubscriptionError` | `SUBSCRIPTION_ERROR` | true | Subscription setup or delivery failure |
+| `SubscriptionError` | `SUBSCRIPTION_ERROR` | true | Subscription setup or delivery failure (has `subscriptionId`) |
 | `TimeoutError` | `TIMEOUT` | true | HTTP request timeout |
-| `ValidationError` | `VALIDATION_ERROR` | false | Invalid input data |
-| `SchemaValidationError` | `VALIDATION_ERROR` | false | Zod schema validation failure |
+| `ValidationError` | `VALIDATION_ERROR` | false | Invalid input data (has `validationErrors`) |
+| `SchemaValidationError` | `VALIDATION_ERROR` | false | Zod schema validation failure (extends `ValidationError`) |
 | `SignatureError` | `SIGNATURE_INVALID` | false | Invalid webhook signature |
 | `FunctionNotFoundError` | `FUNCTION_NOT_FOUND` | false | Function ID not in registry |
 | `RunNotFoundError` | `RUN_NOT_FOUND` | false | Run ID not found in store |
@@ -1909,6 +1924,17 @@ throwIfAuthError(status: number, context: string): void
 // response header: ERROR_REASON.injectionUnverified -> InjectionUnverifiedError,
 // anything else -> ContendedError.
 connectHTTPError(status: number, message: string, code?: string, options?: { retryable?: boolean; authHelp?: string; reason?: string }): IronflowError
+
+// The error ready() throws when the readiness probe fails: code NOT_READY, the
+// HTTP status, retryable, and the failing dependencies in `details.issues`
+// (the server's `issues` map, for example { nats: "disconnected" }).
+notReadyError(status: number, body?: { issues?: Record<string, string> } | null): IronflowError
+
+// The error code of a failed response. The body's own `code` wins (a capitalised
+// generic code from an older server becomes its Connect code). Without one, the
+// status maps to a Connect code: 401 "unauthenticated", 403 "permission_denied",
+// 404 "not_found", 409 "already_exists", 429 "resource_exhausted", and so on.
+connectCodeForStatus(status: number, code?: string | null): string
 ```
 
 Usage:
@@ -2018,7 +2044,7 @@ These are `z.infer<>` types derived from the corresponding schemas.
 
 ## Protocol Types
 
-Low-level protocol types for SDK authors building custom transports. Import from `@ironflow/core` or `@ironflow/core/protocol`. `InvokeFunctionYield` and `InvokeFunctionAsyncYield` are the exception — they are reachable only from `@ironflow/core/protocol`.
+Low-level protocol types for SDK authors building custom transports. Import from `@ironflow/core` or `@ironflow/core/protocol`.
 
 ### Push Mode (HTTP)
 
@@ -2076,7 +2102,7 @@ interface StepResult {
 type YieldInfo = SleepYield | WaitEventYield | InvokeFunctionYield | InvokeFunctionAsyncYield;
 
 interface SleepYield { step_id: string; type: "sleep"; until: string; }
-interface WaitEventYield { step_id: string; type: "wait_for_event"; event_filter: { event: string; match?: string; timeout?: string; }; }
+interface WaitEventYield { step_id: string; type: "wait_for_event"; event_filter: { payload?: unknown; event: string; match?: string; timeout?: string; }; }
 interface InvokeFunctionYield { step_id: string; type: "invoke_function"; function_id: string; input?: unknown; invoke_timeout_ms?: number; }
 interface InvokeFunctionAsyncYield { step_id: string; type: "invoke_function_async"; function_id: string; input?: unknown; }
 ```
@@ -2110,7 +2136,8 @@ type WSClientMessage = WSSubscribeRequest | WSUnsubscribeRequest | WSAckRequest;
 ```typescript
 interface WSSubscriptionResult {
   type: "subscription_result";
-  results: Array<{ pattern: string; status: "ok" | "error"; subscriptionId?: string; code?: string; message?: string; }>;
+  // A newer server can send a status other than "ok" or "error"; treat it as a failure.
+  results: Array<{ pattern: string; status: "ok" | "error" | (string & {}); subscriptionId?: string; code?: string; message?: string; }>;
 }
 interface WSEventMessage { type: "event"; subscriptionId: string; topic: string; data: unknown; meta?: EventMetadata; eventId?: string; }
 interface WSSubscriptionError { type: "subscription_error"; subscriptionId: string; code: string; message: string; retrying: boolean; }
@@ -2157,9 +2184,13 @@ the exact string form so sequences past `Number.MAX_SAFE_INTEGER` survive.
 
 ### Wire Converters
 
-Server responses are snake_case on both transports (the Connect codec registers
-protojson with `UseProtoNames=true`), so these normalize one wire object into
-the camelCase type of the same name.
+Each converter maps one wire object to the SDK shape it returns. The casing it
+reads depends on the route. Connect responses are protobuf JSON: camelCase, with
+int64 as a string and zero values omitted. `WebhookService` alone registers the
+`UseProtoNames` codec, so the webhook converters read snake_case on both
+transports. `runStepFromWire`, `userFromWire` and `tenantFromWire` read
+snake_case too. `runInspectionFromWire`, `stepInspectionFromWire`,
+`functionListFromWire` and `schemaFromWire` return snake_case shapes.
 
 ```typescript
 import {
@@ -2174,6 +2205,8 @@ import {
   storedEventFromWire,
   runStepFromWire,
   consumerGroupFromWire,
+  userFromWire,
+  tenantFromWire,
   functionListFromWire,
   runInspectionFromWire,
   stepInspectionFromWire,
@@ -2184,7 +2217,8 @@ import {
   rebuildJobFromWire,
   schemaFromWire,
   waitResultFromWire,
-  runStatusFromWire,                // protobuf JSON status -> public status
+  runStatusFromWire,                // protobuf JSON status -> public status; a status a newer
+                                    // server added passes through, UNSPECIFIED and PENDING throw
   runStatusToWire,                  // public status -> protobuf JSON status;
                                     // throws instead of minting a value the
                                     // server would silently discard (#1919)
@@ -2217,7 +2251,7 @@ import {
 
   DEFAULT_WORKER,
   // { MAX_CONCURRENT_JOBS: 10, HEARTBEAT_INTERVAL_MS: 30_000, RECONNECT_DELAY_MS: 5_000,
-  //   CHECKPOINT_INTERVAL_MS: 1_000, MAX_CHECKPOINT_STEPS: 500, MAX_CHECKPOINT_BACKOFF_MS: 30_000,
+  //   POLL_WAIT_SECONDS: 20, CHECKPOINT_INTERVAL_MS: 1_000, MAX_CHECKPOINT_STEPS: 500, MAX_CHECKPOINT_BACKOFF_MS: 30_000,
   //   DRAIN_TIMEOUT_MS: 30_000 }
 
   DEFAULT_RECONNECT,
@@ -2439,7 +2473,7 @@ Upcasters transform event data between schema versions. They run SDK-side when r
 ```typescript
 import { createUpcasterRegistry, type UpcasterFn } from '@ironflow/core';
 
-type UpcasterFn = (data: unknown) => unknown;
+// type UpcasterFn = (data: unknown) => unknown;
 
 const registry = createUpcasterRegistry();
 
@@ -2468,17 +2502,17 @@ The chain must be complete. If v2->v3 is missing, upcasting from v1->v3 throws.
 import { defineEvent, createEventDefinitionRegistry } from '@ironflow/core';
 import type { EventDefinition, EventDefinitionOptions, EventDefinitionRegistry } from '@ironflow/core';
 
-interface EventDefinitionOptions {
-  name: string;
-  version: number;
-  upcast?: UpcasterFn;  // transforms from version-1 to this version
-}
-
-interface EventDefinition {
-  name: string;
-  version: number;
-  upcast?: UpcasterFn;
-}
+// interface EventDefinitionOptions {
+//   name: string;
+//   version: number;
+//   upcast?: UpcasterFn;  // transforms from version-1 to this version
+// }
+//
+// interface EventDefinition {
+//   name: string;
+//   version: number;
+//   upcast?: UpcasterFn;
+// }
 
 // Define event versions
 const OrderPlacedV2 = defineEvent({
@@ -2669,6 +2703,17 @@ interface ServerCapabilities {
 }
 ```
 
+Answer of the readiness probe, `GET /ready`. A server that is not ready makes the call throw (see `notReadyError`).
+
+```typescript
+interface ServerReadiness {
+  /** "ready" */
+  status: string;
+  /** Non-fatal advisories, for example a degraded audit delivery. */
+  warnings?: Record<string, string>;
+}
+```
+
 Agent tools registered with the server, as returned by `client.agentTools.list()` in `@ironflow/node`:
 
 ```typescript
@@ -2749,6 +2794,21 @@ interface StreamSnapshot {
 }
 ```
 
+`collectEntityHistory` follows the `GetEntityHistory` page cursor until the history, or `options.limit` entries, is complete. `fetchPage` sends one request body and returns the decoded page, so each client keeps its own transport. It requests `ENTITY_HISTORY_PAGE_SIZE` (500) events per page and throws an `IronflowError` if the cursor does not advance.
+
+```typescript
+interface EntityHistoryPageWire {
+  entries?: Array<Record<string, unknown>>;
+  nextCursor?: string | number;
+}
+
+collectEntityHistory(
+  fetchPage: (body: Record<string, unknown>) => Promise<EntityHistoryPageWire>,
+  entityId: string,
+  options?: EntityHistoryOptions,
+): Promise<EntityHistoryEntry[]>
+```
+
 ---
 
 ## Project / Environment Types
@@ -2801,8 +2861,11 @@ interface TestUpcastInput {
 
 interface UpcastResult {
   success: boolean;
+  /** The input, unchanged: the server does not run SDK upcasters. */
   data: unknown;
   error?: string;
+  /** The version chain the server resolved, one step per version. */
+  stepsApplied: Array<{ fromVersion: number; toVersion: number; description: string }>;
 }
 ```
 
@@ -3043,6 +3106,258 @@ encodeFilePath(path)                     // percent-encodes each segment, keeps 
 
 ---
 
+## Admin Helpers
+
+Types and wire normalizers behind definition history, executable deployments, raw SQL and the capacity and debounce ops views (`admin-helpers.ts`, #2948). The `@ironflow/node` client's history, `deployments`, `executeSQL`, `capacity` and `debounce` methods use them; see the [Node package reference](../../../docs/reference/js-sdk/node.md).
+
+The Connect routes answer in protobuf JSON: camelCase, int64 as a string, zero values (`false`, `0`, `""`) left out. The REST ops routes answer in snake_case with plain numbers, so the `Capacity*` and `DebounceEntry` types mirror the wire as is.
+
+### Definition history
+
+```typescript
+interface DefinitionHistoryOptions {
+  limit?: number;           // omitted means 50; the server caps it at 200
+  beforeRevision?: number;  // exclusive cursor; pass the previous page's nextBeforeRevision
+}
+
+interface ProjectionDefinition {
+  name: string;
+  environmentId: string;
+  version: number;
+  events: string[];
+  partitionKey: string;
+  mode: string;
+  type: string;
+  sqlDefinition: string;
+  eventHandlers: Record<string, string>;
+  description: string;
+}
+
+interface SchemaDefinition {
+  eventName: string;
+  environmentId: string;
+  version: number;
+  schemaJson: string;       // the archived JSON Schema document, verbatim
+  description: string;
+}
+
+/** A definition as it was before the change that archived it. */
+interface DefinitionHistoryEntry<TDefinition> {
+  eventId: string;
+  revision: number;
+  previousDefinition: TDefinition;
+  actorId: string;
+  changeReason: string;
+  changeType: string;
+  recordedAt: string;       // RFC 3339
+}
+
+interface DefinitionHistoryPage<TDefinition> {
+  entries: DefinitionHistoryEntry<TDefinition>[];
+  hasMore: boolean;
+  nextBeforeRevision: number; // 0 when the history is exhausted
+}
+
+type ProjectionHistoryEntry = DefinitionHistoryEntry<ProjectionDefinition>;
+type ProjectionHistoryPage = DefinitionHistoryPage<ProjectionDefinition>;
+type SchemaHistoryEntry = DefinitionHistoryEntry<SchemaDefinition>;
+type SchemaHistoryPage = DefinitionHistoryPage<SchemaDefinition>;
+
+definitionHistoryRequest(options?: DefinitionHistoryOptions): Record<string, unknown>
+projectionDefinitionFromWire(raw: unknown): ProjectionDefinition
+schemaDefinitionFromWire(raw: unknown): SchemaDefinition
+definitionHistoryEntryFromWire<TDefinition>(raw: unknown, definition: (raw: unknown) => TDefinition): DefinitionHistoryEntry<TDefinition>
+definitionHistoryPageFromWire<TDefinition>(raw: unknown, definition: (raw: unknown) => TDefinition): DefinitionHistoryPage<TDefinition>
+```
+
+### Executable deployments
+
+```typescript
+const DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION = 1; // the ExecutionSnapshot schema this SDK knows
+
+interface RegisterDeploymentInput {
+  functionId: string;
+  deploymentId: string;     // chosen by you, never reused: 1-128 ASCII letters, digits, ".", "_" or "-"
+  artifactDigest: string;   // "sha256:" plus 64 lowercase hex digits
+  snapshot?: Record<string, unknown>; // the ExecutionSnapshot in its ConnectRPC JSON form
+  mode: "push" | "pull";
+  endpointUrl?: string;     // required for push, must be omitted for pull
+}
+
+interface Deployment {
+  environmentId: string;
+  functionId: string;
+  deploymentId: string;
+  artifactDigest: string;
+  snapshot: Record<string, unknown>;
+  mode: "push" | "pull" | "unspecified";
+  endpointUrl: string;
+  createdBy: string;
+  createdAt: string;        // RFC 3339
+}
+
+interface RegisterDeploymentResult {
+  deployment: Deployment;
+  created: boolean;         // false when an identical registration already existed
+}
+
+interface ListDeploymentsOptions {
+  limit?: number;
+  offset?: number;
+}
+
+interface FunctionExecutionRouting {
+  functionId: string;
+  mode: "legacy" | "adopting" | "versioned" | "unspecified";
+  activeDeploymentId: string; // empty unless mode is "versioned"
+  routingRevision: number;
+  transitionId: string;     // non-empty only while mode is "adopting"
+  transitionStartedAt?: string;
+  updatedAt: string;
+}
+
+registerDeploymentRequest(input: RegisterDeploymentInput): Record<string, unknown>
+deploymentFromWire(raw: unknown): Deployment
+executionRoutingFromWire(raw: unknown): FunctionExecutionRouting
+```
+
+`DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION` is the ExecutionSnapshot schema this SDK knows; the server refuses a newer one. See ADR 0081.
+
+### Raw SQL
+
+```typescript
+interface ExecuteSQLOptions {
+  timeoutMs?: number;       // server default 5000, maximum 30000
+  maxRows?: number;         // server default 1000, maximum 10000
+}
+
+interface ExecuteSQLResult {
+  columns: string[];
+  rows: Record<string, string>[]; // one object per row, keyed by column
+  totalRows: number;
+}
+
+executeSQLResultFromWire(raw: unknown): ExecuteSQLResult
+```
+
+Every cell is a string. SQL `NULL` is `""`.
+
+### Capacity and debounce views
+
+```typescript
+interface CapacityListOptions {
+  env?: string;
+  function?: string;        // leases and credits ignore it
+  limit?: number;           // omitted means 100; the server caps it at 1000
+}
+
+capacityQuery(options?: CapacityListOptions): string // the query string with its leading "?", or ""
+```
+
+```typescript
+interface CapacityLane {
+  lane_id: string;
+  environment_id: string;
+  function_id: string;
+  scope: string;
+  scalar_type: string;
+  limit: number;
+  active_reserved: number;
+  config_version: number;
+  created_at: string;
+  last_used_at: string;
+}
+
+interface CapacityQueueEntry {
+  queue_seq: number;
+  run_id: string;
+  execution_seq: number;
+  execution_mode: string;
+  function_id: string;
+  function_version: number | null;
+  lane_id: string | null;
+  timeout_ms: number | null;
+  environment_id: string;
+  first_enqueued_at: string;
+  eligible_at: string;
+  blocking_reason: string;
+  reservation_owner: string | null;
+  reservation_expires_at: string | null;
+  created_at: string;
+}
+
+/** function_id is always "" on this view; match a lease by run_id. */
+interface CapacityLease {
+  lease_id: string;
+  run_id: string;
+  execution_seq: number;
+  lane_id: string | null;
+  lease_token_hash: string;
+  activated_at: string;
+  expires_at: string;
+  engine_node_id: string | null;
+  environment_id: string;
+  function_id: string;
+}
+
+interface CapacityBucket {
+  environment_id: string;
+  function_id: string;
+  lane_id: string | null;
+  last_dispatched_at: string | null;
+  created_at: string;
+}
+
+interface CapacityWorkerSession {
+  session_id: string;
+  worker_id: string;
+  engine_node_id: string;
+  environment_id: string;
+  labels?: Record<string, string>;
+  protocol_caps?: Record<string, unknown>;
+  draining: boolean;
+  heartbeat_expiry: string;
+  created_at: string;
+}
+
+interface CapacityWorkerCredit {
+  credit_id: string;
+  environment_id: string;
+  worker_id: string;
+  session_id: string;
+  engine_node_id: string;
+  slot_ordinal: number;
+  expires_at: string;
+  claimed: boolean;
+  claimed_run_id: string;
+  claimed_execution_seq: number;
+  created_at: string;
+}
+
+interface CapacityStat {
+  environment_id: string;
+  function_id: string;
+  active_leases: number;
+  lane_limit: number;
+  queued: number;
+  reservations: number;
+  oldest_queue_age_seconds: number;
+}
+
+interface DebounceEntry {
+  environment_id: string;
+  function_id: string;
+  debounce_key: string;
+  event_id: string;
+  function_version: number;
+  period_ms: number;
+  armed_at: string;
+  fires_at: string;
+}
+```
+
+---
+
 ## Convenience Aliases
 
 ```typescript
@@ -3060,7 +3375,7 @@ The package provides additional entry points for selective imports:
 |---|---|
 | `@ironflow/core` | Everything (types, schemas, errors, constants, utils, protocol, patterns) |
 | `@ironflow/core/schemas` | Zod schemas and validation helpers only |
-| `@ironflow/core/protocol` | Protocol types and pattern helpers only |
+| `@ironflow/core/protocol` | Protocol types, pattern helpers and subscribe/resume helpers only |
 | `@ironflow/core/gen` | Generated protobuf/ConnectRPC code (requires optional deps). `@ironflow/core/gen/*` imports a single generated file. |
 
 ---

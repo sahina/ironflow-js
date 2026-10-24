@@ -10,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { IronflowClient } from "./client.js";
 import { createFunction } from "./function.js";
 import { serve } from "./serve.js";
+import type { Run } from "./index.js";
 
 const SEED_PATH = process.env["IRONFLOW_READINESS_SEED"];
 // A run through a push endpoint outlasts the 5 second default on a slow machine.
@@ -90,7 +91,11 @@ describe.skipIf(!SEED_PATH)("readiness functions — live server", () => {
     const result = await client.invoke(id, { data: { who: "José" } });
     expect(result).toMatchObject({ functionId: id, status: "completed", output: { echoed: { who: "José" } } });
     expect(result.runId).toBeTruthy();
-    expect(await client.getRun(result.runId)).toMatchObject({ functionId: id, input: { who: "José" } });
+    // Typed with the package's public Run: the timestamps it declares are the strings getRun returns.
+    const run: Run = await client.getRun(result.runId);
+    expect(run).toMatchObject({ functionId: id, input: { who: "José" } });
+    expect(typeof run.createdAt).toBe("string");
+    expect(Number.isNaN(Date.parse(run.createdAt))).toBe(false);
     await expect(client.invoke(`${id}-missing`, { data: {} })).rejects.toMatchObject({ code: "not_found" });
   }, LONG);
 

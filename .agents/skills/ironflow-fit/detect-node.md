@@ -22,5 +22,5 @@ Seeded from the pattern table that used to live in `ironflow-start` Mode 2.
 ## Adoption note
 
 Node and TypeScript are Tier 1 — full worker runtime, durable steps, pull mode.
-Python is also Tier 1 for polling workers: `ironflow.worker.Worker(functions=[...]).run()`.
+Python is also Tier 1: `ironflow.worker.Worker(functions=[...]).run()`.
 No adoption caveat applies. See `adoption-paths.md`.

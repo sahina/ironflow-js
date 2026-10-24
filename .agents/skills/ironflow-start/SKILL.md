@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.50.0
+version: 0.51.0
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",
@@ -139,7 +139,7 @@ ironflow serve --dev      # localhost:9123 — SQLite, embedded NATS, auth disab
 ```
 
 **`--dev` is not optional for local work.** Auth is always enforced otherwise — the only
-other off-switch is `auth.devMode: true` in `ironflow.yaml`, the same bypass — so every `ironflow emit`, SDK call, and dashboard request returns
+other off-switch is `spec.auth.devMode: true` in `ironflow.yaml`, the same bypass — so every `ironflow emit`, SDK call, and dashboard request returns
 `401 authentication required`. Dropping `--dev` (production) auto-bootstraps an admin
 key written to `<db-dir>/.ironflow_bootstrap_key.json` (mode 0400), which you then pass
 as `IRONFLOW_API_KEY`.
@@ -216,7 +216,8 @@ There is no Python template: create a venv, `pip install ironflow-py`, and write
 `worker.py` by hand.
 
 What it actually produces is **flat**: one `worker.ts` (or `main.go`) holding a function,
-a projection, and the worker, plus `package.json` / `tsconfig.json`. No `src/`, no
+a projection, and the worker, plus `package.json` / `tsconfig.json` (Go: `go.mod`) and the
+agent files `.gitignore`, `README.md`, `AGENTS.md`, `CLAUDE.md` and `.mcp.json`. No `src/`, no
 `.env`, no push-mode route. Don't promise the user a directory tree it doesn't create.
 
 If the user passes `--skip-install`, tell them to delete the template's

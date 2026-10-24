@@ -519,7 +519,8 @@ past one that has not been acknowledged. That is deliberate: `order.placed`
 arriving after `order.shipped` is a corrupted projection, not a slow request. A
 consequence worth planning for is that a full queue drains in as many round
 trips as it has writes — `queue.subscribe()` reports `total` so you can render
-"syncing 34 of 500" rather than a spinner that looks stuck.
+"syncing 34 of 500" rather than a spinner that looks stuck. `await app.queue.flush()`
+drains now and resets the backoff, for a "Retry now" button.
 
 ### When it refuses
 
@@ -623,7 +624,7 @@ console.log(result.totalCount);  // Total matching runs
 console.log(result.nextCursor);  // Cursor for next page (undefined if last page)
 ```
 
-### Cancel, Retry, Resume, Patch
+### Cancel, Resume, Patch
 
 ```typescript
 // Cancel a running workflow
@@ -632,7 +633,8 @@ const run = await ironflow.cancelRun('run_abc123', 'No longer needed');
 // Resume a paused or failed run
 const run = await ironflow.resumeRun('run_abc123', 'step-to-resume-from');
 
-// Hot-patch a step's output (replaces the stored output and replays downstream)
+// Hot-patch the stored output of a completed or failed step. The pre-patch value stays in
+// `originalOutput`. The call does not replay downstream steps.
 await ironflow.patchStep('step_xyz789', { correctedValue: 42 }, 'Manual fix');
 ```
 
@@ -1019,6 +1021,23 @@ await ironflow.waitForProjectionCatchup('order-detail-view', {
 });
 ```
 
+To follow the wait as it progresses, `waitForProjectionCatchupStream()` returns an `AsyncIterable<WaitProgress>`. It yields a frame each time the projection cursor advances, then one terminal frame (`terminal: true`) on catch-up, timeout or a server-reported error. Transport and cancellation errors reject iteration. The server caps the wait at 300 s regardless of `timeoutMs`. Pass `signal` to cancel early; leaving the `for await` loop also ends the stream. `currentSeq`, `targetSeq` and `behindByEvents` are `bigint`.
+
+```typescript
+for await (const p of ironflow.waitForProjectionCatchupStream('order-detail-view', {
+  minSeq: wait.targetSeq,
+  partition: 'order-123',
+  timeoutMs: 5000,
+  signal: abortController.signal,
+})) {
+  if (p.terminal) {
+    if (p.caughtUp) break;
+    throw new Error(`wait failed: timedOut=${p.timedOut} error=${p.error}`);
+  }
+  console.log(`behind by ${p.behindByEvents}`);
+}
+```
+
 ### Query a SQL Projection
 
 For projections materialized into relational tables.
@@ -1162,7 +1181,7 @@ const blob = new Blob([await file.arrayBuffer()], { type: file.contentType });
 ```
 
 The browser client retries an upload after a retryable failure (a network error, `408`, `429`
-or `5xx`). Every browser body can be sent again, so every upload is eligible. Set `retry` in the
+or `5xx` other than `501`). Every browser body can be sent again, so every upload is eligible. Set `retry` in the
 client config to change the policy. The two sign calls are retried too: they only create a
 URL. No other files call is retried. An upload has no fixed
 timeout, because a timer would cancel a large upload.
@@ -1186,7 +1205,8 @@ URL, the server returns `415`.
 
 Errors: `PreconditionFailedError` (412), `PayloadTooLargeError` (413) and
 `UnsupportedMediaTypeError` (415) come from `@ironflow/browser`. `ConflictError` (409) and
-`UnauthorizedError` come from `@ironflow/core`. A bad or expired token throws
+`UnauthorizedError` are not re-exported by this package; test `error.name` (see
+[Error Types](#error-types)). A bad or expired token throws
 `UnauthorizedError` with the server message and no API-key advice. A bucket with signed URLs off throws an `IronflowError` with code
 `SIGNED_URLS_DISABLED`.
 
@@ -1424,6 +1444,10 @@ const health = await ironflow.health();
 console.log(health.status);     // 'healthy'
 console.log(health.timestamp);  // ISO 8601
 console.log(health.version);    // Server version
+
+// Readiness probe (GET /ready: database and NATS). health() is liveness only.
+// Throws IronflowError with code NOT_READY and status 503 when the server is not ready.
+const { status, warnings } = await ironflow.ready(); // status is "ready"
 
 // Get server capabilities
 const caps = await ironflow.getCapabilities();
@@ -1687,7 +1711,7 @@ const transport = createConnectRPCTransport('http://localhost:9123', options);
 
 ### Error Types
 
-All error types are re-exported from `@ironflow/core`:
+`@ironflow/browser` re-exports these error classes from `@ironflow/core`:
 
 ```typescript
 import {
@@ -1702,16 +1726,21 @@ import {
   RunCancelledError,       // agents.invoke: terminal run cancellation
   AgentInvokeTimeoutError, // agents.invoke: local timeoutMs elapsed
   QueueFullError,          // offline queue at 500 writes or 5 MB
+  PreconditionFailedError, // 412: an If-Match or If-None-Match precondition failed
+  PreconditionRequiredError, // 428: the write needs If-Match with the version you read (policy set)
+  PayloadTooLargeError,    // 413: file storage request too large
+  UnsupportedMediaTypeError, // 415: file storage content type rejected
 } from '@ironflow/browser';
 ```
 
-Additionally, the REST request helper maps HTTP status codes to specific error types. Import these (and `MemoryCatchupTimeoutError` for `agents.readMemory`) from `@ironflow/core`:
+Additionally, the REST request helper maps HTTP status codes to specific error types. `@ironflow/browser` does not re-export the classes below, nor `ConflictError` (a file-storage 409) or `MemoryCatchupTimeoutError` (`agents.readMemory`). The package bundles its own copy of `@ironflow/core`, so an `instanceof` check against a class imported from `@ironflow/core` does not match. Test `error.name` instead:
 
 - **401** -> `UnauthenticatedError` -- missing or invalid credentials
 - **402** -> `EnterpriseRequiredError` -- legacy. Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; the mapping is retained for compatibility
 - **403** -> `UnauthorizedError` -- insufficient permissions
-- **412** -> `PreconditionFailedError` -- an `If-Match` or `If-None-Match` precondition failed
-- **428** -> `PreconditionRequiredError` -- the write needs `If-Match` with the version you read (policy set)
+- `MemoryCatchupTimeoutError` -- `agents.readMemory` did not reach `minSeq` in time (`error.code` is `MEMORY_CATCHUP_TIMEOUT`)
+
+The REST helper also maps 412 to `PreconditionFailedError` and 428 to `PreconditionRequiredError`. Both are re-exported by `@ironflow/browser`.
 
 ### Error Utilities
 
@@ -1780,9 +1809,13 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Consumer group types:** `ConsumerGroup`, `ConsumerGroupConfig`, `ConsumerGroupStatus`, `AckMode`, `BackpressureMode`, `UpdateConsumerGroupInput`
 
-**Entity stream types:** `AppendEventInput`, `AppendOptions`, `AppendResult`, `ReadStreamOptions`, `StreamEvent`, `StreamInfo`, `EntitySubscribeOptions`, `StreamListEntry`, `EntityHistoryEntry`
+**Entity stream types:** `AppendEventInput`, `AppendOptions`, `AppendResult`, `ReadStreamOptions`, `StreamEvent`, `StreamInfo`, `EntitySubscribeOptions`, `StreamListEntry`, `EntityHistoryEntry`, `EntityHistoryOptions`
 
 **Projection types:** `ProjectionStatusInfo`, `ProjectionStateResult`
+
+**Definition history and raw SQL types:** `DefinitionHistoryOptions`, `DefinitionHistoryEntry`, `DefinitionHistoryPage`, `ProjectionDefinition`, `ProjectionHistoryEntry`, `ProjectionHistoryPage`, `SchemaDefinition`, `SchemaHistoryEntry`, `SchemaHistoryPage`, `ExecuteSQLOptions`, `ExecuteSQLResult`
+
+**Policy set types:** `PolicySet`, `PolicySetMode`, `PolicySetInput`, `PolicySetVersion`, `PolicySetDryRunInput`, `PolicySetDryRunResult`
 
 **Audit types:** `AuditEvent`, `AuditTrailResult`, `GetAuditTrailOptions`, `ListAuditEventsOptions`
 
@@ -1798,11 +1831,13 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Browser-specific types:** `IronflowClient` (type only — construct through `ironflow` or `createClient()`), `IronflowConfig`, `IronflowConfigOptions`, `ReconnectConfig`, `VisibilityConfig`, `AuthConfig`, `BrowserSubscribeOptions`, `SubscriptionGroup`, `Transport`, `TransportCallbacks`, `TransportFactory`, `TransportOptions`
 
-**Agent types:** `AgentsNamespace`, `AgentInvokeOptions`, `AgentInvokeResult`, `AgentProgressEvent`, `AgentStepEvent`, `AgentSubscribeCallbacks`
+**Agent types:** `AgentsNamespace`, `AgentInvokeOptions`, `AgentInvokeResult`, `AgentProgressEvent`, `AgentStepEvent`, `AgentSubscribeCallbacks`, `AgentSubscribeRuntimeOptions`, `AgentReadMemoryOptions`, `AgentMemoryResult`
 
-**Offline queue types:** `CreateClientOptions`, `OfflineQueueConfig`, `QueueApi`, `QueuedWriteResult`, `QueuedWrite`, `QueuedWriteKind`, `DeadLetteredWrite`, `QueueState`, `QueueStats`, `WriteStatus`, `WriteLostReason`
+**Offline queue types:** `CreateClientOptions`, `OfflineQueueConfig`, `QueueApi`, `QueuedWriteResult`, `QueuedWrite`, `QueuedWriteKind`, `DeadLetteredWrite`, `QueueState`, `QueueStats`, `WriteStatus`, `WriteLostReason`, `OfflineQueue`, `OfflineQueueOptions`, `SendOutcome`. The last three are type-only: `OfflineClient` owns the queue, so you cannot construct one.
 
 **Logger:** `Logger`
+
+**Errors and error utilities** (see [Error Handling](#error-handling)): `IronflowError`, `ConnectionError`, `SubscriptionError`, `TimeoutError`, `ValidationError`, `NotConfiguredError`, `RunWaitTimeoutError`, `RunFailedError`, `RunCancelledError`, `AgentInvokeTimeoutError`, `QueueFullError`, `PreconditionFailedError`, `PreconditionRequiredError`, `PayloadTooLargeError`, `UnsupportedMediaTypeError`, `POLICY_SET_ERROR_CODES`, `isRetryable`, `isIronflowError`
 
 **Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`, `DEFAULT_CONFIG`, `mergeConfig`, `createWebSocketTransport`, `createConnectRPCTransport`, `queueDbName`
 

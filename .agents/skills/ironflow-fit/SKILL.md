@@ -1,6 +1,6 @@
 ---
 name: ironflow-fit
-version: 0.50.0
+version: 0.51.0
 description: |
   Analyze a codebase or workspace and produce a visual HTML report on whether and where
   Ironflow fits — event-driven readiness, ranked opportunities with file:line evidence,
@@ -171,13 +171,12 @@ Each opportunity card carries: what they have (with `file:line`), what breaks
 today, the Ironflow equivalent, and effort (low/medium/high).
 
 The **top two candidates get a two-sided snippet** per the snippet rule in
-`adoption-paths.md`. Below that, add one only where code says something prose
-cannot — a card whose recommendation is "delete this" does not need a snippet,
-and padding every card with code makes the report longer without making it
-clearer — their language on their
-side, TypeScript on the orchestration side, framed as *"your services stay
-<language>; this is the orchestration file that sequences them."* For Node and Go
-readers this collapses to one snippet.
+`adoption-paths.md`: their language on their side, TypeScript on the orchestration
+side, framed as *"your services stay <language>; this is the orchestration file
+that sequences them."* For Node, Go and Python readers this collapses to one
+snippet. Below the top two, add a snippet only where code says something prose
+cannot — a card whose recommendation is "delete this" does not need one, and
+padding every card with code makes the report longer without making it clearer.
 
 ### Step 7 — Draw the diagram
 
@@ -235,8 +234,8 @@ is the deliverable.
 
 ## Edge cases
 
-- **Ironflow is already installed** (`@ironflow/node`, `@ironflow/browser`,
-  `ironflow-go`, `ironflow-py`, an `ironflow` binary, or an `ironflow.yaml`). Say so up front and
+- **Ironflow is already installed** (any `@ironflow/*` package, `github.com/sahina/ironflow-go`,
+  `ironflow-py`, an `ironflow` binary, or an `ironflow.yaml`). Say so up front and
   ask whether they want a usage review (`ironflow-code` audits anti-patterns) or a
   fit analysis of the parts *not* yet using it. Do not write a report that pitches
   something they already run.
@@ -252,7 +251,8 @@ is the deliverable.
 ## What this skill does not do
 
 - No AST parsing. Grep and config reads only.
-- No code execution, no builds, no dependency installs, no network calls.
+- No execution of the analyzed code, no builds, no dependency installs. The only
+  network use is fetching Ironflow docs pages for snippets.
 - No edits to the analyzed repository. The report is the only file written.
 - Ruby, PHP, Kotlin, and Scala are not detected. If the stack is unrecognized,
   say so, run the readiness checklist (which is language-neutral), and ask the

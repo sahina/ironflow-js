@@ -62,6 +62,8 @@ cd ironflow-releases/deploy/docker-compose
 docker compose -f docker-compose.single-node.yml --profile postgres up -d
 ```
 
+That starts PostgreSQL, but Ironflow keeps using SQLite until `IRONFLOW_DATABASE_URL` is set. Before the `up`, put `POSTGRES_PASSWORD`, `IRONFLOW_DATABASE_URL` (`postgres://ironflow:<password>@postgres:5432/ironflow?sslmode=disable`) and `IRONFLOW_MASTER_KEY` in a `.env` next to the file.
+
 Day-to-day:
 
 ```bash
@@ -796,7 +798,7 @@ helm rollback ironflow 3 -n ironflow               # to specific revision
 ```
 
 > Helm rollback restores binary, NOT DB schema. Migrations are forward-only and some drop
-> columns (038, 039), so a rollback across one of those needs a DB restore.
+> columns or tables (038, 039, 080, 083), so a rollback across one of those needs a DB restore.
 
 ### Template Switch (Small → Medium)
 

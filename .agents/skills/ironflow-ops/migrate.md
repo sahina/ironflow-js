@@ -15,12 +15,15 @@ grep -A1 '"@ironflow/core"' package.json
 
 # Go SDK
 grep "ironflow" go.mod
+
+# Python SDK
+python3 -m pip show ironflow-py
 ```
 
 ## Step 2: Find Latest
 
 **Everything ships in lockstep.** One release stamps the same version into the server,
-all four npm packages, the Go SDK and the Python SDK — the release script writes a single
+every npm package (including the `@ironflow/agent` CLI), the Go SDK and the Python SDK — the release script writes a single
 version everywhere. So there is no "which version pairs with which"; they match by construction.
 
 Public artifacts (the engine repo `sahina/ironflow` is **private** — end users cannot
@@ -28,28 +31,32 @@ read it):
 
 | Artifact | Where | Tag/version format |
 |---|---|---|
-| Server binary, release notes | `sahina/ironflow-releases` | `v0.24.0` |
-| Go SDK | `sahina/ironflow-go` (mirror) | `v0.24.0` — **not** `sdk/go/ironflow/v*` |
-| JS SDK | npm `@ironflow/{core,node,browser,langgraph}` | `0.24.0` |
-| Python SDK (Tier 1 polling worker) | PyPI `ironflow-py` (import name `ironflow`) | `0.24.0` — stable releases only, no prereleases |
+| Server binary, release notes | `sahina/ironflow-releases` | `v0.50.0` |
+| Go SDK | `sahina/ironflow-go` (mirror) | `v0.50.0` — **not** `sdk/go/ironflow/v*` |
+| JS SDK | npm `@ironflow/{core,node,browser,langgraph}` | `0.50.0` |
+| Ironflow agent (CLI for ACP editors, run with `npx`, not an SDK library) | npm `@ironflow/agent` | `0.50.0` |
+| Python SDK (Tier 1 polling worker) | PyPI `ironflow-py` (import name `ironflow`) | `0.50.0` — stable releases only, no prereleases |
 
 ```bash
 # Latest server + release notes (note --repo: the default repo is private)
 gh release list --repo sahina/ironflow-releases --limit 5
-gh release view v0.24.0 --repo sahina/ironflow-releases --json body -q .body
+gh release view v0.50.0 --repo sahina/ironflow-releases --json body -q .body
 
-# Latest JS SDK (all four move together)
+# Latest JS SDK (every package moves together)
 npm view @ironflow/node version
 
 # Latest Go SDK
 go list -m -versions github.com/sahina/ironflow-go
+
+# Latest Python SDK
+python3 -m pip index versions ironflow-py
 ```
 
 `sdk/go/ironflow/v*` tags exist only inside the private engine repo. Users consuming the
 public mirror see plain `v<version>`.
 
 If user just says "upgrade ironflow" without specifying, ask:
-> "What are you upgrading? Server binary, Go SDK, or JS SDK packages?"
+> "What are you upgrading? Server binary, Go SDK, JS SDK packages, or Python SDK?"
 
 ## Step 3: Compatibility
 
@@ -65,10 +72,10 @@ and that ordering keeps the window one-directional.
 
 ```bash
 # Single version
-gh release view v0.24.0 --repo sahina/ironflow-releases --json body -q .body
+gh release view v0.50.0 --repo sahina/ironflow-releases --json body -q .body
 
 # Range
-for tag in v0.23.0 v0.24.0; do
+for tag in v0.49.0 v0.50.0; do
   echo "=== $tag ==="
   gh release view "$tag" --repo sahina/ironflow-releases --json body -q .body
 done
@@ -91,14 +98,21 @@ TypeScript — move all installed `@ironflow/*` packages together; they are lock
 ```bash
 pnpm update @ironflow/core @ironflow/node @ironflow/browser
 # Or pin (use the SAME version for every package)
-pnpm add @ironflow/node@0.24.0 @ironflow/browser@0.24.0
+pnpm add @ironflow/node@0.50.0 @ironflow/browser@0.50.0
 ```
 
 Go:
 ```bash
 go get github.com/sahina/ironflow-go/ironflow@latest
 # Or pin
-go get github.com/sahina/ironflow-go/ironflow@v0.24.0
+go get github.com/sahina/ironflow-go/ironflow@v0.50.0
+```
+
+Python:
+```bash
+python3 -m pip install -U ironflow-py
+# Or pin
+python3 -m pip install ironflow-py==0.50.0
 ```
 
 ## Step 6: Apply Migration Patterns
@@ -128,6 +142,7 @@ name at every call site of that constructor, then let `tsc` find what the grep m
 ```bash
 pnpm test           # TS
 go test ./...        # Go
+pytest              # Python
 ```
 
 If tests fail → switch to `debug.md` workflow.
@@ -140,6 +155,7 @@ Before deploying to prod:
 3. Test rollback:
    ```bash
    pnpm add @ironflow/node@<old-version>
+   python3 -m pip install ironflow-py==<old-version>   # Python
    ```
    Restart, verify works with old version.
 4. If projections changed: test `ironflow projection rebuild <name>` with both versions.
@@ -281,7 +297,7 @@ sequence. No need to write v1→v3 directly.
    - Revert code changes (imports, API signatures)
    - Restart worker/app
 4. **Server downgrade:** restore previous binary, restart. Migrations are NOT purely additive —
-   several drop columns (e.g. 038, 039) — so a downgrade across one of those needs a DB restore
+   several drop columns or tables (e.g. 038, 039, 080, 083) — so a downgrade across one of those needs a DB restore
    from before the upgrade.
 5. **Projection rebuild after rollback** if handlers changed:
    `ironflow projection rebuild <name>`

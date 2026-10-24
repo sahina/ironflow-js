@@ -1,6 +1,6 @@
 # @ironflow/node
 
-Node.js SDK for [Ironflow](https://ironflow.run), an event-driven backend platform. Provides workers (pull mode), serve handlers (push mode), step execution, projections, entity streams, subscriptions, KV store, config management, webhooks, auth management, and testing utilities.
+Node.js SDK for [Ironflow](https://ironflow.run), an event-driven backend platform. Provides workers (pull mode), serve handlers (push mode), step execution, projections, entity streams, subscriptions, KV store, file storage, config management, webhooks, auth management, agent primitives, and testing utilities.
 
 Published as a public npm package under a commercial license — see [LICENSE](https://github.com/sahina/ironflow-js/blob/main/LICENSE).
 
@@ -579,10 +579,13 @@ import { processOrder } from './functions/process-order.js';
 
 const app = new Hono();
 
-app.post('/api/ironflow', serve({
+const handler = serve({
   functions: [processOrder],
   signingKey: process.env.IRONFLOW_SIGNING_KEY,
-}));
+});
+
+// Hono passes a context, not a Request. Hand `serve` the raw Fetch Request.
+app.post('/api/ironflow', (c) => handler(c.req.raw));
 
 export default app;
 ```
@@ -689,6 +692,8 @@ const client = createClient({
   apiKey: process.env.IRONFLOW_API_KEY,
 });
 ```
+
+Every HTTP request carries `X-Ironflow-SDK: node/<version>`, and so do the WebSocket handshakes of the KV watch, config watch and subscription clients. The server does not read it. When a newer SDK calls an older server that lacks the call, the SDK throws a non-retryable `IronflowError` with code `SERVER_TOO_OLD` that names the first server version that has it. Today only [Consumer Group Stream](#consumer-group-stream) does this.
 
 ### emit(eventName, data, options?)
 
@@ -932,7 +937,11 @@ Every `registerFunction` writes a new version, so a bad deploy can be rolled
 back from the registry without redeploying code.
 
 ```typescript
-await client.registerFunction(processOrder);
+await client.registerFunction({
+  id: 'process-order',
+  triggers: [{ event: 'order.placed' }],
+  preferredMode: 'pull',
+});
 
 const fn = await client.getFunction('process-order');
 await client.updateFunctionStatus('process-order', 'paused');   // pause dispatch
@@ -968,6 +977,15 @@ Server health check. Returns the status string.
 ```typescript
 const status = await client.health();
 console.log(status); // "healthy"
+```
+
+### ready()
+
+Readiness probe. `health()` is liveness; `ready()` reads `GET /ready`, which checks the database and NATS. A server that is not ready makes it throw an `IronflowError` with code `NOT_READY`, `status` 503 and the failing dependencies in `details.issues`. It makes one attempt and does not retry.
+
+```typescript
+const { status, warnings } = await client.ready();
+console.log(status); // "ready"
 ```
 
 ### publish(topic, data, options?)
@@ -1221,7 +1239,7 @@ await client.debounce.list();
 await client.debounce.cancel('env_default', 'process-search', 'user-42');
 ```
 
-See the [Node reference](https://docs.ironflow.run/reference/js-sdk/node/#deployments-definition-history-capacity-and-debounce) for the full set.
+`client.capacity` also has `listLanes`, `listLeases`, `listBuckets`, `listSessions` and `listCredits`. See the [Node reference](https://docs.ironflow.run/reference/js-sdk/node/#deployments-definition-history-capacity-and-debounce) for the full set.
 
 ### Command idempotency (`client.commandDedup`)
 
@@ -1672,7 +1690,7 @@ Real-time event subscriptions via WebSocket with auto-reconnect, consumer groups
 | `serverUrl` | `string` | -- | **Required.** Server URL (e.g., `"http://localhost:9123"`). |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
 | `environment` | `string` | -- | Environment for scoped subscriptions. |
-| `autoReconnect` | `boolean` | `true` | Enable automatic reconnection. |
+| `autoReconnect` | `boolean` | `true` | Enable automatic reconnection. Subscriptions with `startAfterSequence` reconnect regardless. |
 | `reconnectDelay` | `number` | `1000` | Initial reconnect delay in ms. |
 | `maxReconnectDelay` | `number` | `30000` | Maximum reconnect delay in ms. |
 | `reconnectBackoff` | `number` | `1.5` | Reconnect backoff multiplier. |
@@ -1795,7 +1813,7 @@ const sub = await joinConsumerGroupStream(
 ```
 
 - The SDK holds events until `joinConsumerGroupStream` returns, so `sub` is set when `onEvent` runs.
-- The stream needs a server that includes this change (released after v0.47.0). Against an older server the join fails with a `SERVER_TOO_OLD` error that names the first server version with the stream (0.48.0). The SDK does not retry it. Use the WebSocket transport there.
+- The stream needs a server that includes this change (released after v0.47.0). Against an older server the join fails with a `ServerTooOldError` (code `SERVER_TOO_OLD`) that names the first server version with the stream (0.48.0). The SDK does not retry it. Use the WebSocket transport there.
 - `onEvent` may return a Promise and the SDK awaits it, so events are handled in order. A handler that rejects goes to `onError`, and the SDK does not ack the event. In an `AUTO` group a slow handler slows the server through HTTP/2 flow control.
 - `ack`, `nak` and `term` reject with `AckError` (the server refused), `StaleAckError` (the stream reconnected, so the server redelivers the event, or the event was settled already) or `SubscriptionClosedError` (after `unsubscribe()` or a terminal error). In an `AUTO` group they do nothing.
 - A retryable disconnect reconnects with backoff. `Unauthenticated`, `PermissionDenied`, `NotFound` and `InvalidArgument` end the subscription and go to `onError`.
@@ -2231,7 +2249,8 @@ const handle = await exposeMcp({
   ],
   callbackUrl: 'https://api.example.com/api/ironflow',
   // serverUrl defaults to IRONFLOW_SERVER_URL;
-  // apiKey defaults to IRONFLOW_API_KEY
+  // apiKey defaults to IRONFLOW_API_KEY;
+  // environment defaults to IRONFLOW_ENV (else no environment header)
 });
 
 console.log(handle.toolNames); // ["order-tools.fetch-order"]

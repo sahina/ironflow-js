@@ -222,8 +222,9 @@ export interface DebounceConfig {
   /** Quiet period in milliseconds. Floor: 1000 (1 second). */
   periodMs: number;
   /**
-   * JSON path for per-key debouncing (e.g., "userId", "data.customerId").
-   * Same extraction rules as ConcurrencyConfig.key. When omitted, all
+   * Path inside the event data for per-key debouncing (e.g., "userId",
+   * "customer.id"). Unlike ConcurrencyConfig.key, a "data." prefix is not
+   * stripped, so "data.userId" finds nothing. When omitted, all
    * events for the function share a single debounce lane (global key).
    */
   key?: string;

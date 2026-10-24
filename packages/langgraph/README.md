@@ -131,10 +131,11 @@ Appends a `checkpoint.put` event to the thread's stream.
   `thread_id` / `checkpoint_ns` / `checkpoint_id`, suitable for chaining into
   the next `put` as `parent_checkpoint_id`.
 
-### `saver.putWrites(config, writes, taskId): Promise<void>`
+### `saver.putWrites(config, writes, taskId, taskPath?): Promise<void>`
 
 Appends a `checkpoint.putWrites` event holding pending writes for `taskId`
-against the current checkpoint.
+against the current checkpoint. The optional `taskPath` is stored as `task_path`;
+reads order pending writes by `(taskPath, taskId, idx)`.
 
 - `config.configurable.checkpoint_id` — **required** (throws
   `LG_CHECKPOINT_ID_REQUIRED`).
@@ -162,7 +163,7 @@ logically dropped without rewriting history. Duplicate tombstones are harmless.
   - `checkpoint.put` — full checkpoint snapshot (base64-encoded serialized
     bytes plus `checkpoint_ns`, `checkpoint_id`, `parent_checkpoint_id`, `ts`).
   - `checkpoint.putWrites` — pending writes for a task before the next
-    checkpoint (`{ checkpoint_ns, checkpoint_id, task_id, writes[] }`).
+    checkpoint (`{ checkpoint_ns, checkpoint_id, task_id, task_path?, writes[] }`).
   - `checkpoint.deleteThread` — tombstone; carries `deleted_at`.
 
 The serde output (LangGraph emits `Uint8Array`) is base64-encoded into the

@@ -8,7 +8,7 @@ Signal IDs are emitted by `scripts/scan.sh`. This file is the interpretation.
 | `go.fire-and-forget` | bare `go func()` | Killed on shutdown, no record, no retry. A panic inside takes the process with it | Emit an event; the run is persisted first | strong |
 | `go.broker-consumer` | watermill, NATS, kafka-go, sarama (IBM or Shopify path) | Already doing EDA | Verdict becomes **already doing EDA** | reframe |
 | `go.retry` | `backoff.`, `retry.Do`, `MaxRetries` | In-process retry, lost on restart | Engine-side retry with backoff, queryable failed-run history, resume from the last step | strong |
-| `go.remote-in-txn` | `db.Begin()` / `tx.Commit()` near an HTTP call | Dual write | Outbox for the emit; saga for cross-service writes | strong |
+| `go.remote-in-txn` | `db.Begin()` / `tx.Commit()` near an HTTP call | Dual write | Entity stream as the write, or your own outbox row relayed to Ironflow with an idempotency key (Ironflow's outbox covers only its own store); saga for cross-service writes | strong |
 
 ## Combination rules
 
@@ -22,4 +22,4 @@ Signal IDs are emitted by `scripts/scan.sh`. This file is the interpretation.
 ## Adoption note
 
 Go is Tier 1 — full worker runtime, durable steps, pull mode. No adoption caveat.
-Python is also Tier 1 for polling workers: `ironflow.worker.Worker(functions=[...]).run()`.
+Python is also Tier 1: `ironflow.worker.Worker(functions=[...]).run()`.
