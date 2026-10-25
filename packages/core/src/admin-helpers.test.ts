@@ -3,6 +3,7 @@ import {
   capacityQuery,
   definitionHistoryPageFromWire,
   definitionHistoryRequest,
+  DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION,
   deploymentFromWire,
   executeSQLResultFromWire,
   executionRoutingFromWire,
@@ -61,6 +62,23 @@ describe("deployment wire", () => {
     expect(
       registerDeploymentRequest({ functionId: "f", deploymentId: "v1", artifactDigest: "sha256:x", mode: "pull" }),
     ).toEqual({ functionId: "f", deploymentId: "v1", artifactDigest: "sha256:x", mode: "EXECUTION_MODE_PULL", snapshotSchemaVersion: 1 });
+  });
+
+  it("declares schema 1 for a snapshot without schema-2 fields", () => {
+    const base = { functionId: "f", deploymentId: "v1", artifactDigest: "sha256:x", mode: "pull" as const };
+    expect(registerDeploymentRequest({ ...base, snapshot: { timeoutMs: 1000, retry: { maxAttempts: 3 } } }).snapshotSchemaVersion).toBe(1);
+  });
+
+  it.each([
+    ["circuitBreaker", { circuitBreaker: { failureThreshold: 5 } }],
+    ["circuit_breaker", { circuit_breaker: { failure_threshold: 5 } }],
+    ["throttle", { throttle: { limit: 10 } }],
+    ["retry.onExhausted", { retry: { maxAttempts: 3, onExhausted: "fail" } }],
+    ["retry.on_exhausted", { retry: { max_attempts: 3, on_exhausted: "fail" } }],
+  ])("declares schema 2 when the snapshot uses %s", (_name, snapshot) => {
+    const req = registerDeploymentRequest({ functionId: "f", deploymentId: "v1", artifactDigest: "sha256:x", mode: "pull", snapshot });
+    expect(req.snapshotSchemaVersion).toBe(DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION);
+    expect(DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION).toBe(2);
   });
 
   it("maps enums and defaults absent fields", () => {

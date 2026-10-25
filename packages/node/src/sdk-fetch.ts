@@ -1,3 +1,4 @@
+import { IronflowError } from "@ironflow/core";
 import { SDK_VERSION } from "./version.js";
 
 const SDK_HEADER_NAME = "X-Ironflow-SDK";
@@ -37,3 +38,15 @@ export function sdkWebSocket(url: string, protocols?: string[]): WebSocket {
 
 /** The value `sdkFetch` and the Connect interceptors send. */
 export const SDK_HEADER = { name: SDK_HEADER_NAME, value: SDK_HEADER_VALUE } as const;
+
+/** The server is too old for a call; `message` names the minimum version. Not retryable. */
+export class ServerTooOldError extends IronflowError {
+  constructor(rpc: string, minVersion: string, cause?: Error, remedy = "upgrade the server") {
+    super(`${rpc} needs Ironflow server >= ${minVersion}; ${remedy}`, {
+      code: "SERVER_TOO_OLD",
+      retryable: false,
+      cause,
+    });
+    this.name = "ServerTooOldError";
+  }
+}

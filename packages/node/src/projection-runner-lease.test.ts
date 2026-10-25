@@ -4,6 +4,7 @@ import type { IronflowProjection, Logger } from "@ironflow/core";
 import {
   createProjectionRunner, runnerTimings, startProjectionRunners, StreamingUnsupportedError, type ProjectionRunner,
 } from "./projection-runner.js";
+import { ServerTooOldError } from "./index.js"; // the package root: the class a user of @ironflow/node imports
 
 const TRANSPORTS = ["poll", "stream"] as const;
 type Transport = (typeof TRANSPORTS)[number];
@@ -337,15 +338,17 @@ describe("projection runner lease (ADR 0120)", () => {
     expect(svc.pulls).toEqual([1]);
   });
 
-  it.each(TRANSPORTS)("old_server_runs_unguarded (%s)", async (transport) => {
+  it.each(TRANSPORTS)("old_server_stops (%s)", async (transport) => {
     serve(new LeaseFake([event("e1", 1)]));
     svc.noLease = true;
-    const r = new Runner(svc, transport);
-    await until("an unguarded save", () => svc.saves.length === 1);
-    await r.runner.stop();
+    const r = new Runner(svc, transport, { start: false });
+    const err = await r.runner.run().catch((e: unknown) => e);
 
-    expect(svc.pulls.every((e) => e === 0) && svc.saves[0]?.[1] === 0, "no lease on any request").toBe(true);
-    expect(r.logs("running unguarded")).toBe(1);
+    expect(err).toBeInstanceOf(ServerTooOldError);
+    expect((err as ServerTooOldError).code).toBe("SERVER_TOO_OLD");
+    expect((err as Error).message).toBe("AcquireProjectionLease needs Ironflow server >= 0.44.0; upgrade the server");
+    expect(svc.pulls, "no Poll or Stream").toEqual([]);
+    expect(svc.saves, "no Save or Ack").toEqual([]);
     expect(svc.acquires).toBe(1);
   });
 
@@ -375,7 +378,7 @@ describe("projection runner lease (ADR 0120)", () => {
     serve(new LeaseFake([event("e1", 1)]));
     svc.ackError = () => new Response(JSON.stringify({ code: "permission_denied", message: "no" }), { status: 403 });
     const r = new Runner(svc, "poll", { external: true });
-    await until("the runner stops", () => r.logs("Projection runner failed") === 1);
+    await until("the runner stops", () => r.logs("Projection runner x failed") === 1);
     await r.runner.stop();
     expect(r.logs("Projection poll error"), "an auth error must not poll forever").toBe(0);
   });

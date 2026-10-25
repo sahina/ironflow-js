@@ -37,6 +37,7 @@ import { isYieldSignal } from "./internal/errors.js";
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
+import { isTerminalFailure, retryAfterMsOf } from "./internal/retry.js";
 import { DISPATCH_PATH, handleAgentToolDispatch } from "./agent/dispatch.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
@@ -449,10 +450,13 @@ async function executeHandler(
     const errorCode = error instanceof IronflowError ? error.code : "ERROR";
     const retryable = isRetryable(error);
 
-    // Run compensations only if error is not retryable (terminal failure)
-    if (ctx.hasCompensations() && !retryable) {
+    // Compensate only when the run ends here: a non-retryable error, or a
+    // retryable one on the last attempt under onExhausted "fail". Under "pause"
+    // the run is held for resume and keeps its steps.
+    if (ctx.hasCompensations() && isTerminalFailure(retryable, ctx.runInfo)) {
       await executeCompensations(ctx);
     }
+    const retryAfterMs = retryAfterMsOf(error);
 
     // Get step ID if it's a step error
     let stepId: string | undefined;
@@ -477,6 +481,7 @@ async function executeHandler(
         step_id: stepId,
         retryable,
         stack: errorStack,
+        ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}),
       },
     };
   }

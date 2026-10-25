@@ -25,6 +25,10 @@ export interface PushRequest {
   run_id: string;
   function_id: string;
   attempt: number;
+  /** The run's retry budget; absent from an engine that predates it */
+  max_attempts?: number;
+  /** "pause" or "fail"; absent from an engine that predates it */
+  on_exhausted?: string;
   event: {
     id: string;
     name: string;
@@ -72,6 +76,8 @@ export interface PushResponse {
     step_id?: string;
     retryable: boolean;
     stack?: string;
+    /** Delay before the next attempt requested by the handler (RetryAfterError) */
+    retry_after_ms?: number;
   };
   yield?: YieldInfo;
 }

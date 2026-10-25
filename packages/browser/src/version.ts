@@ -1,2 +1,2 @@
-// Mirror of package.json#version; scripts/release.sh and release.yml stamp it (skew.test.ts checks it).
-export const SDK_VERSION = "0.51.0";
+// Mirror of package.json#version; release.yml stamps it (skew.test.ts checks it).
+export const SDK_VERSION = "0.52.0";

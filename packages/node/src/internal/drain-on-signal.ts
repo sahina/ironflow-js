@@ -15,10 +15,11 @@ interface Registry {
 
 const SIGNALS = ["SIGINT", "SIGTERM"] as const;
 
-// The package ships each entry point as its own bundle, so createWorker and
-// createStreamingWorker each load a copy of this module. A registry per copy
-// would see the listener of the other copy as the app's and exit too early,
-// so all copies share one registry on globalThis.
+// npm ships the tsc output, so one copy of this module loads. The test tarball
+// from `make sdk-js-pack` (scripts/bundle.mjs) bundles each entry point
+// separately, so createWorker and createStreamingWorker each get a copy. A
+// registry per copy would see the other copy's listener as the app's and exit
+// too early, so all copies share one registry on globalThis.
 const KEY = Symbol.for("@ironflow/node/drain-on-signal");
 const globals = globalThis as { [KEY]?: Registry };
 const registry = (globals[KEY] ??= createRegistry());

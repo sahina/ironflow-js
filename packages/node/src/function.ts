@@ -8,6 +8,7 @@ import type {
   IronflowFunction,
 } from "@ironflow/core";
 import type { z } from "zod";
+import { validateResilienceConfig } from "./internal/retry.js";
 
 /**
  * Function definition helper with full type inference
@@ -65,6 +66,8 @@ export function createFunction<
       seen.add(key);
     });
   }
+
+  validateResilienceConfig(config);
 
   return {
     config,

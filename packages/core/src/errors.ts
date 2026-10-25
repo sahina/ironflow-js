@@ -232,6 +232,42 @@ export class NonRetryableError extends IronflowError {
 }
 
 /**
+ * Error thrown to ask for a specific delay before the next attempt, e.g. when a
+ * downstream API answered 429 with a Retry-After.
+ *
+ * It is retryable. The engine waits `retryAfterMs` instead of the computed
+ * backoff, capped at the retry policy's `maxDelayMs`. When the run has no
+ * attempts left, `retry.onExhausted` decides what happens, as for any retryable
+ * error.
+ */
+export class RetryAfterError extends IronflowError {
+  /**
+   * Requested delay before the next attempt, in milliseconds. 0 when the
+   * delay passed in was zero, negative or not finite: no hint, so the engine
+   * uses the normal backoff.
+   */
+  readonly retryAfterMs: number;
+
+  constructor(
+    message: string,
+    retryAfterMs: number,
+    options?: { code?: string; cause?: Error }
+  ) {
+    super(message, {
+      code: options?.code ?? "RETRY_AFTER",
+      retryable: true,
+      cause: options?.cause,
+    });
+    this.name = "RetryAfterError";
+    // Go and Python also treat a non-positive or non-finite delay as "no hint"
+    // rather than throwing, so a reset time already in the past cannot turn a
+    // retry into a crash.
+    this.retryAfterMs =
+      Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? Math.ceil(retryAfterMs) : 0;
+  }
+}
+
+/**
  * Error thrown when the client is not configured
  */
 export class NotConfiguredError extends IronflowError {

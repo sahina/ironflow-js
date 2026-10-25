@@ -13,9 +13,6 @@ import { SchemaValidationError } from "./errors.js";
 // ============================================================================
 
 export const RunStatusSchema = z.enum([
-  // @deprecated The engine no longer produces "pending" as of #1222 (run status
-  // "pending" retired). Retained for source/wire compatibility with older runs.
-  "pending",
   "running",
   "completed",
   "failed",
@@ -76,10 +73,9 @@ export function runStatusFromWire(value: unknown) {
  * "no filter", so the caller gets unfiltered results and no error. This
  * function is the only place that mistake is caught (#1919).
  *
- * `RunStatusSchema` still accepts the retired "pending", but the proto RESERVES
- * `RUN_STATUS_PENDING`, so a bare uppercase transform would mint exactly the
- * kind of plausible-looking value the server discards. The accepted set here is
- * the wire enum, not the public enum.
+ * The proto RESERVES `RUN_STATUS_PENDING`, so a bare uppercase transform would
+ * mint exactly the kind of plausible-looking value the server discards. The
+ * accepted set here is the wire enum.
  */
 // A Map, not an object literal: a plain object would resolve inherited keys, so
 // runStatusToWire("toString") would return a function instead of throwing, and
@@ -140,6 +136,10 @@ export const PushRequestSchema = z.object({
   run_id: z.string(),
   function_id: z.string(),
   attempt: z.number(),
+  // The run's own retry budget and exhaustion policy. Absent from an engine
+  // that predates them, so they are optional rather than a rejected request.
+  max_attempts: z.number().optional(),
+  on_exhausted: z.string().optional(),
   event: PushRequestEventSchema,
   steps: z
     .array(CompletedStepSchema)
@@ -371,6 +371,9 @@ export const JobAssignmentSchema = z.object({
   run_id: z.string(),
   function_id: z.string(),
   attempt: z.number(),
+  // The run's own retry budget and exhaustion policy. Absent from an older engine.
+  max_attempts: z.number().optional(),
+  on_exhausted: z.string().optional(),
   event: JobEventSchema,
   completed_steps: z.array(JobCompletedStepSchema),
   // Sequence this execution's first step takes (#1670). Server-computed from

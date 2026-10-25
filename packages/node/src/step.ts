@@ -25,6 +25,7 @@ import {
   type InvokeFunctionYieldInfo,
   type InvokeFunctionAsyncYieldInfo,
 } from "./internal/errors.js";
+import { createHash } from "node:crypto";
 import { sdkFetch } from "./sdk-fetch.js";
 
 /**
@@ -164,7 +165,7 @@ async function withStepTimeout<T>(
 async function executeStep<T>(
   ctx: StepContext,
   name: string,
-  fn: () => Promise<T>,
+  fn: (stepId: string) => Promise<T>,
   options?: StepRunOptions
 ): Promise<T> {
   const stepId = ctx.generateStepId(name);
@@ -185,8 +186,8 @@ async function executeStep<T>(
   try {
     const timeoutStr = options?.timeout ?? ctx.stepTimeout;
     const output = timeoutStr
-      ? await withStepTimeout(fn, name, timeoutStr)
-      : await fn();
+      ? await withStepTimeout(() => fn(stepId), name, timeoutStr)
+      : await fn(stepId);
     const endedAt = new Date();
     const durationMs = endedAt.getTime() - startedAt.getTime();
 
@@ -803,7 +804,7 @@ async function executePublish(
   data: unknown,
   options?: PublishOptions
 ): Promise<PublishResult> {
-  return executeStep(ctx, `publish:${topic}`, async () => {
+  return executeStep(ctx, `publish:${topic}`, async (stepId) => {
     const serverUrl = ctx.serverUrl;
     if (!serverUrl) {
       throw new Error("Server URL not configured for publish step");
@@ -835,7 +836,11 @@ async function executePublish(
       body: JSON.stringify({
         topic,
         data: data ?? {},
-        ...(options?.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+        // A retry after a lost completion must hit the server's durable dedup
+        // (ADR 0132). Hashed: the raw step ID can exceed 255 bytes or hold spaces.
+        idempotencyKey:
+          options?.idempotencyKey ||
+          `step-${createHash("sha256").update(stepId).digest("hex")}`,
       }),
     });
 

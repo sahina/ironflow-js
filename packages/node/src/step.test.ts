@@ -1526,6 +1526,63 @@ describe("createStepClient (real implementation)", () => {
       }
     });
 
+    describe("default idempotency key", () => {
+      const mockOk = () =>
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({ eventId: "m", sequence: "1" }),
+        });
+      const keys = (f: ReturnType<typeof vi.fn>) =>
+        f.mock.calls.map(([, init]) => JSON.parse((init as RequestInit).body as string).idempotencyKey as string);
+      const opts = { serverUrl: "http://localhost:9123" };
+
+      it("sends the same key when the step is re-run with a fresh context", async () => {
+        const f = mockOk();
+        vi.stubGlobal("fetch", f);
+        await createRealStepClient(createTestContext(undefined, opts)).publish("t", {});
+        await createRealStepClient(createTestContext(undefined, opts)).publish("t", {});
+        const [a, b] = keys(f);
+        expect(a).toMatch(/^step-[0-9a-f]{64}$/);
+        expect(a).toBe(b);
+      });
+
+      it("sends different keys for two publishes to the same topic", async () => {
+        const f = mockOk();
+        vi.stubGlobal("fetch", f);
+        const step = createRealStepClient(createTestContext(undefined, opts));
+        await step.publish("t", {});
+        await step.publish("t", {});
+        const [a, b] = keys(f);
+        expect(a).not.toBe(b);
+      });
+
+      it("lets an explicit key win", async () => {
+        const f = mockOk();
+        vi.stubGlobal("fetch", f);
+        await createRealStepClient(createTestContext(undefined, opts)).publish("t", {}, { idempotencyKey: "mine" });
+        expect(keys(f)).toEqual(["mine"]);
+      });
+
+      it("stays within 255 bytes with no whitespace for a long topic and a spaced parallel name", async () => {
+        const f = mockOk();
+        vi.stubGlobal("fetch", f);
+        const step = createRealStepClient(createTestContext(undefined, opts));
+        await step.parallel("fan out", [(s) => s.publish("x".repeat(249), {})]);
+        const [k] = keys(f);
+        expect(Buffer.byteLength(k!)).toBeLessThanOrEqual(255);
+        expect(k).not.toMatch(/\s/);
+      });
+
+      it("does not shift the IDs of later steps", async () => {
+        vi.stubGlobal("fetch", mockOk());
+        const ctx = createTestContext(undefined, opts);
+        const step = createRealStepClient(ctx);
+        await step.publish("t", {});
+        expect(ctx.generateStepId("publish:t")).toBe("run_test_123:publish:t:1");
+        expect(ctx.generateStepId("other")).toBe("run_test_123:other:0");
+      });
+    });
+
     it("should memoize a completed publish step", async () => {
       const ctx = createTestContext(
         {

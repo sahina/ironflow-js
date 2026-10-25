@@ -37,7 +37,6 @@ import { SchemaValidationError } from "./errors.js";
 
 describe("RunStatusSchema", () => {
   it.each([
-    "pending",
     "running",
     "completed",
     "failed",

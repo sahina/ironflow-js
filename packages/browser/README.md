@@ -597,7 +597,7 @@ const run = await ironflow.getRun('run_abc123');
 
 console.log(run.id);           // 'run_abc123'
 console.log(run.functionId);   // 'process-order'
-console.log(run.status);       // 'pending' | 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'waiting_for_capacity' | 'waiting'
+console.log(run.status);       // 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'waiting_for_capacity' | 'waiting'
 console.log(run.attempt);      // Current attempt number
 console.log(run.maxAttempts);  // Maximum retry attempts
 console.log(run.input);        // Input data

@@ -128,6 +128,10 @@ interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   timeout?: number;
   /** Concurrency control configuration */
   concurrency?: ConcurrencyConfig;
+  /** Circuit breaker overrides; unset fields use the server defaults */
+  circuitBreaker?: CircuitBreakerConfig;
+  /** Soft start-rate limit; runs over the limit wait in the queue */
+  throttle?: ThrottleConfig;
   /** Debounce configuration — collapse rapid-fire events into a single invocation */
   debounce?: DebounceConfig;
   /** Execution mode: "push" for serverless, "pull" for workers */
@@ -187,16 +191,48 @@ interface Trigger {
 
 ```typescript
 interface RetryConfig {
-  /** Maximum number of retry attempts (default: 3) */
+  /** Total attempts, including the first (server default: 25) */
   maxAttempts?: number;
-  /** Initial delay between retries in ms (default: 1000) */
+  /** Initial delay between retries in ms (server default: 1000) */
   initialDelayMs?: number;
-  /** Backoff multiplier (default: 2.0) */
+  /** Backoff multiplier (server default: 2.0) */
   backoffFactor?: number;
-  /** Maximum delay between retries in ms (default: 300000) */
+  /** Maximum delay between retries in ms (server default: 300000) */
   maxDelayMs?: number;
+  /** What happens when a retryable failure has used every attempt (server default: "pause") */
+  onExhausted?: "pause" | "fail";
 }
 ```
+
+Only the fields you set are sent; the server applies its defaults to the rest when each run is created. `"pause"` holds the run, with its completed steps, until it is resumed. `"fail"` ends the run and runs its compensations. A non-retryable error always fails at once.
+
+### CircuitBreakerConfig
+
+```typescript
+interface CircuitBreakerConfig {
+  /** Consecutive failed attempts that open the circuit (server default: 5) */
+  failureThreshold?: number;
+  /** First open window in ms; each failed probe doubles it (server default: 60000) */
+  openDurationMs?: number;
+  /** Cap for the doubling window in ms (server default: 600000); at least openDurationMs */
+  maxOpenDurationMs?: number;
+}
+```
+
+### ThrottleConfig
+
+```typescript
+interface ThrottleConfig {
+  /** Runs allowed to start per period. At least 1 */
+  limit: number;
+  /** Window length in ms. At least 1000 */
+  periodMs: number;
+  /** Path into the event data to throttle per value; omit to throttle the whole function */
+  key?: string;
+}
+```
+
+A soft throttle: runs over the limit wait in the queue and are never dropped. Retries and resumed runs are not throttled.
 
 ### ConcurrencyConfig
 
@@ -711,10 +747,10 @@ interface ParallelOptions {
 ### RunStatus
 
 ```typescript
-type RunStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "paused" | "waiting_for_capacity" | "waiting";
+type RunStatus = "running" | "completed" | "failed" | "cancelled" | "paused" | "waiting_for_capacity" | "waiting";
 ```
 
-`"pending"` is retired: the engine no longer produces it, and the server rejects it as a `ListRunsOptions.status` filter. A server newer than the SDK can send a status this union does not list. The SDK passes it through in lower case instead of throwing, so keep a `default` branch when you switch on a status.
+A server newer than the SDK can send a status this union does not list. The SDK passes it through in lower case instead of throwing, so keep a `default` branch when you switch on a status.
 
 ### RunInfo
 
@@ -725,6 +761,8 @@ interface RunInfo {
   id: string;
   functionId: string;
   attempt: number;
+  maxAttempts?: number; // total attempts the run may make; 0 from an engine that predates it
+  onExhausted?: "pause" | "fail" | ""; // what the final failed attempt does; "" from an engine that predates it
   startedAt: Date;
   environment?: string; // environment of the run's outbound calls
 }
@@ -757,7 +795,7 @@ interface Run {
 ```typescript
 interface ListRunsOptions {
   functionId?: string;
-  status?: Exclude<RunStatus, "pending">;
+  status?: RunStatus;
   limit?: number;
   cursor?: string;
 }
@@ -1880,6 +1918,7 @@ class IronflowError extends Error {
 | `RunNotFoundError` | `RUN_NOT_FOUND` | false | Run ID not found in store |
 | `StepError` | `STEP_FAILED` | true | Step execution failure (has `stepId`, `stepName`) |
 | `NonRetryableError` | `NON_RETRYABLE` | false | Permanent failure, skip retries |
+| `RetryAfterError` | `RETRY_AFTER` | true | Retry after a delay: `new RetryAfterError(message, retryAfterMs)`. The engine waits `retryAfterMs` instead of the computed backoff, capped at the policy's `maxDelayMs` (has `retryAfterMs`) |
 | `NotConfiguredError` | `NOT_CONFIGURED` | false | Client used before `configure()` |
 | `InvokeError` | `INVOKE_FAILED` | false | `step.invoke()` target failed (has `functionId`, `childRunId`) |
 | `InvokeTimeoutError` | `INVOKE_FAILED` | false | `step.invoke()` timed out (has `timeoutMs`) |
@@ -1978,7 +2017,7 @@ formatZodIssues(issues: readonly z.core.$ZodIssue[]): string[]
 ### Available Schemas
 
 **Run & Status:**
-- `RunStatusSchema` -- `z.enum(["pending", "running", "completed", "failed", "cancelled", "paused", "waiting_for_capacity", "waiting"])`
+- `RunStatusSchema` -- `z.enum(["running", "completed", "failed", "cancelled", "paused", "waiting_for_capacity", "waiting"])`
 - `RunStatusWireSchema` -- the protobuf JSON spelling (`RUN_STATUS_RUNNING`, ...), transformed to the public status. `RUN_STATUS_UNSPECIFIED` and unknown values are rejected rather than mapped
 
 **Push Request (serve.ts):**
@@ -3173,7 +3212,9 @@ definitionHistoryPageFromWire<TDefinition>(raw: unknown, definition: (raw: unkno
 ### Executable deployments
 
 ```typescript
-const DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION = 1; // the ExecutionSnapshot schema this SDK knows
+const DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION = 2; // the highest ExecutionSnapshot schema this SDK knows
+// registerDeploymentRequest declares 2 only when the snapshot uses circuitBreaker, throttle or
+// retry.onExhausted, and 1 otherwise, so a plain snapshot still registers against an older engine.
 
 interface RegisterDeploymentInput {
   functionId: string;

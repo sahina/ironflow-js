@@ -46,6 +46,7 @@ export type { NodeRequest, NodeResponse, UniversalHandler } from "./serve.js";
 export { createWorker } from "./worker.js";
 export { createProjection } from "./projection.js";
 export { createProjectionRunner, ProjectionRunner, StreamingUnsupportedError, type ProjectionRunnerConfig } from "./projection-runner.js";
+export { ServerTooOldError } from "./sdk-fetch.js";
 // NOTE: createStreamingWorker is NOT exported here to avoid loading protobuf
 // dependencies. Import from "@ironflow/node/worker-streaming" if you need it.
 export { createWebhook } from "./webhook.js";
@@ -115,6 +116,9 @@ export type {
   IronflowFunction,
   Trigger,
   RetryConfig,
+  OnExhausted,
+  CircuitBreakerConfig,
+  ThrottleConfig,
   ConcurrencyConfig,
   ExecutionMode,
   FunctionStatus,
@@ -348,6 +352,7 @@ export {
   FunctionNotFoundError,
   RunNotFoundError,
   NonRetryableError,
+  RetryAfterError,
   UnauthenticatedError,
   EnterpriseRequiredError,
   UnauthorizedError,

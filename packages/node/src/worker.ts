@@ -35,6 +35,7 @@ import { startProjectionRunners, stopProjectionRunners, type ProjectionRunner } 
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
+import { isTerminalFailure, retryAfterMsOf } from "./internal/retry.js";
 import { errorDetail } from "./internal/error-detail.js";
 import { drainOnSignal } from "./internal/drain-on-signal.js";
 import {
@@ -614,6 +615,8 @@ class IronflowWorker implements Worker {
       run_id: job.run_id,
       function_id: job.function_id,
       attempt: job.attempt,
+      max_attempts: job.max_attempts,
+      on_exhausted: job.on_exhausted,
       event: job.event,
       steps: job.completed_steps.map((s) => ({
         id: s.step_id,
@@ -698,8 +701,10 @@ class IronflowWorker implements Worker {
 
       const retryable = isRetryable(error);
 
-      // Run compensations only if error is not retryable (terminal failure)
-      if (ctx.hasCompensations() && !retryable) {
+      // Compensate only when the run ends here: a non-retryable error, or a
+      // retryable one on the last attempt under onExhausted "fail". Under
+      // "pause" the run is held for resume and keeps its steps.
+      if (ctx.hasCompensations() && isTerminalFailure(retryable, ctx.runInfo)) {
         await executeCompensations(ctx);
       }
 
@@ -707,10 +712,12 @@ class IronflowWorker implements Worker {
       // compensation steps).
       const failTail = await checkpointer.finish();
       if (signal.aborted) return;
+      const retryAfterMs = retryAfterMsOf(error);
       await this.sendJobFailed(baseUrl, job.job_id, {
         message: error instanceof Error ? error.message : String(error),
         code: error instanceof IronflowError ? error.code : "ERROR",
         retryable,
+        ...(retryAfterMs > 0 ? { retry_after_ms: retryAfterMs } : {}),
       }, dropUnencodable(failTail.steps), fence, failTail.offset);
       return;
     }
@@ -982,7 +989,7 @@ class IronflowWorker implements Worker {
   private async sendJobFailed(
     baseUrl: string,
     jobId: string,
-    error: { message: string; code: string; retryable: boolean },
+    error: { message: string; code: string; retryable: boolean; retry_after_ms?: number },
     steps?: StepResult[],
     fence?: JobFence,
     stepOffset = 0

@@ -134,6 +134,10 @@ export interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   timeout?: number;
   /** Concurrency control configuration */
   concurrency?: ConcurrencyConfig;
+  /** Push-endpoint circuit breaker overrides; unset fields use the server defaults */
+  circuitBreaker?: CircuitBreakerConfig;
+  /** Soft start-rate limit; runs over the limit wait in the queue */
+  throttle?: ThrottleConfig;
   /** Execution mode: "push" for serverless, "pull" for workers */
   mode?: ExecutionMode;
   /** JSON path for actor-based sticky routing */
@@ -182,17 +186,66 @@ export interface Trigger {
 }
 
 /**
- * Retry configuration for step failures
+ * What happens when a retryable failure has used every attempt.
+ *
+ * - `"pause"`: the run is held with its completed steps until it is resumed.
+ * - `"fail"`: the run ends as failed and its compensations run.
+ */
+export type OnExhausted = "pause" | "fail";
+
+/**
+ * Retry configuration for step failures.
+ *
+ * Every field is optional and is sent to the server only when set. A field you
+ * leave out takes the server's `spec.engine.retry` value when each run is
+ * created: 25 attempts, 1s initial delay, 2.0 backoff, 5m max delay, and
+ * `onExhausted: "pause"`.
  */
 export interface RetryConfig {
-  /** Maximum number of retry attempts (default: 3) */
+  /** Total attempts, including the first (server default: 25) */
   maxAttempts?: number;
-  /** Initial delay between retries in ms (default: 1000) */
+  /** Initial delay between retries in ms (server default: 1000) */
   initialDelayMs?: number;
-  /** Backoff multiplier (default: 2.0) */
+  /** Backoff multiplier (server default: 2.0) */
   backoffFactor?: number;
-  /** Maximum delay between retries in ms (default: 300000) */
+  /** Maximum delay between retries in ms (server default: 300000) */
   maxDelayMs?: number;
+  /**
+   * What to do when a retryable failure has used every attempt (server
+   * default: `"pause"`). A non-retryable error always fails the run at once.
+   */
+  onExhausted?: OnExhausted;
+}
+
+/**
+ * Push-endpoint circuit breaker overrides. A field you leave out (or set to
+ * 0) takes the server's `spec.engine.circuitBreaker` value.
+ */
+export interface CircuitBreakerConfig {
+  /** Consecutive failed execution attempts that open the circuit (server default: 5) */
+  failureThreshold?: number;
+  /** First open window in ms; each failed probe doubles it (server default: 60000) */
+  openDurationMs?: number;
+  /** Cap for the doubling open window in ms (server default: 600000). Must be >= openDurationMs */
+  maxOpenDurationMs?: number;
+}
+
+/**
+ * Soft start-rate limit: at most `limit` runs start per `periodMs`. Runs over
+ * the limit wait in the queue; they are never dropped. Retries and resumed
+ * runs are not throttled.
+ */
+export interface ThrottleConfig {
+  /** Runs allowed to start per period. Must be >= 1 */
+  limit: number;
+  /** Window length in ms. Must be >= 1000 */
+  periodMs: number;
+  /**
+   * Path into the event data (e.g. "customerId") to throttle per value. Omit
+   * to throttle the whole function. A key that does not resolve fails the run
+   * with THROTTLE_KEY_UNRESOLVED.
+   */
+  key?: string;
 }
 
 /**
@@ -273,6 +326,8 @@ export interface RegisteredFunction {
   timeoutMs: number;
   concurrency?: ConcurrencyConfig;
   debounce?: DebounceConfig;
+  circuitBreaker?: CircuitBreakerConfig;
+  throttle?: ThrottleConfig;
   preferredMode?: ExecutionMode;
   endpointUrl: string;
   actorKey: string;
@@ -391,6 +446,17 @@ export interface RunInfo {
   functionId: string;
   /** Current attempt number */
   attempt: number;
+  /**
+   * Total attempts the run may make, including the first. 0 when the engine is too old to send it.
+   * Compare with `attempt` to detect the final attempt.
+   */
+  maxAttempts?: number;
+  /**
+   * What happens once the final attempt fails retryably: `"pause"` holds the
+   * run for resume (the final attempt is not terminal), `"fail"` ends it.
+   * Empty when the engine is too old to send it.
+   */
+  onExhausted?: OnExhausted | "";
   /** When the run started */
   startedAt: Date;
   /**
@@ -606,6 +672,13 @@ export interface StepClient {
    * Publish a message to a developer pub/sub topic. Durable — memoized and retried.
    * Unlike emit(), this does NOT trigger workflow functions.
    *
+   * Sends a default idempotency key derived from the step ID unless
+   * `options.idempotencyKey` is set. The server keeps the key for
+   * `IRONFLOW_RUN_RETENTION_DAYS` days (forever when unset or 0), so a late
+   * retry returns the original event ID (ADR 0132). One rare gap: if the server
+   * stores the message but cannot record it, a retry after 2 minutes stores a
+   * second copy under the same event ID.
+   *
    * @param topic Topic name to publish to
    * @param data Message payload
    * @returns The publish result with eventId and sequence number
@@ -699,16 +772,11 @@ export type FunctionHandler<TEvent = unknown, TResult = unknown> = (
 /**
  * Run status
  *
- * Note: "pending" is deprecated — the engine no longer produces it as of #1222
- * (run status "pending" retired). It is retained in the union for source/wire
- * compatibility with older runs.
- *
  * A server newer than this SDK can send a status this union does not list. The
  * SDK passes it through, lowercased, instead of throwing (ADR 0125), so keep a
  * `default` branch when you switch on it.
  */
 export type RunStatus =
-  | "pending"
   | "running"
   | "completed"
   | "failed"
@@ -747,8 +815,8 @@ export interface Run {
 export interface ListRunsOptions {
   /** Filter by function ID */
   functionId?: string;
-  /** Filter by status. "pending" is retired and the server rejects it. */
-  status?: Exclude<RunStatus, "pending">;
+  /** Filter by status. */
+  status?: RunStatus;
   /** Maximum results */
   limit?: number;
   /** Pagination cursor */
@@ -1431,7 +1499,12 @@ export interface IronflowWebhook {
 
 /** Options for publishing to a developer pub/sub topic. */
 export interface PublishOptions {
-  /** Idempotency key for deduplication. */
+  /**
+   * Idempotency key for deduplication. Defaults to `step-` + SHA-256 hex of
+   * the step ID, so a step retry does not publish twice. The server keeps the
+   * key for `IRONFLOW_RUN_RETENTION_DAYS` days (forever when unset or 0) and
+   * returns the original event ID on a repeat (ADR 0132).
+   */
   idempotencyKey?: string;
 }
 
@@ -2397,6 +2470,8 @@ export function registeredFunctionFromWire(
   const retry = r.retry as Record<string, unknown> | undefined;
   const concurrency = r.concurrency as Record<string, unknown> | undefined;
   const debounce = r.debounce as Record<string, unknown> | undefined;
+  const circuitBreaker = r.circuitBreaker as Record<string, unknown> | undefined;
+  const throttle = r.throttle as Record<string, unknown> | undefined;
   const rawRecordingProfile = String(r.recordingProfile ?? "");
   const recordingProfile: RecordingProfile | undefined =
     rawRecordingProfile === "all" ||
@@ -2418,8 +2493,29 @@ export function registeredFunctionFromWire(
           initialDelayMs: wireNumber(retry.initialDelayMs),
           backoffFactor: wireNumber(retry.backoffFactor),
           maxDelayMs: wireNumber(retry.maxDelayMs),
+          ...(retry.onExhausted === "pause" || retry.onExhausted === "fail"
+            ? { onExhausted: retry.onExhausted }
+            : {}),
         }
       : undefined,
+    ...(circuitBreaker
+      ? {
+          circuitBreaker: {
+            failureThreshold: wireNumber(circuitBreaker.failureThreshold),
+            openDurationMs: wireNumber(circuitBreaker.openDurationMs),
+            maxOpenDurationMs: wireNumber(circuitBreaker.maxOpenDurationMs),
+          },
+        }
+      : {}),
+    ...(throttle
+      ? {
+          throttle: {
+            limit: wireNumber(throttle.limit),
+            periodMs: wireNumber(throttle.periodMs),
+            key: String(throttle.key ?? "") || undefined,
+          },
+        }
+      : {}),
     timeoutMs: wireNumber(r.timeoutMs),
     concurrency: concurrency
       ? {

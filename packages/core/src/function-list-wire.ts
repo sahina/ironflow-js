@@ -45,5 +45,32 @@ export function functionListFromWire(raw: Record<string, unknown>) {
         }
       : {}),
     ...(fn.cancelOn?.length ? { cancel_on: fn.cancelOn } : {}),
+    ...(fn.retry?.onExhausted
+      ? { retry_on_exhausted: fn.retry.onExhausted }
+      : {}),
+    ...(fn.circuitBreaker
+      ? {
+          circuit_breaker: {
+            ...(fn.circuitBreaker.failureThreshold
+              ? { failure_threshold: fn.circuitBreaker.failureThreshold }
+              : {}),
+            ...(fn.circuitBreaker.openDurationMs
+              ? { open_duration_ms: fn.circuitBreaker.openDurationMs }
+              : {}),
+            ...(fn.circuitBreaker.maxOpenDurationMs
+              ? { max_open_duration_ms: fn.circuitBreaker.maxOpenDurationMs }
+              : {}),
+          },
+        }
+      : {}),
+    ...(fn.throttle
+      ? {
+          throttle: {
+            limit: fn.throttle.limit,
+            period_ms: fn.throttle.periodMs,
+            ...(fn.throttle.key ? { key: fn.throttle.key } : {}),
+          },
+        }
+      : {}),
   };
 }

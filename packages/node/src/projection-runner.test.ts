@@ -3,12 +3,13 @@ import { createProjectionRunner, startProjectionRunners, stopProjectionRunners, 
 import { UnauthenticatedError, UnauthorizedError, type IronflowProjection, type Logger } from "@ironflow/core";
 import { assertDefined } from "./internal/assert-defined.js";
 
-// Mock fetch globally. These tests predate the lease (ADR 0120): Acquire answers as an older
-// server, so the runner runs unguarded. projection-runner-lease.test.ts covers the lease.
+// Mock fetch globally. The lease RPCs grant the lease and never fence it (ADR 0120);
+// projection-runner-lease.test.ts covers the lease.
 const mockFetch = vi.fn();
+const LEASE = { granted: true, lease: { token: "sdk:1", epoch: "1" }, ttl: "30s" };
 vi.stubGlobal("fetch", (url: string, opts: RequestInit) =>
-  String(url).endsWith("/AcquireProjectionLease")
-    ? Promise.resolve(new Response(null, { status: 404 }))
+  String(url).endsWith("ProjectionLease")
+    ? Promise.resolve(Response.json(LEASE))
     : mockFetch(url, opts));
 
 function createMockLogger(): Logger {

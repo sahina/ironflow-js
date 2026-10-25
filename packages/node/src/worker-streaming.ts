@@ -56,6 +56,7 @@ import { dropUnencodable, serializationError } from "./internal/encode-guard.js"
 import { createSecretsClient } from "./secrets.js";
 import { validateEventData } from "./internal/validate-event.js";
 import { withRunContext } from "./internal/run-context.js";
+import { isTerminalFailure, retryAfterMsOf } from "./internal/retry.js";
 import {
   buildWorkerHeaders,
   registerFunctions,
@@ -695,6 +696,8 @@ class StreamingWorker implements Worker {
         run_id: job.runId,
         function_id: job.functionId,
         attempt: job.attempt,
+        max_attempts: job.maxAttempts,
+        on_exhausted: job.onExhausted,
         event,
         steps: memoSteps(job.completedSteps),
         resume: undefined,
@@ -779,8 +782,11 @@ class StreamingWorker implements Worker {
 
       const retryable = isRetryable(error);
 
-      // Run compensations only if error is not retryable (terminal failure)
-      if (ctx.hasCompensations() && !retryable) {
+      // Compensate only when the run ends here: a non-retryable error, or a
+      // retryable one on the last attempt under onExhausted "fail". Under
+      // "pause" the run is held for resume and keeps its steps.
+      const terminal = isTerminalFailure(retryable, ctx.runInfo);
+      if (ctx.hasCompensations() && terminal) {
         await executeCompensations(ctx);
       }
 
@@ -791,10 +797,11 @@ class StreamingWorker implements Worker {
           message: error instanceof Error ? error.message : String(error),
           code: error instanceof IronflowError ? error.code : "ERROR",
           retryable,
+          retryAfterMs: retryAfterMsOf(error),
           durationMs,
         },
         fence,
-        retryable ? [] : dropUnencodable(ctx.getExecutedSteps())
+        terminal ? dropUnencodable(ctx.getExecutedSteps()) : []
       );
     }
   }
@@ -878,6 +885,7 @@ class StreamingWorker implements Worker {
       message: string;
       code: string;
       retryable: boolean;
+      retryAfterMs?: number;
       durationMs?: number;
     },
     fence: { executionSeq: bigint; leaseToken: string },
@@ -894,6 +902,7 @@ class StreamingWorker implements Worker {
             message: error.message,
             code: error.code,
             retryable: error.retryable,
+            retryAfterMs: BigInt(error.retryAfterMs ?? 0),
           }),
           durationMs: error.durationMs ?? 0,
           executionSeq: fence.executionSeq,

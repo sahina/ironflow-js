@@ -14,6 +14,7 @@ import type {
   StepResult,
   EventDefinitionRegistry,
 } from "@ironflow/core";
+import { onExhaustedOf } from "./retry.js";
 
 /**
  * Escape one segment of a composite step id.
@@ -140,6 +141,8 @@ export class ExecutionContext {
       id: this.runId,
       functionId: this.functionId,
       attempt: this.attempt,
+      maxAttempts: request.max_attempts ?? 0,
+      onExhausted: onExhaustedOf(request.on_exhausted),
       startedAt: new Date(),
       environment,
     };

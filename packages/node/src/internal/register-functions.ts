@@ -15,6 +15,7 @@ import {
   throwIfAuthError,
 } from "@ironflow/core";
 import { errorDetail } from "./error-detail.js";
+import { resilienceBody } from "./retry.js";
 import { createHash } from "node:crypto";
 import { sdkFetch } from "../sdk-fetch.js";
 
@@ -83,7 +84,7 @@ export async function registerFunctions(opts: {
     };
 
     if (fn.config.description) body.description = fn.config.description;
-    if (fn.config.retry) body.retry = fn.config.retry;
+    Object.assign(body, resilienceBody(fn.config));
     if (fn.config.timeout) body.timeoutMs = fn.config.timeout;
     if (fn.config.concurrency) body.concurrency = fn.config.concurrency;
     if (fn.config.debounce) {

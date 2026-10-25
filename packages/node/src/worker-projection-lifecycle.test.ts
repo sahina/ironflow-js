@@ -4,6 +4,8 @@ import { createWorker } from "./worker.js";
 import { createStreamingWorker } from "./worker-streaming.js";
 import { assertDefined } from "./internal/assert-defined.js";
 
+const LEASE = { granted: true, lease: { token: "sdk:1", epoch: "1" }, ttl: "30s" };
+
 // Engine side of the streaming worker's job stream; drop() ends it like a lost connection.
 const jobStreams = vi.hoisted(() => [] as { drop: () => void }[]);
 
@@ -62,7 +64,7 @@ describe("worker projection reconnect (#2770)", () => {
           assertDefined(opts.signal).addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
         });
       }
-      if (url.endsWith("AcquireProjectionLease")) return new Response(null, { status: 404 }); // an older server
+      if (url.endsWith("ProjectionLease")) return Response.json(LEASE); // Acquire grants; Renew and Release succeed
       if (url.endsWith("GetProjection")) {
         loadedStates.push(state);
         return Response.json({ state });
@@ -131,7 +133,7 @@ describe("worker drain with projections (#2770)", () => {
           assertDefined(opts.signal).addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
         });
       }
-      if (url.endsWith("AcquireProjectionLease")) return new Response(null, { status: 404 }); // an older server
+      if (url.endsWith("ProjectionLease")) return Response.json(LEASE); // Acquire grants; Renew and Release succeed
       if (url.endsWith("GetProjection")) return Response.json({ state: { count: 0 } });
       if (url.endsWith("StreamProjectionEvents")) {
         return new Response(new ReadableStream<Uint8Array>({
@@ -173,7 +175,7 @@ describe("streaming worker projection reconnect (#2770)", () => {
     const loadedStates: { count: number }[] = [];
     let streamCount = 0;
     vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
-      if (url.endsWith("AcquireProjectionLease")) return new Response(null, { status: 404 }); // an older server
+      if (url.endsWith("ProjectionLease")) return Response.json(LEASE); // Acquire grants; Renew and Release succeed
       if (url.endsWith("GetProjection")) {
         loadedStates.push(state);
         return Response.json({ state });

@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.51.0
+version: 0.52.0
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",
@@ -12,7 +12,7 @@ description: |
   NOT for SDK reference lookup (use ironflow-docs).
 user-invocable: true
 argument-hint: "[what you need] — e.g., 'set up in my Next.js app' or 'push vs pull'"
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch
 ---
 
 # Ironflow Start
@@ -26,15 +26,30 @@ Codebase fit analysis lives in `ironflow-fit`. SDK syntax lives in `ironflow-doc
 > shown as `~/.agents/skills/<skill>/...` (global install); if that path does not resolve,
 > activate that skill by name instead of guessing at a prefix.
 
-## Reference Files
+## Where the facts live
 
-```
-https://docs.ironflow.run/reference/js-sdk/node.md   # for code shown during setup
-https://docs.ironflow.run/reference/api/go-sdk.md   # Go equivalent
-https://docs.ironflow.run/reference/api/python-sdk.md   # Python equivalent
-https://docs.ironflow.run/explanation/patterns.md   # for arch decision matrices
-https://docs.ironflow.run/reference/cli.md   # for ironflow init / serve commands
-```
+This skill holds the workflow. The reference facts live in the hosted docs. Fetch the
+page before you give the user a command, a flag or code. Do not work from memory.
+Fetch with `WebFetch`. In Ironflow Desktop's built-in agent, use `docs_fetch`. Each URL
+returns one page as Markdown. Read the section named in the last column.
+
+| Need | URL | Sections |
+|---|---|---|
+| Install the engine: Desktop, Homebrew, Scoop, Docker | https://docs.ironflow.run/tutorials/installation.md | "Server", "Desktop App" |
+| Start the engine: `--dev`, auth, bootstrap key, `.ironflow/` | https://docs.ironflow.run/tutorials/getting-started.md and https://docs.ironflow.run/reference/cli/commands/serve.md | "1. Start the Server"; "Dev Mode", "Local state" |
+| Install the SDK | https://docs.ironflow.run/tutorials/installation.md | "TypeScript SDK", "Go SDK", "Python SDK" |
+| Scaffold with `ironflow init` | https://docs.ironflow.run/reference/cli/commands/init.md and https://docs.ironflow.run/tutorials/getting-started.md | the whole `init` page; "2. Create Your Project" |
+| Push or pull mode | https://docs.ironflow.run/explanation/patterns.md and https://docs.ironflow.run/how-to-guides/workflows/execution-modes.md | "Push vs Pull Mode"; "Push Mode (Default)", "Pull Mode", "Mode Comparison" |
+| Entry point code, TypeScript | https://docs.ironflow.run/reference/js-sdk/node.md | "Define a Function", "Push Mode (Serverless)", "Pull Mode (Worker)", "registerFunction", "serve", "Framework Integration" |
+| Entry point code, Python | https://docs.ironflow.run/reference/api/python-sdk.md | "Pull worker", "Push mode" |
+| Entry point code, Go | https://docs.ironflow.run/reference/api/go-sdk.md | "Push Mode (Serverless)", "Pull Mode (Worker)" |
+| Environment variables | https://docs.ironflow.run/reference/configuration.md and https://docs.ironflow.run/reference/js-sdk/node.md | "Environment Variables" on both pages |
+| Verify: `emit`, `run list`, 401 errors | https://docs.ironflow.run/reference/cli/commands/emit.md, https://docs.ironflow.run/reference/cli/commands/run.md and https://docs.ironflow.run/reference/cli.md | the whole `emit` page; "`ironflow run list`"; "Global Behavior" |
+| Update the installed skills | https://docs.ironflow.run/reference/cli/commands/skills.md | "`ironflow skills sync`", "`ironflow skills doctor`" |
+| Ironflow agent in Zed or JetBrains | https://docs.ironflow.run/how-to-guides/ai-acp-agent.md | "Set your model key" |
+| Architecture decisions | https://docs.ironflow.run/explanation/patterns.md | see "Decision routing" in Mode 3 |
+
+If no row matches, fetch https://docs.ironflow.run/llms.txt and pick the page from it.
 
 ## Mode Selection
 
@@ -92,10 +107,9 @@ If `ironflow_installed=true`, present what was found and ask:
 > 4. Update SDK
 > 5. Start fresh"
 
-On "Update SDK": the skills are compiled into the `ironflow` binary, so after upgrading
-it run `ironflow skills sync` (it writes `./.agents/skills`; add `--global` for
-`~/.agents/skills`) and `ironflow skills doctor` to re-wire the agent. Otherwise on-disk skills describe an
-older engine than the one running.
+On "Update SDK": the skills are compiled into the `ironflow` binary. After the user
+upgrades it, run `ironflow skills sync` and `ironflow skills doctor` (see the
+"Update the installed skills" row above).
 
 If `language=mixed`, select the target stack before interpreting installation state.
 If `framework=unknown`, inspect the files and ask the user to confirm the intended stack.
@@ -105,8 +119,6 @@ metadata or ignore files, read `create-project.md` and follow its interview. Ins
 unrecognized files first; missing manifests alone do not make a directory disposable.
 
 ### Step 2: Get an engine running
-<!-- derived-from: docs/tutorials/getting-started.mdx#1-start-the-server -->
-<!-- derived-from: docs/tutorials/installation.mdx#desktop-app -->
 
 First check for an existing engine connection in the environment or workspace.
 When one is configured, verify that connection and reuse it; an unused port 9123
@@ -122,107 +134,46 @@ there isn't one. Don't skip to `pnpm add` — the user will hit `command not fou
 ironflow` at the verify step.
 
 If Step 1 reported a version for `ironflow_cli`, the binary is already there — say so and
-skip to starting it. If it reported `none`, ask:
+skip to starting it. If it reported `none`, ask the user which install route they want
+(Desktop app, Homebrew, Scoop or Docker). Take the commands from the install row in
+"Where the facts live". Do not choose for them.
 
-> "First, Ironflow itself. Four ways:
-> 1. **Desktop app** — bundles the engine. No install, no CLI, no Docker. Fastest way to
->    see it work: <https://github.com/sahina/ironflow-desktop-releases/releases/latest>
->    (macOS Apple Silicon is the supported platform; Windows/Linux are experimental.)
-> 2. **Homebrew** — `brew install sahina/tap/ironflow`
-> 3. **Scoop** (Windows, experimental) — `scoop bucket add ironflow https://github.com/sahina/scoop-ironflow`, then `scoop install ironflow/ironflow`
-> 4. **Docker** — `docker run -p 9123:9123 ghcr.io/sahina/ironflow-releases:latest serve --dev`"
+Start the engine with `ironflow serve --dev` for local work. Without `--dev`, auth is
+on and every call returns 401. Gitignore `.ironflow/` before the first commit: it holds
+live credentials. Flags, auth and the contents of `.ironflow/` are in the start row.
 
-Then start it:
-
-```bash
-ironflow serve --dev      # localhost:9123 — SQLite, embedded NATS, auth disabled
-```
-
-**`--dev` is not optional for local work.** Auth is always enforced otherwise — the only
-other off-switch is `spec.auth.devMode: true` in `ironflow.yaml`, the same bypass — so every `ironflow emit`, SDK call, and dashboard request returns
-`401 authentication required`. Dropping `--dev` (production) auto-bootstraps an admin
-key written to `<db-dir>/.ironflow_bootstrap_key.json` (mode 0400), which you then pass
-as `IRONFLOW_API_KEY`.
-
-That `<db-dir>` is `.ironflow/` under the cwd by default, and `serve` fills it with the
-SQLite db, the embedded NATS store and `blobs/`. Gitignore the whole directory before the
-first commit — the bootstrap key, `.ironflow_jwt_secret` and `engine.json` beside it are live
-credentials (`engine.json` holds a copy of the key). `ironflow init` templates already ignore it; an existing project won't.
-
-Desktop users: the app runs an engine per workspace, so there's no `ironflow serve` to
-run. Point the SDK at the server URL the app shows.
+In Desktop there is no `ironflow serve` to run. The app runs an engine per workspace.
+Point the SDK at the server URL the app shows.
 
 ### Step 3: Choose execution mode
 
 Don't default. Show both:
 
-> "Push mode — Ironflow POSTs to your serverless endpoint. Best for Next.js API routes,
->   Vercel, Lambda. Hard 10s ceiling per dispatch.
+> "Push mode — Ironflow POSTs to your serverless endpoint (Next.js API routes, Vercel,
+>   Lambda). Hard 10s ceiling per dispatch.
 >
-> Pull mode — Your worker polls Ironflow over HTTP for jobs. Best for
->   long-running tasks, Go services, anything past 10s. No timeout.
+> Pull mode — Your worker polls Ironflow over HTTP for jobs. Best for long-running
+>   tasks. No timeout.
 >
 > Which mode? You can add the other later."
 
-Pull is **HTTP polling** (`GET /api/v1/workers/{id}/jobs`), not gRPC. Each SDK also has an
-opt-in ConnectRPC streaming worker: `@ironflow/node/worker-streaming` (Node),
-`ironflow.NewStreamingWorker` (Go) and `ironflow.worker.StreamingWorker` (Python). It is not
-the default and not what `createWorker`, `NewWorker` or `Worker` do.
-
-The 10s push ceiling is the **engine's**, not your host's: `PushTimeout` defaults to 10s
-and the effective budget is `min(function timeout_ms, PushTimeout)`. Raising the
-function's `timeout` does not raise it. On a self-hosted server you can raise the
-ceiling itself with `engine.pushTimeout` in `ironflow.yaml` (`ironflow serve -f ...`);
-on a server you do not control, anything longer must be pull.
-
-Go has both — `ironflow.NewWorker` (pull) and `ironflow.Serve` (push). Pull is the
-natural fit for a Go service, but don't tell the user Go is pull-only.
-Python uses `Worker(functions=[...]).run()` from `ironflow.worker` for pull,
-and `ironflow.serve` (`serve()`, `register()`) for push. Node uses
-`createWorker(...).start()`.
+The 10s push ceiling is the engine's, not the host's. Anything longer must be pull. All
+three SDKs support both modes. Do not tell the user Go is pull-only. Pull workers poll over
+HTTP; each SDK also has an opt-in streaming worker. Details, the `PushTimeout` setting and
+the streaming workers are in the "Push or pull mode" row.
 
 ### Step 4: Install SDK
-<!-- derived-from: docs/tutorials/installation.mdx#typescript-sdk -->
 
-TypeScript:
-```bash
-pnpm add @ironflow/node                  # required — pulls in @ironflow/core
-pnpm add @ironflow/browser               # optional, for client-side real-time
-pnpm add @ironflow/langgraph             # optional, durable checkpoints for LangGraph
-```
-
-Go:
-```bash
-go get github.com/sahina/ironflow-go/ironflow
-```
-
-Python (reuse an existing environment/package manager; fresh pip example):
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install ironflow-py
-```
-
-`@ironflow/core` is a transitive dependency of node and browser — don't install it
-separately. The Go import path is the public mirror; `github.com/sahina/ironflow/sdk/go/...`
-is engine-internal and won't resolve for users.
+Install the SDK for the chosen language from the "Install the SDK" row. Reuse the
+project's package manager and, for Python, its existing environment.
 
 ### Step 5: Scaffold or build manually
-<!-- derived-from: docs/tutorials/getting-started.mdx#2-create-your-project -->
 
-**Fresh project** — `ironflow init my-app`, or `ironflow init my-app --template
-go-quickstart`. Those are the only two templates (`quickstart` is the TS default);
-anything else errors. It runs `pnpm install` for you — `--skip-install` opts out.
-There is no Python template: create a venv, `pip install ironflow-py`, and write one
-`worker.py` by hand.
-
-What it actually produces is **flat**: one `worker.ts` (or `main.go`) holding a function,
-a projection, and the worker, plus `package.json` / `tsconfig.json` (Go: `go.mod`) and the
-agent files `.gitignore`, `README.md`, `AGENTS.md`, `CLAUDE.md` and `.mcp.json`. No `src/`, no
-`.env`, no push-mode route. Don't promise the user a directory tree it doesn't create.
-
-If the user passes `--skip-install`, tell them to delete the template's
-`pnpm-workspace.yaml` and `pnpm-lock.yaml` before installing — they point at monorepo
-paths that don't exist in their project, and the install step is what removes them.
+**Fresh project** — run `ironflow init` and take the flags and templates from the
+`init` page. Do not promise the user a directory tree: read the files it creates before
+you describe them. There is no Python template; the "2. Create Your Project" section
+of the getting-started page shows the manual route. If the user passes `--skip-install`,
+follow the monorepo-file note in that section.
 
 **Existing project** — no layout is required; the SDK imports from wherever you put
 things. If the user wants a convention, offer this one and say it's a suggestion:
@@ -237,127 +188,29 @@ app/api/ironflow/route.ts        # serve() handler (Next.js push)
 
 ### Step 6: Create entry point
 
-For SDK syntax, fetch `https://docs.ironflow.run/reference/js-sdk/node.md`, `https://docs.ironflow.run/reference/api/go-sdk.md`,
-or `https://docs.ironflow.run/reference/api/python-sdk.md` for the selected language.
+Fetch the SDK page for the selected language and mode (entry point rows in "Where the
+facts live"). Write one sample function with one `step.run` and the entry point for the
+mode the user chose. Copy the shapes from the page, not from memory.
 
-**Push mode (Next.js)** — `app/api/ironflow/route.ts`:
-
-```typescript
-import { NextResponse } from "next/server";
-import { serve, createClient } from "@ironflow/node";
-import { hello } from "@/functions/hello";
-
-const allFunctions = [hello];
-
-export const POST = serve({
-  functions: allFunctions,
-  signingKey: process.env.IRONFLOW_SIGNING_KEY,   // omit = unverified POSTs (SDK warns)
-});
-
-// GET = register functions (call once after deploy)
-export async function GET() {
-  const client = createClient({
-    serverUrl: process.env.IRONFLOW_SERVER_URL!,
-    apiKey: process.env.IRONFLOW_API_KEY,
-  });
-  for (const fn of allFunctions) {
-    await client.registerFunction({
-      id: fn.config.id,
-      triggers: fn.config.triggers,
-      recording: fn.config.recording,
-      endpointUrl: `${process.env.NEXT_PUBLIC_URL}/api/ironflow`,
-    });
-  }
-  return NextResponse.json({ registered: true });
-}
-```
-
-Two things to flag before the user builds on this:
-
-- **`registerFunction` sends only the fields you pass.** Its request takes `id`, `name`,
-  `description`, `triggers`, `retry`, `timeoutMs`, `concurrency`, `debounce`,
-  `preferredMode`, `endpointUrl`, `actorKey`, `cancelOn`, `secrets`, `recording`,
-  `recordingProfile` and `metadata`. The sample above passes
-  `recording` through. Without it a push function runs with `recording: false`, so
-  `ironflow inspect` has no frames to replay, no matter what the `createFunction` config
-  says. Pull mode's `worker.start()` sends these fields for you (`stepTimeout` is enforced
-  client-side by the worker in both modes).
-- `serve()` returns `Promise<Response | void>` (it also accepts Node req/res). Next.js
-  typed-route checking can reject that as a route export; cast if `next build` complains.
-
-**Pull mode** — `worker.ts` or `cmd/worker/main.go`:
-
-```typescript
-import { createWorker } from "@ironflow/node";
-import { hello } from "./functions/hello";
-
-const worker = createWorker({
-  serverUrl: process.env.IRONFLOW_SERVER_URL || "http://localhost:9123",
-  functions: [hello],
-});
-await worker.start();   // automatically registers all functions
-```
-
-Python pull worker: `from ironflow.worker import Worker, function`, decorate
-an `async def` handler with `@function(id="hello", triggers=[{"event": "hello"}])`,
-then call `Worker(functions=[hello]).run()`. See
-`https://docs.ironflow.run/reference/api/python-sdk.md` for the complete form.
-
-**Sample function** — `src/functions/hello.ts`:
-
-```typescript
-import { createFunction } from "@ironflow/node";
-
-const HelloEvents = { REQUESTED: "hello.requested" } as const;
-
-export const hello = createFunction(
-  {
-    id: "hello",
-    triggers: [{ event: HelloEvents.REQUESTED }],
-    recording: true,
-  },
-  async ({ event, step }) => {
-    return await step.run("greet", async () => ({
-      message: `Hello, ${(event.data as any)?.name ?? "World"}!`,
-    }));
-  },
-);
-```
+A push function needs explicit registration against the engine. Read "registerFunction"
+and "serve" on the Node page before you write it. Register with a one-off script or a
+`GET` route, as the page shows. Note which one you built: Step 8 uses the same one.
+Note the trigger event of the function too. Step 8 emits it. If `ironflow init`
+scaffolded the project, the function is `process-order`. Its trigger event is
+`order.placed`, with data `{"orderId": "ord-1", "total": 49.99, "email": "a@b.com"}`.
 
 ### Step 7: Configure environment
 
-Create `.env.example`:
+Create `.env.example` with placeholders for the variables in the "Environment
+variables" row. Put no real value in it. There is no `APP_URL` convention in Ironflow.
+Name the variable for your app's own public URL as you like. Only your registration code
+reads it, to build the `endpointUrl` it passes to `registerFunction`. Read
+`registerFunction` on the Node page.
 
-```env
-IRONFLOW_SERVER_URL=http://localhost:9123
-# IRONFLOW_API_KEY=ifkey_...              # REQUIRED unless the server runs with --dev or .ironflow/engine.json supplies it
-
-# Push mode:
-# IRONFLOW_SIGNING_KEY=...                # pass as serve({ signingKey }) — the SDK never reads this env var itself
-# NEXT_PUBLIC_URL=http://localhost:3000   # your app's own URL — you build endpointUrl from it
-
-# Server-side only (not read by the SDK):
-# IRONFLOW_DATABASE_URL=postgres://...    # production
-```
-
-`IRONFLOW_SERVER_URL` is the only server-URL variable on every path: the CLI, the SDK
-clients and workers, `serve()` push and webhook emit, agent memory, and `exposeMcp`.
-The order is an explicit `serverUrl` first, then `IRONFLOW_SERVER_URL`, then
-`http://localhost:9123`. Blank values count as unset.
-Agent memory and `exposeMcp` have no localhost default: they need
-`IRONFLOW_SERVER_URL` or an explicit value.
-
-There is no `APP_URL` convention in Ironflow — for a non-Next framework, name your app's
-own URL variable whatever you like; only your registration code reads it.
-
-Ironflow's local files must stay out of version control: `serve` writes the SQLite db,
-embedded NATS store and `blobs/` under `.ironflow/`, alongside `.ironflow_bootstrap_key.json`
-(an admin API key), `.ironflow_jwt_secret` and `engine.json`; `.env` and `.env.local` hold
-credentials.
-Setting `spec.storage.path` moves the data to that file's directory, so ignore that path
-instead. If the project is in a Git work tree, review it and create or extend `.gitignore`
-for these and for everything else its stack generates, as `create-project.md` describes
-("Git and `.gitignore`").
+Ironflow's local files and `.env` files must stay out of version control. If the project
+is in a Git work tree, review it and create or extend `.gitignore` for them and for
+everything else its stack generates, as `create-project.md` describes ("Git and
+`.gitignore`"). The paths are in the "Local state" section of the `serve` page.
 
 ### Step 8: Verify
 
@@ -369,7 +222,8 @@ ironflow serve --dev
 
 # Terminal 2 (push mode)
 pnpm dev
-curl http://localhost:3000/api/ironflow   # register functions
+# then register the functions the way you set it up in Step 6:
+# run the registration script, or call the GET registration route
 
 # Terminal 2 (pull mode)
 npx tsx worker.ts
@@ -382,24 +236,19 @@ credentials in all commands. For Python, use the project environment consistentl
 
 Then test:
 ```bash
-ironflow emit hello.requested --data '{"name": "Ironflow"}'
+ironflow emit <trigger-event> --data '<event-data-json>'   # the event from Step 6
 ironflow run list --json
 ```
 
 Use a unique marker for the sample invocation and check that invocation's run and
 expected output with a bounded wait; another completed run does not verify setup.
 
-`run list --json` prints an array of `{id, function, status, started_at, ended_at}`.
-Empty array after an emit usually means the function never registered (push: did the
+An empty array after an emit usually means the function never registered (push: did the
 GET run? pull: is the worker connected?), not that it failed.
 
-If these 401, the server is running without `--dev` and no key reached the CLI. Either
-restart the server with `--dev` or export `IRONFLOW_API_KEY` from the bootstrap key file.
-There is no `--api-key` flag on `emit` or `run`. The CLI and the SDKs read the key from
-`IRONFLOW_API_KEY`; only when `IRONFLOW_SERVER_URL` and `IRONFLOW_API_KEY`
-are all unset do they fall back to `.ironflow/engine.json`, which a local SQLite `serve`
-writes. A 401 therefore points to a remote or Postgres engine, a non-loopback `--host`, a
-different working directory, or `IRONFLOW_NO_DISCOVERY=1`.
+If these commands return 401, read "Global Behavior" on the CLI page and "Dev Mode" on
+the `serve` page. Restart the server with `--dev`, or give the CLI the key as the docs
+describe.
 
 ### Step 9: Suggest next
 
@@ -408,18 +257,15 @@ different working directory, or `IRONFLOW_NO_DISCOVERY=1`.
 > - `/ironflow-start` (architecture mode) to choose patterns
 > - `/ironflow-ops` once you have failed runs to debug"
 
-If the user codes in Zed or a JetBrains IDE and is not already in the Ironflow agent, add one line:
-`@ironflow/agent` puts these skills in the editor's agent panel with their own model key
-(`npx -y @ironflow/agent login`). Setup: https://docs.ironflow.run/how-to-guides/ai-acp-agent/
+If the user codes in Zed or a JetBrains IDE and is not already in the Ironflow agent, add
+one line: `@ironflow/agent` puts these skills in the editor's agent panel. Setup is in the
+"Ironflow agent in Zed or JetBrains" row.
 
 ---
 
 ## Mode 2: Fit Analysis — moved
 
-Codebase fit analysis now lives in its own skill. It scans Java/Spring, C#/.NET,
-Python, Rust, Node and Go, scores event-driven readiness, and writes a visual HTML
-report with `file:line` evidence.
-
+Codebase fit analysis lives in the `ironflow-fit` skill.
 Read and follow `~/.agents/skills/ironflow-fit/SKILL.md`.
 
 ---
@@ -429,47 +275,38 @@ Read and follow `~/.agents/skills/ironflow-fit/SKILL.md`.
 Walk the user through the relevant decision. Don't dump all matrices at once — pick the
 2-3 that apply.
 
-For full decision matrices and examples: fetch `https://docs.ironflow.run/explanation/patterns.md`.
-
-### CQRS mental model (read this first if the app has a real domain)
+### CRUD or CQRS first
 
 Before choosing primitives, decide whether the user is building **CRUD-style** or
-**CQRS-style**:
-
-| CRUD-style (simpler) | CQRS-style (domain-rich) |
-|---|---|
-| One model, one DB, same shape for reads and writes | **Two models** — write model (aggregate + stream) and read model (projections) |
-| Controllers call ORM, return rows | HTTP dispatches **commands**; commands return acknowledgement, not state |
-| Events (if any) are notifications after the fact | Events **are** the state — stored, folded, projected |
-| Business rules in service layer / controller | Invariants in the **aggregate decider** (pure function) |
-| Read-your-own-writes is trivial (same transaction) | Reads are **eventually consistent** — handled via `subscribeToProjection` or optimistic UI |
-
-CQRS pays off when: you have rich business rules, multiple read shapes, audit
-requirements, or long-running processes. It's overhead when: the app is a form+table
-CRUD with one read view.
+**CQRS-style**. For a domain-rich app, read "The Mapping" and "When to Introduce CQRS"
+on https://docs.ironflow.run/explanation/ddd/cqrs.md (invariants and read lag are on
+https://docs.ironflow.run/explanation/patterns.md, in "Invariants live in the decider"
+and "Read-Your-Own-Writes & Projection Lag").
 
 Ironflow supports both. Don't force CQRS on simple CRUD; don't simulate CRUD on top of
 Ironflow either. Ask the user — most real apps have **pockets** of each.
 
-### Decision quick reference
+### Decision routing
 
-| Decision | Choose A when... | Choose B when... |
-|---|---|---|
-| **Push** vs **Pull** | Tasks under the 10s engine ceiling, serverless | Anything past 10s, persistent workers |
-| **CRUD** vs **CQRS** for a given entity | Simple form-and-table, no multi-view reads | Rich rules, multi-view reads, lifecycle events |
-| **Plain Events** vs **Entity Streams** | Fire-and-forget signals, no per-entity ordering | Entity lifecycles, DDD aggregates, invariants |
-| **Command Event** vs **Direct Append** | Validation needed, auth context, retriable | Internal state transitions with no rules |
-| **Aggregate size: small** vs **large** | Contention, distinct lifecycles, fast fold | All state loaded together, invariants span parts |
-| **Managed** vs **External Projection** | Pure read models | Side effects (DB sync, emails) |
-| **Single projection** vs **Multiple projections** | One view shape | Multiple query paths (by-customer, by-status, etc.) |
-| **Step Compensation** vs **Saga** | Simple undo within one fn | Complex rollback across services |
-| **Concurrency Limit** vs **Key** | Global rate limiting | Per-entity serialization |
-| **`step.parallel`** vs **`step.map`** | Fixed set of operations | Dynamic list of same op |
-| **KV Store** vs **External DB** | Small, key-value, real-time | Relational, complex queries |
-| **Config** vs **KV Store** | App settings, feature flags | User-facing data |
-| **Config** vs **Secrets** | Non-sensitive | API keys, passwords |
-| **Optimistic UI** vs **Wait-for-projection** | Most actions (reconcile via subscribe) | Critical confirmations (checkout, payment) |
-| **Snapshots: yes** vs **no** | Aggregate history > ~10k events, load latency budget breached | Day-one; revisit when measured |
+Fetch the page, read the section, then recommend. Every row is on
+https://docs.ironflow.run/explanation/patterns.md unless the row says otherwise.
+
+| Decision | Section |
+|---|---|
+| Push vs Pull | "Push vs Pull Mode" |
+| CRUD vs CQRS for an entity | "When to Introduce CQRS" on https://docs.ironflow.run/explanation/ddd/cqrs.md |
+| Plain Events vs Entity Streams | "Plain Events vs Entity Streams" |
+| Command Event vs Direct Append | "Commands vs Events (CQRS foundational)" |
+| Aggregate size | "Sizing rules" |
+| Managed vs External Projection | "Managed vs External Projections" |
+| Single vs multiple projections | "When to Introduce CQRS" on https://docs.ironflow.run/explanation/ddd/cqrs.md |
+| Step Compensation vs Saga | "Saga Patterns" |
+| Concurrency limit vs key | "Concurrency Control" |
+| `step.parallel` vs `step.map` | "`step.parallel(name, branches)` — Execute branches concurrently" and "`step.map(name, items, fn)` — Fan-out/fan-in pattern" on https://docs.ironflow.run/how-to-guides/workflows/steps.md |
+| KV Store vs External DB | "KV Store vs External DB" |
+| Config vs KV Store, Config vs Secrets | "Config vs KV vs Secrets" |
+| Optimistic UI vs wait-for-projection | "Three ways to handle it" |
+| Snapshots | "When to add snapshots" |
 
 ### Workflow
 

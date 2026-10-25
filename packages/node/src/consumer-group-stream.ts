@@ -21,12 +21,11 @@ import type {
 } from "@ironflow/core";
 import {
   HEADERS,
-  IronflowError,
   calculateBackoff,
   createLogger,
   createNoopLogger,
 } from "@ironflow/core";
-import { SDK_HEADER } from "./sdk-fetch.js";
+import { SDK_HEADER, ServerTooOldError } from "./sdk-fetch.js";
 import {
   AckType,
   JoinConsumerGroupRequestSchema,
@@ -39,6 +38,7 @@ import {
 import { resolveEnvironment } from "./internal/register-functions.js";
 import { AckError, GroupConn, StaleAckError, SubscriptionClosedError } from "./consumer-group-stream-conn.js";
 
+export { ServerTooOldError } from "./sdk-fetch.js";
 export {
   AckError,
   StaleAckError,
@@ -133,18 +133,7 @@ function toEvent<T>(e: ProtoSubscriptionEvent): SubscriptionEvent<T> {
 
 /** The first server that implements `SubscribeBidirectional` (ADR 0123). Go and Python carry the same value. */
 const MIN_SERVER_VERSION_SUBSCRIBE_BIDIRECTIONAL = "0.48.0";
-
-/** The server is too old for a call; `message` names the minimum version. Not retryable. */
-export class ServerTooOldError extends IronflowError {
-  constructor(rpc: string, minVersion: string, cause?: Error) {
-    super(`${rpc} needs Ironflow server >= ${minVersion}; upgrade the server or use the WebSocket transport`, {
-      code: "SERVER_TOO_OLD",
-      retryable: false,
-      cause,
-    });
-    this.name = "ServerTooOldError";
-  }
-}
+const BIDI_REMEDY = "upgrade the server or use the WebSocket transport";
 
 const codeName = (c: Code) => Code[c].replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
 
@@ -235,7 +224,7 @@ class GroupSubscription<T> implements AckableSubscription {
   async start(): Promise<void> {
     const conn = await this.open().catch((err) => {
       if (ConnectError.from(err).code === Code.Unimplemented) {
-        throw new ServerTooOldError("SubscribeBidirectional", MIN_SERVER_VERSION_SUBSCRIBE_BIDIRECTIONAL, err);
+        throw new ServerTooOldError("SubscribeBidirectional", MIN_SERVER_VERSION_SUBSCRIBE_BIDIRECTIONAL, err, BIDI_REMEDY);
       }
       throw err;
     });
@@ -462,7 +451,7 @@ class GroupSubscription<T> implements AckableSubscription {
     // A rejoin that lands on an older node (a rolling upgrade) names the version too.
     const message =
       ce.code === Code.Unimplemented
-        ? new ServerTooOldError("SubscribeBidirectional", MIN_SERVER_VERSION_SUBSCRIBE_BIDIRECTIONAL, ce).message
+        ? new ServerTooOldError("SubscribeBidirectional", MIN_SERVER_VERSION_SUBSCRIBE_BIDIRECTIONAL, ce, BIDI_REMEDY).message
         : ce.message;
     this.emitError({ code: codeName(ce.code), message });
   }

@@ -12,7 +12,7 @@ import type { JsonObject, Message } from "@bufbuild/protobuf";
  * Describes the file ironflow/v1/types.proto.
  */
 export const file_ironflow_v1_types: GenFile = /*@__PURE__*/
-  fileDesc("Chdpcm9uZmxvdy92MS90eXBlcy5wcm90bxILaXJvbmZsb3cudjEiOgoHVHJpZ2dlchINCgVldmVudBgBIAEoCRISCgpleHByZXNzaW9uGAIgASgJEgwKBGNyb24YAyABKAkiawoLUmV0cnlDb25maWcSFAoMbWF4X2F0dGVtcHRzGAEgASgFEhgKEGluaXRpYWxfZGVsYXlfbXMYAiABKAUSFgoOYmFja29mZl9mYWN0b3IYAyABKAESFAoMbWF4X2RlbGF5X21zGAQgASgFIi8KEUNvbmN1cnJlbmN5Q29uZmlnEg0KBWxpbWl0GAEgASgFEgsKA2tleRgCIAEoCSIsCgxDYW5jZWxPblNwZWMSDQoFZXZlbnQYASABKAkSDQoFbWF0Y2gYAiABKAkiRQoORGVib3VuY2VDb25maWcSEQoJcGVyaW9kX21zGAEgASgFEgsKA2tleRgCIAEoCRITCgttYXhfd2FpdF9tcxgDIAEoAyL/BQoIRnVuY3Rpb24SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRImCgh0cmlnZ2VycxgEIAMoCzIULmlyb25mbG93LnYxLlRyaWdnZXISJwoFcmV0cnkYBSABKAsyGC5pcm9uZmxvdy52MS5SZXRyeUNvbmZpZxISCgp0aW1lb3V0X21zGAYgASgFEjMKC2NvbmN1cnJlbmN5GAcgASgLMh4uaXJvbmZsb3cudjEuQ29uY3VycmVuY3lDb25maWcSMgoOcHJlZmVycmVkX21vZGUYCCABKA4yGi5pcm9uZmxvdy52MS5FeGVjdXRpb25Nb2RlEhQKDGVuZHBvaW50X3VybBgJIAEoCRIRCglhY3Rvcl9rZXkYCiABKAkSKwoGc3RhdHVzGAsgASgOMhsuaXJvbmZsb3cudjEuRnVuY3Rpb25TdGF0dXMSDwoHdmVyc2lvbhgMIAEoBRIuCgpjcmVhdGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglyZWNvcmRpbmcYDyABKAgSGQoRcmVjb3JkaW5nX3Byb2ZpbGUYFiABKAkSLAoIbmV4dF9ydW4YFyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEikKCG1ldGFkYXRhGBIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBItCghkZWJvdW5jZRgTIAEoCzIbLmlyb25mbG93LnYxLkRlYm91bmNlQ29uZmlnEiwKCWNhbmNlbF9vbhgVIAMoCzIZLmlyb25mbG93LnYxLkNhbmNlbE9uU3BlY0oECBAQEUoECBEQEkoECBQQFVITcmVjb3JkaW5nX3JldGVudGlvblIOcGF1c2VfYmVoYXZpb3JSFGNvbXBlbnNhdGVfb25fY2FuY2VsItwCCgVFdmVudBIKCgJpZBgBIAEoCRIMCgRuYW1lGAIgASgJEiUKBGRhdGEYAyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EioKCmRhdGFfdmFsdWUYDCABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSFwoPaWRlbXBvdGVuY3lfa2V5GAQgASgJEg4KBnNvdXJjZRgFIAEoCRItCgl0aW1lc3RhbXAYBiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEikKCG1ldGFkYXRhGAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIPCgd2ZXJzaW9uGAggASgFEhEKCWVudGl0eV9pZBgJIAEoCRITCgtlbnRpdHlfdHlwZRgKIAEoCRIWCg5lbnRpdHlfdmVyc2lvbhgLIAEoAxISCgplbWl0dGVkX2J5GA0gASgJIqAICgNSdW4SCgoCaWQYASABKAkSEwoLZnVuY3Rpb25faWQYAiABKAkSEAoIZXZlbnRfaWQYAyABKAkSMgoOZXhlY3V0aW9uX21vZGUYBCABKA4yGi5pcm9uZmxvdy52MS5FeGVjdXRpb25Nb2RlEhEKCXdvcmtlcl9pZBgFIAEoCRIQCghhY3Rvcl9pZBgGIAEoCRImCgVpbnB1dBgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKwoLaW5wdXRfdmFsdWUYFiABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSJwoGb3V0cHV0GAggASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYFyABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSIQoFZXJyb3IYCSABKAsyEi5pcm9uZmxvdy52MS5FcnJvchImCgZzdGF0dXMYCiABKA4yFi5pcm9uZmxvdy52MS5SdW5TdGF0dXMSDwoHYXR0ZW1wdBgLIAEoBRIUCgxtYXhfYXR0ZW1wdHMYDCABKAUSLgoKc3RhcnRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kZWRfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYESABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYEiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhcKD3BhdXNlX3JlcXVlc3RlZBgTIAEoCBIUCgxwYXVzZV9yZWFzb24YFCABKAkSGAoQZnVuY3Rpb25fdmVyc2lvbhgVIAEoBRIYChByZXN1bWVfZnJvbV9zdGVwGBggASgJEhUKDXBhcmVudF9ydW5faWQYGSABKAkSFgoOcGFyZW50X3N0ZXBfaWQYGiABKAkSLgoKdGltZW91dF9hdBgbIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFgoOZW52aXJvbm1lbnRfaWQYHCABKAkSDwoHdmVyc2lvbhgdIAEoBRISCgpjbGFpbWVkX2J5GB4gASgJEi4KCmNsYWltZWRfYXQYHyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhoKEmNhbmNlbGxhdGlvbl9jYXVzZRggIAEoCRIrCgtlcnJvcl92YWx1ZRghIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRISCgpldmVudF9uYW1lGCIgASgJSgQIDxAQSgQIEBARUg9jb25jdXJyZW5jeV9rZXlSCHByaW9yaXR5IrAICgRTdGVwEgoKAmlkGAEgASgJEg4KBnJ1bl9pZBgCIAEoCRIPCgdzdGVwX2lkGAMgASgJEigKCXN0ZXBfdHlwZRgEIAEoDjIVLmlyb25mbG93LnYxLlN0ZXBUeXBlEhAKCHNlcXVlbmNlGAUgASgFEicKBnN0YXR1cxgGIAEoDjIXLmlyb25mbG93LnYxLlN0ZXBTdGF0dXMSJgoFaW5wdXQYByABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EisKC2lucHV0X3ZhbHVlGBMgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEhIKCmlucHV0X2hhc2gYCCABKAkSJwoGb3V0cHV0GAkgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIsCgxvdXRwdXRfdmFsdWUYFCABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSIQoFZXJyb3IYCiABKAsyEi5pcm9uZmxvdy52MS5FcnJvchIPCgdhdHRlbXB0GAsgASgFEhMKC2R1cmF0aW9uX21zGAwgASgFEi4KCnN0YXJ0ZWRfYXQYDSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEiwKCGVuZGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIwCg9vcmlnaW5hbF9vdXRwdXQYDyABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EjUKFW9yaWdpbmFsX291dHB1dF92YWx1ZRgVIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIuCgpwYXRjaGVkX2F0GBAgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBISCgpwYXRjaGVkX2J5GBEgASgJEhgKEGNvbXBlbnNhdGlvbl9mb3IYEiABKAkSHQoQZHVyYXRpb25fbXNfZnVsbBgWIAEoA0gAiAEBEi8KC3NsZWVwX3VudGlsGBcgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIXCg93YWl0X2V2ZW50X25hbWUYGCABKAkSMAoMd2FpdF90aW1lb3V0GBkgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgpjcmVhdGVkX2F0GBogASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GBsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIrCgtlcnJvcl92YWx1ZRgcIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIVCg1zdG9yZWRfc3RhdHVzGB0gASgJEhQKDGNoaWxkX3J1bl9pZBgeIAEoCUITChFfZHVyYXRpb25fbXNfZnVsbCJyCgVFcnJvchIPCgdtZXNzYWdlGAEgASgJEgwKBGNvZGUYAiABKAkSDQoFc3RhY2sYAyABKAkSEQoJcmV0cnlhYmxlGAQgASgIEigKB2RldGFpbHMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0IqABCglFcnJvckluZm8SFQoNcmVzb3VyY2VfdHlwZRgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRI2CghtZXRhZGF0YRgDIAMoCzIkLmlyb25mbG93LnYxLkVycm9ySW5mby5NZXRhZGF0YUVudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASqHAQoORnVuY3Rpb25TdGF0dXMSHwobRlVOQ1RJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASGgoWRlVOQ1RJT05fU1RBVFVTX0FDVElWRRABEhoKFkZVTkNUSU9OX1NUQVRVU19QQVVTRUQQAhIcChhGVU5DVElPTl9TVEFUVVNfQVJDSElWRUQQAyphCg1FeGVjdXRpb25Nb2RlEh4KGkVYRUNVVElPTl9NT0RFX1VOU1BFQ0lGSUVEEAASFwoTRVhFQ1VUSU9OX01PREVfUFVTSBABEhcKE0VYRUNVVElPTl9NT0RFX1BVTEwQAir4AQoJUnVuU3RhdHVzEhoKFlJVTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIWChJSVU5fU1RBVFVTX1JVTk5JTkcQAhIYChRSVU5fU1RBVFVTX0NPTVBMRVRFRBADEhUKEVJVTl9TVEFUVVNfRkFJTEVEEAQSGAoUUlVOX1NUQVRVU19DQU5DRUxMRUQQBRIVChFSVU5fU1RBVFVTX1BBVVNFRBAGEiMKH1JVTl9TVEFUVVNfV0FJVElOR19GT1JfQ0FQQUNJVFkQBxIWChJSVU5fU1RBVFVTX1dBSVRJTkcQCCIECAEQASoSUlVOX1NUQVRVU19QRU5ESU5HKowCCgpTdGVwU3RhdHVzEhsKF1NURVBfU1RBVFVTX1VOU1BFQ0lGSUVEEAASFwoTU1RFUF9TVEFUVVNfUEVORElORxABEhcKE1NURVBfU1RBVFVTX1JVTk5JTkcQAhIZChVTVEVQX1NUQVRVU19DT01QTEVURUQQAxIWChJTVEVQX1NUQVRVU19GQUlMRUQQBBIYChRTVEVQX1NUQVRVU19TTEVFUElORxAFEhcKE1NURVBfU1RBVFVTX1dBSVRJTkcQBhIZChVTVEVQX1NUQVRVU19USU1FRF9PVVQQBxIYChRTVEVQX1NUQVRVU19SRVRSWUlORxAIEhQKEFNURVBfU1RBVFVTX0RFQUQQCSqnAQoIU3RlcFR5cGUSGQoVU1RFUF9UWVBFX1VOU1BFQ0lGSUVEEAASFAoQU1RFUF9UWVBFX0lOVk9LRRABEhMKD1NURVBfVFlQRV9TTEVFUBACEhwKGFNURVBfVFlQRV9XQUlUX0ZPUl9FVkVOVBADEhgKFFNURVBfVFlQRV9DT01QRU5TQVRFEAQSHQoZU1RFUF9UWVBFX0lOVk9LRV9GVU5DVElPThAFQjpaOGdpdGh1Yi5jb20vc2FoaW5hL2lyb25mbG93L2FwaS9nby9pcm9uZmxvdy92MTtpcm9uZmxvd3YxYgZwcm90bzM", [file_google_protobuf_timestamp, file_google_protobuf_struct]);
+  fileDesc("Chdpcm9uZmxvdy92MS90eXBlcy5wcm90bxILaXJvbmZsb3cudjEiOgoHVHJpZ2dlchINCgVldmVudBgBIAEoCRISCgpleHByZXNzaW9uGAIgASgJEgwKBGNyb24YAyABKAkigQEKC1JldHJ5Q29uZmlnEhQKDG1heF9hdHRlbXB0cxgBIAEoBRIYChBpbml0aWFsX2RlbGF5X21zGAIgASgFEhYKDmJhY2tvZmZfZmFjdG9yGAMgASgBEhQKDG1heF9kZWxheV9tcxgEIAEoBRIUCgxvbl9leGhhdXN0ZWQYBSABKAkiaQoUQ2lyY3VpdEJyZWFrZXJDb25maWcSGQoRZmFpbHVyZV90aHJlc2hvbGQYASABKAUSGAoQb3Blbl9kdXJhdGlvbl9tcxgCIAEoBRIcChRtYXhfb3Blbl9kdXJhdGlvbl9tcxgDIAEoBSI/Cg5UaHJvdHRsZUNvbmZpZxINCgVsaW1pdBgBIAEoBRIRCglwZXJpb2RfbXMYAiABKAUSCwoDa2V5GAMgASgJIi8KEUNvbmN1cnJlbmN5Q29uZmlnEg0KBWxpbWl0GAEgASgFEgsKA2tleRgCIAEoCSIsCgxDYW5jZWxPblNwZWMSDQoFZXZlbnQYASABKAkSDQoFbWF0Y2gYAiABKAkiRQoORGVib3VuY2VDb25maWcSEQoJcGVyaW9kX21zGAEgASgFEgsKA2tleRgCIAEoCRITCgttYXhfd2FpdF9tcxgDIAEoAyLqBgoIRnVuY3Rpb24SCgoCaWQYASABKAkSDAoEbmFtZRgCIAEoCRITCgtkZXNjcmlwdGlvbhgDIAEoCRImCgh0cmlnZ2VycxgEIAMoCzIULmlyb25mbG93LnYxLlRyaWdnZXISJwoFcmV0cnkYBSABKAsyGC5pcm9uZmxvdy52MS5SZXRyeUNvbmZpZxISCgp0aW1lb3V0X21zGAYgASgFEjMKC2NvbmN1cnJlbmN5GAcgASgLMh4uaXJvbmZsb3cudjEuQ29uY3VycmVuY3lDb25maWcSMgoOcHJlZmVycmVkX21vZGUYCCABKA4yGi5pcm9uZmxvdy52MS5FeGVjdXRpb25Nb2RlEhQKDGVuZHBvaW50X3VybBgJIAEoCRIRCglhY3Rvcl9rZXkYCiABKAkSKwoGc3RhdHVzGAsgASgOMhsuaXJvbmZsb3cudjEuRnVuY3Rpb25TdGF0dXMSDwoHdmVyc2lvbhgMIAEoBRIuCgpjcmVhdGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIuCgp1cGRhdGVkX2F0GA4gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIRCglyZWNvcmRpbmcYDyABKAgSGQoRcmVjb3JkaW5nX3Byb2ZpbGUYFiABKAkSLAoIbmV4dF9ydW4YFyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEikKCG1ldGFkYXRhGBIgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBItCghkZWJvdW5jZRgTIAEoCzIbLmlyb25mbG93LnYxLkRlYm91bmNlQ29uZmlnEiwKCWNhbmNlbF9vbhgVIAMoCzIZLmlyb25mbG93LnYxLkNhbmNlbE9uU3BlYxI6Cg9jaXJjdWl0X2JyZWFrZXIYGCABKAsyIS5pcm9uZmxvdy52MS5DaXJjdWl0QnJlYWtlckNvbmZpZxItCgh0aHJvdHRsZRgZIAEoCzIbLmlyb25mbG93LnYxLlRocm90dGxlQ29uZmlnSgQIEBARSgQIERASSgQIFBAVUhNyZWNvcmRpbmdfcmV0ZW50aW9uUg5wYXVzZV9iZWhhdmlvclIUY29tcGVuc2F0ZV9vbl9jYW5jZWwi3AIKBUV2ZW50EgoKAmlkGAEgASgJEgwKBG5hbWUYAiABKAkSJQoEZGF0YRgDIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKgoKZGF0YV92YWx1ZRgMIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIXCg9pZGVtcG90ZW5jeV9rZXkYBCABKAkSDgoGc291cmNlGAUgASgJEi0KCXRpbWVzdGFtcBgGIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASKQoIbWV0YWRhdGEYByABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0Eg8KB3ZlcnNpb24YCCABKAUSEQoJZW50aXR5X2lkGAkgASgJEhMKC2VudGl0eV90eXBlGAogASgJEhYKDmVudGl0eV92ZXJzaW9uGAsgASgDEhIKCmVtaXR0ZWRfYnkYDSABKAkioAgKA1J1bhIKCgJpZBgBIAEoCRITCgtmdW5jdGlvbl9pZBgCIAEoCRIQCghldmVudF9pZBgDIAEoCRIyCg5leGVjdXRpb25fbW9kZRgEIAEoDjIaLmlyb25mbG93LnYxLkV4ZWN1dGlvbk1vZGUSEQoJd29ya2VyX2lkGAUgASgJEhAKCGFjdG9yX2lkGAYgASgJEiYKBWlucHV0GAcgASgLMhcuZ29vZ2xlLnByb3RvYnVmLlN0cnVjdBIrCgtpbnB1dF92YWx1ZRgWIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRInCgZvdXRwdXQYCCABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiwKDG91dHB1dF92YWx1ZRgXIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIhCgVlcnJvchgJIAEoCzISLmlyb25mbG93LnYxLkVycm9yEiYKBnN0YXR1cxgKIAEoDjIWLmlyb25mbG93LnYxLlJ1blN0YXR1cxIPCgdhdHRlbXB0GAsgASgFEhQKDG1heF9hdHRlbXB0cxgMIAEoBRIuCgpzdGFydGVkX2F0GA0gASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIsCghlbmRlZF9hdBgOIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKY3JlYXRlZF9hdBgRIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLgoKdXBkYXRlZF9hdBgSIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASFwoPcGF1c2VfcmVxdWVzdGVkGBMgASgIEhQKDHBhdXNlX3JlYXNvbhgUIAEoCRIYChBmdW5jdGlvbl92ZXJzaW9uGBUgASgFEhgKEHJlc3VtZV9mcm9tX3N0ZXAYGCABKAkSFQoNcGFyZW50X3J1bl9pZBgZIAEoCRIWCg5wYXJlbnRfc3RlcF9pZBgaIAEoCRIuCgp0aW1lb3V0X2F0GBsgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIWCg5lbnZpcm9ubWVudF9pZBgcIAEoCRIPCgd2ZXJzaW9uGB0gASgFEhIKCmNsYWltZWRfYnkYHiABKAkSLgoKY2xhaW1lZF9hdBgfIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASGgoSY2FuY2VsbGF0aW9uX2NhdXNlGCAgASgJEisKC2Vycm9yX3ZhbHVlGCEgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEhIKCmV2ZW50X25hbWUYIiABKAlKBAgPEBBKBAgQEBFSD2NvbmN1cnJlbmN5X2tleVIIcHJpb3JpdHkisAgKBFN0ZXASCgoCaWQYASABKAkSDgoGcnVuX2lkGAIgASgJEg8KB3N0ZXBfaWQYAyABKAkSKAoJc3RlcF90eXBlGAQgASgOMhUuaXJvbmZsb3cudjEuU3RlcFR5cGUSEAoIc2VxdWVuY2UYBSABKAUSJwoGc3RhdHVzGAYgASgOMhcuaXJvbmZsb3cudjEuU3RlcFN0YXR1cxImCgVpbnB1dBgHIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSKwoLaW5wdXRfdmFsdWUYEyABKAsyFi5nb29nbGUucHJvdG9idWYuVmFsdWUSEgoKaW5wdXRfaGFzaBgIIAEoCRInCgZvdXRwdXQYCSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EiwKDG91dHB1dF92YWx1ZRgUIAEoCzIWLmdvb2dsZS5wcm90b2J1Zi5WYWx1ZRIhCgVlcnJvchgKIAEoCzISLmlyb25mbG93LnYxLkVycm9yEg8KB2F0dGVtcHQYCyABKAUSEwoLZHVyYXRpb25fbXMYDCABKAUSLgoKc3RhcnRlZF9hdBgNIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASLAoIZW5kZWRfYXQYDiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjAKD29yaWdpbmFsX291dHB1dBgPIAEoCzIXLmdvb2dsZS5wcm90b2J1Zi5TdHJ1Y3QSNQoVb3JpZ2luYWxfb3V0cHV0X3ZhbHVlGBUgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEi4KCnBhdGNoZWRfYXQYECABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhIKCnBhdGNoZWRfYnkYESABKAkSGAoQY29tcGVuc2F0aW9uX2ZvchgSIAEoCRIdChBkdXJhdGlvbl9tc19mdWxsGBYgASgDSACIAQESLwoLc2xlZXBfdW50aWwYFyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhcKD3dhaXRfZXZlbnRfbmFtZRgYIAEoCRIwCgx3YWl0X3RpbWVvdXQYGSABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCmNyZWF0ZWRfYXQYGiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEi4KCnVwZGF0ZWRfYXQYGyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEisKC2Vycm9yX3ZhbHVlGBwgASgLMhYuZ29vZ2xlLnByb3RvYnVmLlZhbHVlEhUKDXN0b3JlZF9zdGF0dXMYHSABKAkSFAoMY2hpbGRfcnVuX2lkGB4gASgJQhMKEV9kdXJhdGlvbl9tc19mdWxsIooBCgVFcnJvchIPCgdtZXNzYWdlGAEgASgJEgwKBGNvZGUYAiABKAkSDQoFc3RhY2sYAyABKAkSEQoJcmV0cnlhYmxlGAQgASgIEigKB2RldGFpbHMYBSABKAsyFy5nb29nbGUucHJvdG9idWYuU3RydWN0EhYKDnJldHJ5X2FmdGVyX21zGAYgASgDIqABCglFcnJvckluZm8SFQoNcmVzb3VyY2VfdHlwZRgBIAEoCRITCgtyZXNvdXJjZV9pZBgCIAEoCRI2CghtZXRhZGF0YRgDIAMoCzIkLmlyb25mbG93LnYxLkVycm9ySW5mby5NZXRhZGF0YUVudHJ5Gi8KDU1ldGFkYXRhRW50cnkSCwoDa2V5GAEgASgJEg0KBXZhbHVlGAIgASgJOgI4ASqHAQoORnVuY3Rpb25TdGF0dXMSHwobRlVOQ1RJT05fU1RBVFVTX1VOU1BFQ0lGSUVEEAASGgoWRlVOQ1RJT05fU1RBVFVTX0FDVElWRRABEhoKFkZVTkNUSU9OX1NUQVRVU19QQVVTRUQQAhIcChhGVU5DVElPTl9TVEFUVVNfQVJDSElWRUQQAyphCg1FeGVjdXRpb25Nb2RlEh4KGkVYRUNVVElPTl9NT0RFX1VOU1BFQ0lGSUVEEAASFwoTRVhFQ1VUSU9OX01PREVfUFVTSBABEhcKE0VYRUNVVElPTl9NT0RFX1BVTEwQAir4AQoJUnVuU3RhdHVzEhoKFlJVTl9TVEFUVVNfVU5TUEVDSUZJRUQQABIWChJSVU5fU1RBVFVTX1JVTk5JTkcQAhIYChRSVU5fU1RBVFVTX0NPTVBMRVRFRBADEhUKEVJVTl9TVEFUVVNfRkFJTEVEEAQSGAoUUlVOX1NUQVRVU19DQU5DRUxMRUQQBRIVChFSVU5fU1RBVFVTX1BBVVNFRBAGEiMKH1JVTl9TVEFUVVNfV0FJVElOR19GT1JfQ0FQQUNJVFkQBxIWChJSVU5fU1RBVFVTX1dBSVRJTkcQCCIECAEQASoSUlVOX1NUQVRVU19QRU5ESU5HKowCCgpTdGVwU3RhdHVzEhsKF1NURVBfU1RBVFVTX1VOU1BFQ0lGSUVEEAASFwoTU1RFUF9TVEFUVVNfUEVORElORxABEhcKE1NURVBfU1RBVFVTX1JVTk5JTkcQAhIZChVTVEVQX1NUQVRVU19DT01QTEVURUQQAxIWChJTVEVQX1NUQVRVU19GQUlMRUQQBBIYChRTVEVQX1NUQVRVU19TTEVFUElORxAFEhcKE1NURVBfU1RBVFVTX1dBSVRJTkcQBhIZChVTVEVQX1NUQVRVU19USU1FRF9PVVQQBxIYChRTVEVQX1NUQVRVU19SRVRSWUlORxAIEhQKEFNURVBfU1RBVFVTX0RFQUQQCSqnAQoIU3RlcFR5cGUSGQoVU1RFUF9UWVBFX1VOU1BFQ0lGSUVEEAASFAoQU1RFUF9UWVBFX0lOVk9LRRABEhMKD1NURVBfVFlQRV9TTEVFUBACEhwKGFNURVBfVFlQRV9XQUlUX0ZPUl9FVkVOVBADEhgKFFNURVBfVFlQRV9DT01QRU5TQVRFEAQSHQoZU1RFUF9UWVBFX0lOVk9LRV9GVU5DVElPThAFQjpaOGdpdGh1Yi5jb20vc2FoaW5hL2lyb25mbG93L2FwaS9nby9pcm9uZmxvdy92MTtpcm9uZmxvd3YxYgZwcm90bzM", [file_google_protobuf_timestamp, file_google_protobuf_struct]);
 
 /**
  * @generated from message ironflow.v1.Trigger
@@ -53,32 +53,42 @@ export const TriggerSchema: GenMessage<Trigger> = /*@__PURE__*/
  */
 export type RetryConfig = Message<"ironflow.v1.RetryConfig"> & {
   /**
-   * Max attempts (default: 3)
+   * Total attempts, including the first. Zero means unset: the server's
+   * spec.engine.retry.maxAttempts (default: 25) applies when each run is created.
    *
    * @generated from field: int32 max_attempts = 1;
    */
   maxAttempts: number;
 
   /**
-   * Initial delay in milliseconds (default: 1000)
+   * Initial delay in milliseconds. Zero means unset (server default: 1000).
    *
    * @generated from field: int32 initial_delay_ms = 2;
    */
   initialDelayMs: number;
 
   /**
-   * Backoff factor (default: 2.0)
+   * Backoff factor. Zero means unset (server default: 2.0).
    *
    * @generated from field: double backoff_factor = 3;
    */
   backoffFactor: number;
 
   /**
-   * Max delay in milliseconds (default: 300000 = 5 min)
+   * Max delay in milliseconds. Zero means unset (server default: 300000 = 5 min).
    *
    * @generated from field: int32 max_delay_ms = 4;
    */
   maxDelayMs: number;
+
+  /**
+   * What happens when a retryable failure has used every attempt: "pause"
+   * holds the run with its completed steps for `ironflow run resume`, "fail"
+   * ends it. Empty means unset (server default: "pause").
+   *
+   * @generated from field: string on_exhausted = 5;
+   */
+  onExhausted: string;
 };
 
 /**
@@ -87,6 +97,82 @@ export type RetryConfig = Message<"ironflow.v1.RetryConfig"> & {
  */
 export const RetryConfigSchema: GenMessage<RetryConfig> = /*@__PURE__*/
   messageDesc(file_ironflow_v1_types, 1);
+
+/**
+ * CircuitBreakerConfig tunes the push-endpoint circuit breaker. Zero fields
+ * mean unset; the server's spec.engine.circuitBreaker defaults apply.
+ *
+ * @generated from message ironflow.v1.CircuitBreakerConfig
+ */
+export type CircuitBreakerConfig = Message<"ironflow.v1.CircuitBreakerConfig"> & {
+  /**
+   * Consecutive failed execution attempts that open the circuit (default: 5).
+   *
+   * @generated from field: int32 failure_threshold = 1;
+   */
+  failureThreshold: number;
+
+  /**
+   * First open window in milliseconds (default: 60000). Each failed probe
+   * doubles the window up to max_open_duration_ms.
+   *
+   * @generated from field: int32 open_duration_ms = 2;
+   */
+  openDurationMs: number;
+
+  /**
+   * Cap for the doubling open window in milliseconds (default: 600000).
+   *
+   * @generated from field: int32 max_open_duration_ms = 3;
+   */
+  maxOpenDurationMs: number;
+};
+
+/**
+ * Describes the message ironflow.v1.CircuitBreakerConfig.
+ * Use `create(CircuitBreakerConfigSchema)` to create a new message.
+ */
+export const CircuitBreakerConfigSchema: GenMessage<CircuitBreakerConfig> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_types, 2);
+
+/**
+ * ThrottleConfig is a soft start-rate limit: at most `limit` runs start per
+ * `period_ms` (per key value when `key` is set). Runs over the limit wait in
+ * the queue; they are never dropped.
+ *
+ * @generated from message ironflow.v1.ThrottleConfig
+ */
+export type ThrottleConfig = Message<"ironflow.v1.ThrottleConfig"> & {
+  /**
+   * Runs allowed to start per period. Must be >= 1.
+   *
+   * @generated from field: int32 limit = 1;
+   */
+  limit: number;
+
+  /**
+   * Window length in milliseconds. Must be >= 1000.
+   *
+   * @generated from field: int32 period_ms = 2;
+   */
+  periodMs: number;
+
+  /**
+   * Optional path into the event data (e.g. "customerId"); empty throttles the
+   * whole function. A key that does not resolve fails the run with
+   * THROTTLE_KEY_UNRESOLVED.
+   *
+   * @generated from field: string key = 3;
+   */
+  key: string;
+};
+
+/**
+ * Describes the message ironflow.v1.ThrottleConfig.
+ * Use `create(ThrottleConfigSchema)` to create a new message.
+ */
+export const ThrottleConfigSchema: GenMessage<ThrottleConfig> = /*@__PURE__*/
+  messageDesc(file_ironflow_v1_types, 3);
 
 /**
  * @generated from message ironflow.v1.ConcurrencyConfig
@@ -112,7 +198,7 @@ export type ConcurrencyConfig = Message<"ironflow.v1.ConcurrencyConfig"> & {
  * Use `create(ConcurrencyConfigSchema)` to create a new message.
  */
 export const ConcurrencyConfigSchema: GenMessage<ConcurrencyConfig> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 2);
+  messageDesc(file_ironflow_v1_types, 4);
 
 /**
  * CancelOnSpec declares an event match that auto-cancels a running
@@ -143,7 +229,7 @@ export type CancelOnSpec = Message<"ironflow.v1.CancelOnSpec"> & {
  * Use `create(CancelOnSpecSchema)` to create a new message.
  */
 export const CancelOnSpecSchema: GenMessage<CancelOnSpec> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 3);
+  messageDesc(file_ironflow_v1_types, 5);
 
 /**
  * DebounceConfig collapses rapid-fire events into a single invocation
@@ -184,7 +270,7 @@ export type DebounceConfig = Message<"ironflow.v1.DebounceConfig"> & {
  * Use `create(DebounceConfigSchema)` to create a new message.
  */
 export const DebounceConfigSchema: GenMessage<DebounceConfig> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 4);
+  messageDesc(file_ironflow_v1_types, 6);
 
 /**
  * @generated from message ironflow.v1.Function
@@ -335,6 +421,20 @@ export type Function = Message<"ironflow.v1.Function"> & {
    * @generated from field: repeated ironflow.v1.CancelOnSpec cancel_on = 21;
    */
   cancelOn: CancelOnSpec[];
+
+  /**
+   * Circuit-breaker overrides (optional).
+   *
+   * @generated from field: ironflow.v1.CircuitBreakerConfig circuit_breaker = 24;
+   */
+  circuitBreaker?: CircuitBreakerConfig | undefined;
+
+  /**
+   * Start-rate throttle (optional).
+   *
+   * @generated from field: ironflow.v1.ThrottleConfig throttle = 25;
+   */
+  throttle?: ThrottleConfig | undefined;
 };
 
 /**
@@ -342,7 +442,7 @@ export type Function = Message<"ironflow.v1.Function"> & {
  * Use `create(FunctionSchema)` to create a new message.
  */
 export const FunctionSchema: GenMessage<Function> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 5);
+  messageDesc(file_ironflow_v1_types, 7);
 
 /**
  * @generated from message ironflow.v1.Event
@@ -446,7 +546,7 @@ export type Event = Message<"ironflow.v1.Event"> & {
  * Use `create(EventSchema)` to create a new message.
  */
 export const EventSchema: GenMessage<Event> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 6);
+  messageDesc(file_ironflow_v1_types, 8);
 
 /**
  * @generated from message ironflow.v1.Run
@@ -670,7 +770,7 @@ export type Run = Message<"ironflow.v1.Run"> & {
  * Use `create(RunSchema)` to create a new message.
  */
 export const RunSchema: GenMessage<Run> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 7);
+  messageDesc(file_ironflow_v1_types, 9);
 
 /**
  * @generated from message ironflow.v1.Step
@@ -889,7 +989,7 @@ export type Step = Message<"ironflow.v1.Step"> & {
  * Use `create(StepSchema)` to create a new message.
  */
 export const StepSchema: GenMessage<Step> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 8);
+  messageDesc(file_ironflow_v1_types, 10);
 
 /**
  * @generated from message ironflow.v1.Error
@@ -929,6 +1029,14 @@ export type Error = Message<"ironflow.v1.Error"> & {
    * @generated from field: google.protobuf.Struct details = 5;
    */
   details?: JsonObject | undefined;
+
+  /**
+   * Delay before the next attempt requested by the handler (RetryAfterError).
+   * Zero means use the retry policy's backoff. Capped at the policy's max delay.
+   *
+   * @generated from field: int64 retry_after_ms = 6;
+   */
+  retryAfterMs: bigint;
 };
 
 /**
@@ -936,7 +1044,7 @@ export type Error = Message<"ironflow.v1.Error"> & {
  * Use `create(ErrorSchema)` to create a new message.
  */
 export const ErrorSchema: GenMessage<Error> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 9);
+  messageDesc(file_ironflow_v1_types, 11);
 
 /**
  * ErrorInfo for detailed error responses
@@ -971,7 +1079,7 @@ export type ErrorInfo = Message<"ironflow.v1.ErrorInfo"> & {
  * Use `create(ErrorInfoSchema)` to create a new message.
  */
 export const ErrorInfoSchema: GenMessage<ErrorInfo> = /*@__PURE__*/
-  messageDesc(file_ironflow_v1_types, 10);
+  messageDesc(file_ironflow_v1_types, 12);
 
 /**
  * @generated from enum ironflow.v1.FunctionStatus

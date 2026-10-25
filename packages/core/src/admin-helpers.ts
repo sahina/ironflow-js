@@ -139,10 +139,33 @@ export function definitionHistoryPageFromWire<TDefinition>(
 // ── Executable deployments (ADR 0081) ───────────────────────────────────
 
 /**
- * The ExecutionSnapshot schema this SDK knows. The server refuses a newer one
- * rather than store an identity it cannot represent. Raise it with the proto.
+ * The highest ExecutionSnapshot schema this SDK knows. The server refuses a
+ * newer one rather than store an identity it cannot represent. Raise it with
+ * the proto.
+ *
+ * This is the ceiling, not what every request declares: `registerDeploymentRequest`
+ * declares 2 only when the snapshot uses a schema-2 field (`circuitBreaker`,
+ * `throttle`, `retry.onExhausted`) and 1 otherwise, so a plain snapshot still
+ * registers against an engine that predates schema 2.
  */
-export const DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION = 1;
+export const DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION = 2;
+
+function hasValue(v: unknown): boolean {
+  return v !== undefined && v !== null && v !== "";
+}
+
+/** Lowest snapshot schema that can represent `snapshot`; protojson accepts camelCase and snake_case keys. */
+function snapshotSchemaVersionFor(snapshot: Record<string, unknown> | undefined): number {
+  if (!snapshot) return 1;
+  const retry = (snapshot.retry ?? {}) as Record<string, unknown>;
+  const usesV2 =
+    hasValue(snapshot.circuitBreaker) ||
+    hasValue(snapshot.circuit_breaker) ||
+    hasValue(snapshot.throttle) ||
+    hasValue(retry.onExhausted) ||
+    hasValue(retry.on_exhausted);
+  return usesV2 ? DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION : 1;
+}
 
 export interface RegisterDeploymentInput {
   functionId: string;
@@ -210,7 +233,7 @@ export function registerDeploymentRequest(input: RegisterDeploymentInput): Recor
     ...(input.snapshot ? { snapshot: input.snapshot } : {}),
     mode: `EXECUTION_MODE_${input.mode.toUpperCase()}`,
     ...(input.endpointUrl ? { endpointUrl: input.endpointUrl } : {}),
-    snapshotSchemaVersion: DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION,
+    snapshotSchemaVersion: snapshotSchemaVersionFor(input.snapshot),
   };
 }
 

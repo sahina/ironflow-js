@@ -1,6 +1,6 @@
 ---
 name: ironflow-ops
-version: 0.51.0
+version: 0.52.0
 description: |
   Operate Ironflow — debug failed/stuck runs, migrate SDK versions with upcasters,
   deploy/scale/troubleshoot clusters, package an app with the engine into one container.
@@ -98,7 +98,7 @@ curl -s http://localhost:9123/ready
 ```
 
 If the server is unreachable or unhealthy, fix server connectivity before app-level
-debugging. This is in `platform.md` (troubleshooting section).
+debugging. This is in `platform.md` (Troubleshoot section).
 
 ## Cleanup Protocol
 

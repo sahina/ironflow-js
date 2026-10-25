@@ -93,6 +93,8 @@ import {
   type ExecutionMode,
   type RetryConfig,
   type ConcurrencyConfig,
+  type CircuitBreakerConfig,
+  type ThrottleConfig,
   type DebounceConfig,
   type AppendEventInput,
   type AppendOptions,
@@ -182,6 +184,7 @@ import {
   DEFAULT_CLIENT_RETRY,
   type ClientRetryConfig,
 } from "@ironflow/core";
+import { resilienceBody, validateResilienceConfig } from "./internal/retry.js";
 import { SAFE_RPC_PATHS } from "./internal/safe-rpc-paths.js";
 import { KVClient } from "./kv.js";
 import { FilesClient } from "./files.js";
@@ -296,6 +299,10 @@ export interface RegisterFunctionRequest {
   timeoutMs?: number;
   /** Concurrency configuration */
   concurrency?: ConcurrencyConfig;
+  /** Circuit breaker overrides; unset fields use the server defaults */
+  circuitBreaker?: CircuitBreakerConfig;
+  /** Soft start-rate limit; runs over the limit wait in the queue */
+  throttle?: ThrottleConfig;
   /** Debounce configuration — collapse rapid events (issue #545) */
   debounce?: DebounceConfig;
   /** Preferred execution mode */
@@ -384,8 +391,8 @@ export interface Run {
 export interface ListRunsOptions {
   /** Filter by function ID */
   functionId?: string;
-  /** Filter by status. "pending" is retired and the server rejects it. */
-  status?: Exclude<RunStatus, "pending">;
+  /** Filter by status. */
+  status?: RunStatus;
   /** Maximum number of results */
   limit?: number;
   /** Pagination cursor */
@@ -468,6 +475,7 @@ export class IronflowClient {
   async registerFunction(
     request: RegisterFunctionRequest
   ): Promise<RegisterFunctionResult> {
+    validateResilienceConfig(request);
     const body: Record<string, unknown> = {
       id: request.id,
     };
@@ -475,7 +483,7 @@ export class IronflowClient {
     if (request.name) body.name = request.name;
     if (request.description) body.description = request.description;
     if (request.triggers) body.triggers = request.triggers;
-    if (request.retry) body.retry = request.retry;
+    Object.assign(body, resilienceBody(request));
     if (request.timeoutMs) body.timeoutMs = request.timeoutMs;
     if (request.concurrency) body.concurrency = request.concurrency;
     if (request.debounce) {

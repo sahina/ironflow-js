@@ -100,7 +100,9 @@ All fields on the config object:
 | `name` | `string` | Display name. Defaults to `id`. |
 | `description` | `string` | Human-readable description shown in the dashboard. |
 | `triggers` | `Trigger[]` | **Required.** Array of event triggers (can be empty for invoke-only functions). |
-| `retry` | `RetryConfig` | Retry policy for failed steps. |
+| `retry` | `RetryConfig` | Retry policy for failed runs. Sent to the server only for the fields you set. |
+| `circuitBreaker` | `CircuitBreakerConfig` | Push-endpoint circuit breaker overrides. |
+| `throttle` | `ThrottleConfig` | Soft start-rate limit. Runs over the limit wait in the queue. |
 | `timeout` | `number` | Function timeout in milliseconds. Unset means no per-function budget; a push request then uses the engine push timeout (10 s). |
 | `concurrency` | `ConcurrencyConfig` | Concurrency control. |
 | `debounce` | `DebounceConfig` | Debounce configuration — collapses rapid-fire events into a single invocation. Fields: `periodMs`, `key?`, `maxWaitMs?`. |
@@ -126,10 +128,49 @@ All fields on the config object:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `maxAttempts` | `number` | `3` | Maximum retry attempts. |
+| `maxAttempts` | `number` | `25` | Total attempts, the first included. |
 | `initialDelayMs` | `number` | `1000` | Initial delay between retries. |
 | `backoffFactor` | `number` | `2.0` | Backoff multiplier. |
 | `maxDelayMs` | `number` | `300000` | Maximum delay between retries. |
+| `onExhausted` | `"pause" \| "fail"` | `"pause"` | What happens when a retryable failure has used every attempt. `"pause"` holds the run, with its completed steps, until you resume it. `"fail"` ends the run and runs its compensations. A non-retryable error always fails at once. |
+
+The defaults are the server's (`spec.engine.retry`); a field you leave out is not sent, and the server applies its value when each run is created. A function registered by an earlier SDK version keeps the retry values stored with it until it registers again.
+
+Throw `RetryAfterError` to ask for a specific delay, for example when an API answers `429` with `Retry-After`. The engine waits that long instead of the computed backoff, capped at `maxDelayMs`:
+
+```typescript
+import { RetryAfterError } from '@ironflow/node';
+
+await step.run('call-api', async () => {
+  const res = await fetch(url);
+  if (res.status === 429) {
+    // Retry-After is delta-seconds or an HTTP-date; fall back to 30s if it is absent or unparseable.
+    const header = res.headers.get('retry-after');
+    const seconds = Number(header);
+    const delayMs = header && Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header ?? '') - Date.now();
+    throw new RetryAfterError('rate limited', Number.isFinite(delayMs) ? delayMs : 30_000);
+  }
+  return res.json();
+});
+```
+
+**CircuitBreakerConfig** fields (all optional; zero or unset keeps the server default):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `failureThreshold` | `number` | `5` | Consecutive failed attempts that open the circuit. |
+| `openDurationMs` | `number` | `60000` | First open window. Each failed probe doubles it. |
+| `maxOpenDurationMs` | `number` | `600000` | Cap for the doubling window. Must be at least `openDurationMs`. |
+
+**ThrottleConfig** fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `limit` | `number` | Runs allowed to start per period. At least 1. |
+| `periodMs` | `number` | Window length in milliseconds. At least 1000. |
+| `key` | `string` | Path into the event data to throttle per value. Omit to throttle the whole function. |
+
+A throttle delays the start of new runs only. Retries and resumed runs are not throttled, and no run is dropped.
 
 **ConcurrencyConfig** fields:
 
@@ -513,7 +554,7 @@ const bookTrip = createFunction(
 ```
 
 Key behaviors:
-- Compensations only run on **terminal** (non-retryable) failures.
+- Compensations only run on **terminal** failures: a non-retryable error, or a retryable error on the last attempt when `retry.onExhausted` is `"fail"`. With `"pause"` (the server default) the run is held for resume and nothing is undone. `ctx.run.attempt`, `ctx.run.maxAttempts` and `ctx.run.onExhausted` show which attempt this is.
 - They run in **reverse registration order** (last registered runs first).
 - Each compensation is recorded as a durable step (`compensate:<stepName>`).
 - If a compensation itself fails, the error is logged but remaining compensations still run.
@@ -693,7 +734,7 @@ const client = createClient({
 });
 ```
 
-Every HTTP request carries `X-Ironflow-SDK: node/<version>`, and so do the WebSocket handshakes of the KV watch, config watch and subscription clients. The server does not read it. When a newer SDK calls an older server that lacks the call, the SDK throws a non-retryable `IronflowError` with code `SERVER_TOO_OLD` that names the first server version that has it. Today only [Consumer Group Stream](#consumer-group-stream) does this.
+Every HTTP request carries `X-Ironflow-SDK: node/<version>`, and so do the WebSocket handshakes of the KV watch, config watch and subscription clients. The server does not read it. When a newer SDK calls an older server that lacks the call, the SDK throws a non-retryable `IronflowError` with code `SERVER_TOO_OLD` that names the first server version that has it. Two calls do this: the [Consumer Group Stream](#consumer-group-stream) and the projection runner's lease (`AcquireProjectionLease`). The error is a `ServerTooOldError`. Each package entry bundles its own copy of the class, so match `err.code === "SERVER_TOO_OLD"` rather than `instanceof`.
 
 ### emit(eventName, data, options?)
 
@@ -2037,6 +2078,7 @@ These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. C
 | `FunctionNotFoundError` | Function not found. |
 | `RunNotFoundError` | Run not found. |
 | `NonRetryableError` | Marks an error as non-retryable (triggers compensations). |
+| `RetryAfterError` | Retryable error that asks for a delay before the next attempt: `new RetryAfterError(message, retryAfterMs)`. Has `retryAfterMs`. |
 | `UnauthenticatedError` | Missing or invalid authentication (HTTP 401). |
 | `UnauthorizedError` | Insufficient permissions (HTTP 403). |
 | `EnterpriseRequiredError` | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility. |

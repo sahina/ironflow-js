@@ -132,7 +132,7 @@ export type PollProjectionEventsRequest = Message<"ironflow.v1.PollProjectionEve
   partition: string;
 
   /**
-   * Absent: unguarded, as before ADR 0120.
+   * Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
    *
    * @generated from field: ironflow.v1.ProjectionLease lease = 4;
    */
@@ -286,7 +286,7 @@ export type StreamProjectionEventsRequest = Message<"ironflow.v1.StreamProjectio
   acceptHeartbeats: boolean;
 
   /**
-   * Absent: unguarded, as before ADR 0120.
+   * Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
    *
    * @generated from field: ironflow.v1.ProjectionLease lease = 5;
    */
@@ -345,7 +345,7 @@ export type SaveProjectionStateRequest = Message<"ironflow.v1.SaveProjectionStat
   lastEventTime?: Timestamp | undefined;
 
   /**
-   * Absent: unguarded, as before ADR 0120.
+   * Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
    *
    * @generated from field: ironflow.v1.ProjectionLease lease = 8;
    */
@@ -396,7 +396,7 @@ export type AckProjectionEventsRequest = Message<"ironflow.v1.AckProjectionEvent
   lastEventSeq: bigint;
 
   /**
-   * Absent: unguarded, as before ADR 0120.
+   * Required on a managed or external projection (ADR 0120). Absent: failed_precondition.
    *
    * @generated from field: ironflow.v1.ProjectionLease lease = 4;
    */

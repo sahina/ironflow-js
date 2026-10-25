@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
+import type { FunctionConfig, RetryConfig } from "@ironflow/core";
 import { assertDefined } from "./internal/assert-defined.js";
+import { createFunction as realCreateFunction } from "./function.js";
 
 // Test the createFunction logic without importing from core to avoid
 // protobuf connect file issues during testing
@@ -48,25 +50,52 @@ describe("createFunction", () => {
   });
 
   it("should support retry configuration", () => {
-    const fn = createFunction(
-      {
-        id: "retry-function",
-        triggers: [{ event: "test" }],
-        retry: {
-          maxAttempts: 5,
-          initialDelay: 1000,
-          maxDelay: 30000,
-          multiplier: 2,
-        },
-      },
+    // The real createFunction with the real RetryConfig fields: the local
+    // stand-in above accepts any shape, so it cannot catch a misnamed field.
+    const retry: RetryConfig = {
+      maxAttempts: 5,
+      initialDelayMs: 1000,
+      backoffFactor: 2,
+      maxDelayMs: 30000,
+      onExhausted: "fail",
+    };
+    const fn = realCreateFunction(
+      { id: "retry-function", triggers: [{ event: "test" }], retry },
       async () => "done"
     );
 
-    const retry = fn.config.retry as { maxAttempts: number; initialDelay: number; maxDelay: number; multiplier: number };
-    expect(retry?.maxAttempts).toBe(5);
-    expect(retry?.initialDelay).toBe(1000);
-    expect(retry?.maxDelay).toBe(30000);
-    expect(retry?.multiplier).toBe(2);
+    expect(fn.config.retry).toEqual(retry);
+  });
+
+  it("leaves retry undefined when the user sets none", () => {
+    const fn = realCreateFunction({ id: "no-retry", triggers: [{ event: "test" }] }, async () => "done");
+    expect(fn.config.retry).toBeUndefined();
+  });
+
+  it("rejects an unknown onExhausted", () => {
+    expect(() =>
+      realCreateFunction(
+        { id: "bad", triggers: [], retry: { onExhausted: "explode" as never } },
+        async () => "done"
+      )
+    ).toThrow(/onExhausted must be "pause" or "fail"/);
+  });
+
+  it("validates circuitBreaker and throttle like RegisterFunction", () => {
+    const make = (over: Partial<FunctionConfig>) => () =>
+      realCreateFunction({ id: "r", triggers: [], ...over }, async () => "done");
+
+    expect(make({ circuitBreaker: { failureThreshold: -1 } })).toThrow(/failureThreshold/);
+    expect(make({ circuitBreaker: { openDurationMs: 5000, maxOpenDurationMs: 1000 } })).toThrow(
+      /maxOpenDurationMs/
+    );
+    expect(
+      make({ circuitBreaker: { failureThreshold: 3, openDurationMs: 1000, maxOpenDurationMs: 8000 } })
+    ).not.toThrow();
+    expect(make({ circuitBreaker: { maxOpenDurationMs: 1000 } })).not.toThrow();
+    expect(make({ throttle: { limit: 0, periodMs: 1000 } })).toThrow(/throttle.limit/);
+    expect(make({ throttle: { limit: 1, periodMs: 999 } })).toThrow(/throttle.periodMs/);
+    expect(make({ throttle: { limit: 10, periodMs: 60000, key: "customerId" } })).not.toThrow();
   });
 
   it("should support concurrency configuration", () => {

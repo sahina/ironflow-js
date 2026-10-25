@@ -32,7 +32,10 @@ import {
   UnauthorizedError,
   throwIfAuthError,
 } from "@ironflow/core";
-import { sdkFetch } from "./sdk-fetch.js";
+import { sdkFetch, ServerTooOldError } from "./sdk-fetch.js";
+
+/** The first server with the projection lease RPCs (ADR 0120). Go and Python carry the same value. */
+const MIN_SERVER_VERSION_PROJECTION_LEASE = "0.44.0";
 
 export interface ProjectionRunnerConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -184,10 +187,8 @@ export class ProjectionRunner {
   private progressed = false;
 
   // Lease state (ADR 0120). Per instance: worker and worker-streaming each bundle this module.
-  /** The held lease, or null in standby or when unguarded. */
+  /** The held lease, or null in standby. */
   private lease: ProjectionLease | null = null;
-  /** The server has no lease RPCs (an older server). */
-  private unguarded = false;
   /** Aborted when the server fences the held lease. Each grant gets a new one. */
   private leaseLost = new AbortController();
   /** The grant that the renew timer serves; null when no renew runs. */
@@ -334,11 +335,10 @@ export class ProjectionRunner {
 
   /**
    * Waits as a hot standby until the server grants the lease, then starts the
-   * renew. Returns false when intake stopped first. An unguarded runner
-   * returns at once.
+   * renew. Returns false when intake stopped first. Throws ServerTooOldError
+   * when the server has no lease RPCs.
    */
   private async acquireLease(): Promise<boolean> {
-    if (this.unguarded) return !this.intakeSignal.aborted;
     // A stop does not abort the Acquire at once: a grant that the server made must reach
     // finishStop(), which releases it. A stop aborts it after stopTimeoutMs.
     const bound = new AbortController();
@@ -382,15 +382,15 @@ export class ProjectionRunner {
           const err = await connectErrorOf(resp);
           // A Connect client reads a 404 without a Connect body as unimplemented: an older server.
           if (err.code === "unimplemented" || (resp.status === 404 && !err.code)) {
-            logger.warn(`Projection ${name}: the server has no projection lease, running unguarded`);
-            this.unguarded = true;
-            return !this.intakeSignal.aborted;
+            throw new ServerTooOldError("AcquireProjectionLease", MIN_SERVER_VERSION_PROJECTION_LEASE);
           }
           throwIfAuthError(resp.status, `Projection ${name} lease`);
           logger.warn(`Projection ${name}: lease acquire failed, retrying: ${resp.status} ${err.message ?? ""}`);
         }
       } catch (err) {
-        if (err instanceof UnauthenticatedError || err instanceof UnauthorizedError) throw err;
+        if (err instanceof UnauthenticatedError || err instanceof UnauthorizedError || err instanceof ServerTooOldError) {
+          throw err;
+        }
         if (this.intakeSignal.aborted) return false;
         // A lost grant also lands here: the next tries get granted = false until that lease expires.
         logger.warn(`Projection ${name}: lease acquire failed, retrying: ${err}`);
@@ -481,7 +481,7 @@ export class ProjectionRunner {
 
   /**
    * Marks the held lease lost on a lease error, and reports whether it is lost.
-   * A lost lease closes the stream. An unguarded runner never loses a lease.
+   * A lost lease closes the stream.
    */
   private lost(err?: unknown): boolean {
     if (err instanceof ProjectionLeaseLostError && this.lease && !this.leaseLost.signal.aborted) {
@@ -496,7 +496,7 @@ export class ProjectionRunner {
     if (this.leaseLost.signal.aborted) throw new ProjectionLeaseLostError("projection lease lost");
   }
 
-  /** Adds the held lease to a request body. An unguarded runner sends none: the server rejects an empty one. */
+  /** Adds the held lease to a request body. */
   private withLease<T extends object>(body: T): T & { lease?: ProjectionLease } {
     return this.lease ? { ...body, lease: this.lease } : body;
   }
@@ -1260,7 +1260,7 @@ export function startProjectionRunners(opts: {
 
     // Streams, or polls when the server cannot stream.
     runner.run().catch((err) => {
-      opts.logger.error(`Projection runner failed: ${err}`);
+      opts.logger.error(`Projection runner ${projection.config.name} failed: ${err}`);
     });
   }
 

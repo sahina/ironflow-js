@@ -55,7 +55,7 @@ such as FastAPI or Next.js by consulting their current docs and the relevant SDK
 reference. The verify step must prove the actual chosen combination.
 
 Recommend pull workers. If the user requires push, explain the engine dispatch
-ceiling from Setup Step 3 and use the SDK's push handler and registration path.
+ceiling from Setup Step 3 ("Push vs Pull Mode" on https://docs.ironflow.run/explanation/patterns.md) and use the SDK's push handler and registration path.
 `ironflow-ops/deploy.md` rejects applications whose functions must remain push mode;
 state that limitation before creating such a starter.
 
@@ -88,8 +88,9 @@ Use `ironflow init` only when its quickstart matches the proposal and the destin
 is absent. It rejects even an empty existing directory. In Desktop, generate files
 in the selected workspace using SDK references instead. Preserve `.ironflow/` and
 its ignore file; do not nest the application or erase metadata to make init work.
-With `init --skip-install`, remove its monorepo workspace/lock files as documented
-in Setup Step 5 before installing external dependencies.
+With `init --skip-install`, remove its monorepo workspace/lock files as
+https://docs.ironflow.run/tutorials/getting-started.md describes (section "2. Create
+Your Project") before installing external dependencies.
 
 Create only what the accepted starter requires:
 
@@ -114,7 +115,8 @@ existing one. Review what the project actually contains (chosen stack, package m
 framework, build and test output, virtual environments, editor/OS files, anything the
 starter generated or the verify step produced) and ignore what should not be committed:
 dependencies, build artifacts, caches, local env files and secrets, Ironflow's local
-data and credential files (Setup Step 7), and any other generated or machine-specific
+data and credential files (https://docs.ironflow.run/reference/cli/commands/serve.md,
+section "Local state"), and any other generated or machine-specific
 file you find. Append only entries that are missing; never reorder, rewrite, or delete
 existing lines. Never ignore lockfiles or `.env.example`. Recheck after Verify, since
 installing and running creates files the starter did not.
