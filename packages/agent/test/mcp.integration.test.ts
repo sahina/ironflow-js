@@ -1,3 +1,4 @@
+import { sendLocalhostProbes } from './localhostProbes.js'
 import { createServer, type IncomingMessage, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { mkdtemp } from 'node:fs/promises'
@@ -33,6 +34,9 @@ const readBody = async (req: IncomingMessage): Promise<any> => {
 
 beforeAll(async () => {
   stub = createServer(async (req, res) => {
+    if (req.method === 'GET' && req.url === '/') { res.writeHead(405).end(); return }
+    expect(req.url).toBe('/api/v1/mcp')
+    expect(['POST', 'GET', 'DELETE']).toContain(req.method)
     authHeaders.push(req.headers.authorization)
     if (down) { res.writeHead(503).end(); return }
     if (req.method !== 'POST') { res.writeHead(405).end(); return }
@@ -46,6 +50,7 @@ beforeAll(async () => {
   })
   await new Promise<void>((resolve) => stub.listen(0, '127.0.0.1', resolve))
   serverUrl = `http://127.0.0.1:${(stub.address() as AddressInfo).port}`
+  await sendLocalhostProbes(serverUrl)
 })
 
 let permission: (req: any) => Promise<any>

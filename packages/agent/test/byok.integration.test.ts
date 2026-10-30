@@ -1,3 +1,4 @@
+import { sendLocalhostProbes } from './localhostProbes.js'
 import { createServer, type IncomingMessage } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { mkdtemp } from 'node:fs/promises'
@@ -19,6 +20,9 @@ const SSE = [
 
 const seen: Array<{ url: string; apiKey: string | undefined }> = []
 const mock = createServer((req: IncomingMessage, res) => {
+  if (req.method === 'GET' && req.url === '/') { res.writeHead(405).end(); return }
+  expect(req.method).toBe('POST')
+  expect(new URL(req.url ?? '', 'http://localhost').pathname).toBe('/v1/messages')
   req.resume()
   req.on('end', () => {
     seen.push({ url: req.url ?? '', apiKey: req.headers['x-api-key'] as string | undefined })
@@ -34,6 +38,7 @@ beforeAll(async () => {
 afterAll(() => { mock.close() })
 
 it('sends the stored key to the overridden Anthropic endpoint, never to production', async () => {
+  await sendLocalhostProbes(mockUrl)
   const home = await mkdtemp(join(tmpdir(), 'ifb-'))
   await writeCredential(home, { provider: 'anthropic', apiKey: 'sk-byok-check' })
   const cli = startCli({ HOME: home, IRONFLOW_AGENT_HOME: home, IRONFLOW_SERVER_URL: 'http://127.0.0.1:1', IRONFLOW_AGENT_ANTHROPIC_BASE_URL: mockUrl })

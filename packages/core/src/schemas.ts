@@ -128,6 +128,7 @@ export const PushRequestEventSchema = z.object({
   timestamp: z.string(),
   version: z.number().int().min(1).default(1),
   idempotency_key: z.string().optional(),
+  emitted_by: z.string().optional(),
   source: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
@@ -348,6 +349,7 @@ export const JobEventSchema = z.object({
   data: z.unknown(),
   timestamp: z.string(),
   version: z.number().int().min(1).default(1),
+  emitted_by: z.string().optional(),
   source: z.string().optional(),
   // Tolerate an explicit null on the wire (an absent-metadata event is
   // serialized server-side as JSON null, not omitted), normalizing it back to

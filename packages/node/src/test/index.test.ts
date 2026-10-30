@@ -521,3 +521,15 @@ describe("multiple functions for same event", () => {
     expect(run.output).toBe("from-fn-1");
   });
 });
+
+describe("optional wait timeout fixtures",()=>{
+ it.each([false,true])("returns null only when no event is queued, queued=%s",async queued=>{
+  const fn=createFunction({id:"optional",triggers:[{event:"start"}]},async({step})=>step.waitForEvent("reply",{event:"reply",onTimeout:"return-null"}));
+  const client=createTestClient({functions:[fn]});
+  if(queued)client.sendEvent("reply",null);
+  const run=await client.emit("start",{});
+  expect(run.status).toBe("completed");
+  if(queued)expect(run.output).toMatchObject({name:"reply",data:null});
+  else {expect(run.output).toBeNull();expect(run.steps).toContainEqual(expect.objectContaining({name:"reply",output:null}));}
+ });
+});

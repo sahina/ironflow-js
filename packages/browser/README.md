@@ -133,6 +133,14 @@ const unsubscribe = ironflow.onError((error) => {
 
 ### Basic Subscription
 
+A browser client allows one broadcast subscription per exact pattern. A second
+`subscribe()` with that same pattern throws `Already subscribed to pattern`.
+Share one callback and fan out locally, or use separate `IronflowClient`
+instances with separate connections. Consumer-group subscriptions permit duplicate
+patterns but distribute work according to group semantics; they are not broadcast
+fan-out. Overlapping distinct patterns are separate subscriptions.
+
+
 ```typescript
 import { ironflow } from '@ironflow/browser';
 
@@ -956,6 +964,10 @@ const result = await ironflow.getProjection('order-stats', {
 });
 ```
 
+`getEvent()` and `streams.read()` expose `emittedBy` when the engine recorded an
+authenticated emitter (for example `apikey:<id>` or `user:<id>`). It is
+`undefined` when absent; payload fields do not establish emitter identity.
+
 ### Subscribe to Projection Updates
 
 ```typescript
@@ -964,7 +976,8 @@ const sub = await ironflow.subscribeToProjection<{ totalOrders: number }>(
   {
     onUpdate: (state, event) => {
       console.log('New state:', state);             // { totalOrders: 43 }
-      console.log('Triggered by:', event.id, event.name);
+      console.log('Updated partition:', event.partition, event.lastEventSeq);
+      console.log('Last processed event:', event.id);
     },
     onError: (error) => {
       console.error('Projection error:', error);
@@ -980,6 +993,75 @@ sub.unsubscribe();
 ```
 
 Without a partition, subscribes to `system.projection.{name}.>` (all partitions). With a partition, subscribes to `system.projection.{name}.{partition}.updated`.
+
+Subscribing does not send a current snapshot. Updates can repeat even when the
+reducer returns unchanged state; treat them as state-save notifications.
+`event.partition` identifies the partition, `event.id` is the last processed event
+ID, and `event.lastEventSeq` is its cursor. `event.name` is empty with current
+servers because update frames do not include a last event name.
+
+`replay: 1` requests the latest retained matching update, not a snapshot. With an
+all-partitions pattern it is one update in total, not one per partition. There
+may be no retained update. The subscribe promise confirms that the transport has started the
+subscription; it does not prove the server has attached its live consumer. Replay
+callbacks can arrive afterward. Keep the subscription open to receive them.
+
+For an initial view of one partition, start the subscription before reading its
+state. Serialize refreshes and remember notifications received during a read. A
+periodic refresh also recovers from updates missed while the server attaches or
+reconnects, even if no later notification arrives:
+
+```typescript
+const partition = 'customer-123';
+let dirty = false;
+let refreshing = false;
+let disposed = false;
+
+async function refresh() {
+  if (disposed) return;
+  dirty = true;
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    while (dirty && !disposed) {
+      dirty = false;
+      const snapshot = await ironflow.getProjection<OrderStats>('order-stats', { partition });
+      if (!disposed) render(snapshot.state);
+    }
+  } finally {
+    refreshing = false;
+  }
+}
+
+const reportError = (error: unknown) => console.error(error);
+const sub = await ironflow.subscribeToProjection<OrderStats>('order-stats', {
+  onUpdate: () => { void refresh().catch(reportError); },
+  onError: reportError,
+}, { partition });
+const timer = setInterval(() => { void refresh().catch(reportError); }, 5000);
+void refresh().catch(reportError);
+
+// Call when the view is unmounted.
+function cleanup() {
+  disposed = true;
+  clearInterval(timer);
+  sub.unsubscribe();
+}
+```
+
+Replace `OrderStats` and `render` with your view's type and renderer. This recipe
+refreshes from the server instead of comparing the snapshot's registry-wide
+`lastEventSeq` with a partition update cursor. It serializes reads and retries every five seconds while mounted; it is not an
+atomic snapshot-and-stream API. A successful periodic read recovers an update
+missed during attachment or reconnect within the polling interval plus read
+latency. Failed reads are reported and retried on a later tick. For a whole board,
+refresh each partition you display (or load a complete view), rather than treating
+one replayed update as the state of every partition.
+
+Before the worker's first save, `getProjection` returns `state: {}`. The server
+cannot run the worker's `initialState()` function. An empty object alone does not
+distinguish an unsaved partition from a reducer that saved an empty object; use
+your view's empty/loading state until application data is available.
 
 ### Projection Management
 

@@ -394,6 +394,9 @@ export {
   patterns,
 } from "@ironflow/core";
 
+// Run frames: the typed payload and the filter that drops a stale one (#3283)
+export { createRunVersionFilter, type RunEvent, type RunVersionFilter } from "@ironflow/core";
+
 // Re-export schemas for advanced usage
 export {
   PushRequestSchema,

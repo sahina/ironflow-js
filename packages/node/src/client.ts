@@ -1292,8 +1292,9 @@ export class IronflowClient {
   }
 
   /**
-   * Irreversibly replace a step's output AND original output, plus the
-   * payload of every audit row for that step.
+   * Irreversibly replace a step's output, original output and error, its
+   * parent run's error, recorded step and run-level retry errors, and audit
+   * payloads for that step. Sibling errors stay. Errors are replaced whole.
    *
    * `stepId` is the step's row id, not its name. The run must be terminal:
    * a memoized resume reads the output, so redacting under a live run would
@@ -1308,10 +1309,11 @@ export class IronflowClient {
   }
 
   /**
-   * Irreversibly replace a run's input and output, plus the payload of every
-   * audit row for that run and its steps.
+   * Irreversibly replace a run's input, output and error, its steps' errors,
+   * recorded attempt errors and audit payloads for the run and its steps.
+   * Errors are replaced whole.
    *
-   * The step columns themselves are left alone — call `redactStep` for those.
+   * Step outputs stay — call `redactStep` for those.
    * The run must be terminal. Idempotent.
    */
   async redactRun(runId: string): Promise<void> {
@@ -1400,6 +1402,7 @@ export class IronflowClient {
           version: number;
           timestamp: string;
           source?: string;
+          emittedBy?: string;
           metadata?: Record<string, unknown>;
         }>;
         totalCount?: number;
@@ -1418,6 +1421,7 @@ export class IronflowClient {
           version: e.version,
           timestamp: e.timestamp,
           source: e.source,
+          emittedBy: e.emittedBy || undefined,
           metadata: e.metadata,
         })),
         totalCount: response.totalCount ?? 0,

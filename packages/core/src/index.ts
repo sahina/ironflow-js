@@ -252,6 +252,7 @@ export type {
 } from "./protocol.js";
 
 export { patterns } from "./protocol.js";
+export { createRunVersionFilter, type RunEvent, type RunVersionFilter } from "./run-events.js";
 export {
   advanceResumeCursor,
   createWSSubscribeRequest,

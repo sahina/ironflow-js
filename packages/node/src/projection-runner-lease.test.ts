@@ -14,6 +14,9 @@ const LOST = "lease lost";
 const LADDER = /stream disconnected|stream error|flush failed/;
 
 interface Event {
+  entityId?: string;
+  entityType?: string;
+  entityVersion?: number | string;
   id: string;
   name: string;
   data: unknown;
@@ -239,6 +242,17 @@ describe("projection runner lease (ADR 0120)", () => {
     vi.stubGlobal("fetch", fake.fetch);
     return fake;
   }
+
+  it.each(TRANSPORTS)("canonical entity identity reaches handlers (%s)", async transport => {
+    const entity = {...event("entity", 41), entityId:"seat-1", entityType:"seat", entityVersion:"2", data:{entityId:"spoof",entityVersion:999}};
+    serve(new LeaseFake([entity, event("ordinary",42)]));
+    const seen: Event[] = [];
+    const holder = new Runner(svc,transport,{external:true,handler:e=>{seen.push(e);}});
+    try { await until("both identity events",()=>seen.length===2); } finally {await holder.runner.stop();}
+    expect(seen[0]).toMatchObject({entityId:"seat-1",entityType:"seat",entityVersion:2,seq:41});
+    expect(seen[1]!.entityId).toBeUndefined();
+    expect(seen[1]!.entityVersion).toBeUndefined();
+  });
 
   it.each(TRANSPORTS)("two_runners_only_holder_reads (%s)", async (transport) => {
     serve(new LeaseFake([event("e1", 1)]));

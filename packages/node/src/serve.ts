@@ -415,6 +415,7 @@ async function executeHandler(
     const result = await withRunContext(ctx.runId, () =>
       fn.handler(functionContext)
     );
+    ctx.yieldGuard.assertClear();
 
     // A result or step output JSON cannot encode fails non-retryably below,
     // running compensations, instead of a response that never arrives (#2874).
@@ -430,7 +431,7 @@ async function executeHandler(
       result,
     };
   } catch (caught) {
-    let error = caught;
+    let error = ctx.yieldGuard.normalizeError(caught);
     // Check if this is a yield signal (sleep/waitForEvent)
     if (isYieldSignal(error)) {
       const encodeErr = serializationError(undefined, ctx.getExecutedSteps());

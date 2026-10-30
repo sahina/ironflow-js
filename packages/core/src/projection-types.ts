@@ -15,6 +15,9 @@ export interface ProjectionContext {
     id: string;
     name: string;
     seq: number;
+    entityId?: string;
+    entityType?: string;
+    entityVersion?: number;
     timestamp: Date;
     /** Cross-cutting metadata (causation, correlation, tenant, trace) */
     metadata?: Record<string, unknown>;
@@ -46,13 +49,13 @@ export interface ProjectionContext {
  */
 export type ManagedProjectionHandler<TState = unknown, TEvent = unknown> = (
   state: TState,
-  event: TEvent & { name: string; data: unknown; metadata?: Record<string, unknown> },
+  event: TEvent & { name: string; data: unknown; metadata?: Record<string, unknown>; entityId?: string; entityType?: string; entityVersion?: number },
   ctx: ProjectionContext
 ) => TState;
 
 /** Handler for external projections (side effects) */
 export type ExternalProjectionHandler<TEvent = unknown> = (
-  event: TEvent & { name: string; data: unknown; metadata?: Record<string, unknown> },
+  event: TEvent & { name: string; data: unknown; metadata?: Record<string, unknown>; entityId?: string; entityType?: string; entityVersion?: number },
   ctx: ProjectionContext
 ) => void | Promise<void>;
 
@@ -341,6 +344,13 @@ export interface SQLProjectionQueryResult {
 
 /** Callbacks for subscribeToProjection */
 export interface ProjectionSubscriptionCallbacks<TState = unknown> {
-  onUpdate: (state: TState, event: { id: string; name: string }) => void;
+  onUpdate: (state: TState, event: {
+    id: string;
+    /** Empty when the server does not supply a last event name. */
+    name: string;
+    partition: string;
+    /** Cursor of the event processed for this partition. */
+    lastEventSeq: number;
+  }) => void;
   onError?: (error: Error) => void;
 }

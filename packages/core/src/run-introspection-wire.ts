@@ -21,6 +21,19 @@ const statuses = [
   "waiting_for_capacity",
   "waiting",
 ];
+/** Recorded executions of a step, or run-level retries on a run (ADR 0139). */
+function attemptsFromWire(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.map((a: Record<string, unknown>) => ({
+    attempt: (a.attempt as number | undefined) ?? 0,
+    started_at: a.startedAt as string | undefined,
+    ended_at: a.endedAt as string | undefined,
+    worker_id: a.workerId as string | undefined,
+    node_id: a.nodeId as string | undefined,
+    error: a.error,
+    run_attempt: a.runAttempt as number | undefined,
+  }));
+}
 export function runInspectionFromWire(r: Record<string, unknown>) {
   return {
     id: r.id ?? "",
@@ -52,6 +65,7 @@ export function runInspectionFromWire(r: Record<string, unknown>) {
     pause_requested: r.pauseRequested ?? false,
     pause_reason: r.pauseReason,
     cancellation_cause: r.cancellationCause,
+    attempts: attemptsFromWire(r.attempts),
   };
 }
 export function stepInspectionFromWire(r: Record<string, unknown>) {
@@ -104,5 +118,6 @@ export function stepInspectionFromWire(r: Record<string, unknown>) {
     compensation_for: r.compensationFor,
     created_at: r.createdAt,
     updated_at: r.updatedAt,
+    attempts: attemptsFromWire(r.attempts),
   };
 }

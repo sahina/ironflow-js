@@ -1,3 +1,4 @@
+import { YieldGuard } from "./errors.js";
 /**
  * Internal Execution Context
  *
@@ -58,6 +59,7 @@ function escapeRaw(part: string): string {
  * Execution context for a function invocation
  */
 export class ExecutionContext {
+  readonly yieldGuard = new YieldGuard();
   /** The run ID */
   readonly runId: string;
   /** The function ID */
@@ -133,6 +135,7 @@ export class ExecutionContext {
       timestamp: new Date(request.event.timestamp),
       idempotencyKey: request.event.idempotency_key,
       source: request.event.source,
+      emittedBy: request.event.emitted_by || undefined,
       metadata: request.event.metadata,
     };
 
@@ -363,6 +366,7 @@ export class ExecutionContext {
  * A scoped context for parallel branch execution
  */
 export class BranchContext {
+  readonly yieldGuard: YieldGuard;
   private readonly parent: ExecutionContext;
   private readonly scopePrefix: string;
   /**
@@ -420,6 +424,7 @@ export class BranchContext {
 
   constructor(parent: ExecutionContext, scopePrefix: string, legacyScopePrefix?: string) {
     this.parent = parent;
+    this.yieldGuard = parent.yieldGuard.branch();
     this.scopePrefix = scopePrefix;
     this.legacyScopePrefix = legacyScopePrefix ?? scopePrefix;
   }

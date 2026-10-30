@@ -1829,6 +1829,7 @@ class IronflowClient {
           version: number;
           timestamp: string;
           source?: string;
+          emittedBy?: string;
           metadata?: Record<string, unknown>;
         }>;
         totalCount?: number | string;
@@ -1847,6 +1848,7 @@ class IronflowClient {
           version: e.version,
           timestamp: e.timestamp,
           source: e.source,
+          emittedBy: e.emittedBy || undefined,
           metadata: e.metadata,
         })),
         totalCount: Number(response.totalCount ?? 0),
@@ -2330,6 +2332,8 @@ class IronflowClient {
         callbacks.onUpdate(state, {
           id: (payload.last_event_id as string) ?? "",
           name: (payload.last_event_name as string) ?? "",
+          partition: (payload.partition as string) ?? "__global__",
+          lastEventSeq: Number(payload.last_event_seq ?? 0),
         });
       },
       onError: callbacks.onError

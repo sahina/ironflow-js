@@ -305,6 +305,19 @@ class IronflowWorker implements Worker {
     }
     this.stopProjectionRunners();
 
+    // Projection runners own their HTTP streams and leases; no function job
+    // transport is needed (and REST registration requires function IDs).
+    if (this.functionMap.size === 0 && this.config.projections?.length) {
+      this.state = "connected";
+      this.startProjectionRunners(this.config.serverUrl!.replace(/\/$/, ""));
+      const signal = this.abortController!.signal;
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      return;
+    }
+
     const baseUrl = this.config.serverUrl!.replace(/\/$/, "");
 
     // Register functions so the event router can find them
@@ -546,6 +559,8 @@ class IronflowWorker implements Worker {
    * Start processing a job asynchronously
    */
   private processJob(baseUrl: string, job: ValidatedJobAssignment): void {
+    const key = JSON.stringify([job.job_id, job.execution_seq ?? 0]);
+    if (this.activeJobs.has(key)) return;
     const abortController = new AbortController();
     const activeJob: ActiveJob = {
       jobId: job.job_id,
@@ -557,7 +572,7 @@ class IronflowWorker implements Worker {
       leaseToken: job.lease_token,
     };
 
-    this.activeJobs.set(job.job_id, activeJob);
+    this.activeJobs.set(key, activeJob);
 
     // Execute in background
     this.executeJob(baseUrl, job, abortController)
@@ -565,7 +580,7 @@ class IronflowWorker implements Worker {
         this.logger.error(`Job ${job.job_id} failed`, { error: String(error) });
       })
       .finally(() => {
-        this.activeJobs.delete(job.job_id);
+        if (this.activeJobs.get(key) === activeJob) this.activeJobs.delete(key);
       });
   }
 
@@ -674,6 +689,7 @@ class IronflowWorker implements Worker {
       result = await withRunContext(ctx.runId, () =>
         fn.handler(functionContext)
       );
+      ctx.yieldGuard.assertClear();
       // A result or step output JSON cannot encode never reached the server:
       // the update threw before sending and the lease expired into a full
       // re-run (#2874). Fail it non-retryably below, running compensations.
@@ -682,7 +698,7 @@ class IronflowWorker implements Worker {
         throw encodeErr;
       }
     } catch (caught) {
-      let error = caught;
+      let error = ctx.yieldGuard.normalizeError(caught);
       if (signal.aborted) {
         await checkpointer.finish();
         return;

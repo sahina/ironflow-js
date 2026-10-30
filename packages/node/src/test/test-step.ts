@@ -29,6 +29,36 @@ export function createTestStepClient(
   registries: TestStepRegistries,
   state: TestStepState
 ): StepClient {
+  function waitForEvent<T = unknown>(name: string, filter: EventFilter & { onTimeout?: "fail" }): Promise<IronflowEvent<T>>;
+  function waitForEvent<T = unknown>(name: string, filter: EventFilter & { onTimeout: "return-null" }): Promise<IronflowEvent<T> | null>;
+  function waitForEvent<T = unknown>(name: string, filter: EventFilter): Promise<IronflowEvent<T> | null>;
+  async function waitForEvent<T = unknown>(
+    name: string,
+    filter: EventFilter
+  ): Promise<IronflowEvent<T> | null> {
+    const events = registries.eventQueue.get(filter.event);
+    if (!events || events.length === 0) {
+      if (filter.onTimeout === "return-null") {
+        state.steps.push({ name, type: "waitForEvent", output: null });
+        return null;
+      }
+      throw new Error(
+        `step.waitForEvent("${name}") is waiting for "${filter.event}" ` +
+          `but no events were pre-registered. ` +
+          `Use t.sendEvent("${filter.event}", data) before calling t.emit().`
+      );
+    }
+    const data = events.shift()!;
+    const event: IronflowEvent<T> = {
+      id: `test-evt-${Date.now()}`,
+      name: filter.event,
+      version: 1,
+      data: data as T,
+      timestamp: new Date(),
+    };
+    state.steps.push({ name, type: "waitForEvent", output: event });
+    return event;
+  }
   const stepClient: StepClient = {
     async run<T>(name: string, _fn: () => Promise<T>): Promise<T> {
       const mock = registries.stepMocks.get(name);
@@ -51,29 +81,7 @@ export function createTestStepClient(
       state.steps.push({ name, type: "sleep" });
     },
 
-    async waitForEvent<T = unknown>(
-      name: string,
-      filter: EventFilter
-    ): Promise<IronflowEvent<T>> {
-      const events = registries.eventQueue.get(filter.event);
-      if (!events || events.length === 0) {
-        throw new Error(
-          `step.waitForEvent("${name}") is waiting for "${filter.event}" ` +
-            `but no events were pre-registered. ` +
-            `Use t.sendEvent("${filter.event}", data) before calling t.emit().`
-        );
-      }
-      const data = events.shift()!;
-      const event: IronflowEvent<T> = {
-        id: `test-evt-${Date.now()}`,
-        name: filter.event,
-        version: 1,
-        data: data as T,
-        timestamp: new Date(),
-      };
-      state.steps.push({ name, type: "waitForEvent", output: event });
-      return event;
-    },
+    waitForEvent,
 
     async parallel<T extends unknown[]>(
       _name: string,

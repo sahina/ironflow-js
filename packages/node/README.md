@@ -334,9 +334,14 @@ const approvalWorkflow = createFunction(
 | `match` | `string` | -- | JSON path for correlating events. |
 | `matchValue` | `string` | -- | Non-empty literal compared at match time. Omitted or empty snapshots the triggering event. Requires `match`. |
 | `timeout` | `Duration` | `"7d"` | How long to wait before timing out. |
+| `onTimeout` | `"fail" \| "return-null"` | `"fail"` | Return a memoized `null` on timeout when opted in. |
 | `payload` | `unknown` | -- | Stored as the waiting step's `input`, visible via `getRunSteps` and the dashboard. Does not affect matching. |
 
-`waitForEvent` returns `emittedBy` on the event. It is the authenticated emitter that the engine recorded, for example `apikey:<id>` or `user:<id>`. The engine sets it from the credential of the caller, so the event body cannot change it. It is `undefined` when the engine reports none. An operator with `runs:cancel` can inject or patch a step output, so `emittedBy` proves the emitter only for a step that an event resolved.
+By default, `waitForEvent` returns the matching event and a deadline fails the run without resuming the handler. Set `onTimeout: "return-null"` to resume with a memoized `null` instead. The default type stays `Promise<IronflowEvent<T>>`; the opt-in type is `Promise<IronflowEvent<T> | null>`. The policy survives restarts. `approve()` keeps its fail-on-timeout default.
+
+Yielding steps (`sleep`, `sleepUntil`, `waitForEvent`, `invoke`, `invokeAsync`) must propagate their internal signal. If a handler or parallel branch swallows it and returns or attempts another durable operation, the SDK fails nonretryably with an actionable error, including under `allSettled`. Catch ordinary errors inside the `step.run` callback. The guard cannot prevent arbitrary side effects performed directly inside the catch block before control returns to the SDK.
+
+Function trigger events, `getEvent()`, `streams.read()`, and `waitForEvent` results expose `emittedBy`. It is the authenticated emitter that the engine recorded, for example `apikey:<id>` or `user:<id>`. The engine sets it from the credential of the caller, so the event body cannot change it. It is `undefined` when the engine reports none. An operator with `runs:cancel` can inject or patch a step output, so `emittedBy` proves the emitter only for a step that an event resolved.
 
 ### step.invoke(functionId, input?, options?)
 
@@ -900,6 +905,8 @@ await client.redactEvent('evt_abc123');
 await client.redactStep('step_xyz');
 await client.redactRun('run_abc123');
 ```
+
+Error envelopes are replaced whole. Run redaction scrubs the run and child step errors while leaving step outputs unchanged. Step redaction scrubs its error and the parent run error; sibling errors stay. Stored error placeholders survive later whole-row saves.
 
 ### patchStep(stepId, output, reason?)
 
@@ -1864,6 +1871,31 @@ const sub = await joinConsumerGroupStream(
 
 ## Projections
 
+### Entity identity in handler events
+
+Entity stream events expose `entityId`, `entityType`, and `entityVersion` in
+JavaScript; `EntityID`, `EntityType`, and `EntityVersion` in Go; and `entity_id`,
+`entity_type`, and `entity_version` in Python. These are the canonical stream
+identity and per-entity version, carried separately from event data and user
+metadata. They are the same during live delivery and history rebuilds, using
+polling or streaming. Ordinary events leave them undefined in JavaScript,
+`None` in Python, and zero-valued in Go.
+
+`seq` (`Seq` in Go) remains the global projection delivery cursor. It is not
+the entity version. Use the entity fields to identify a seat or other domain
+entity without copying server-owned identity into the event payload.
+
+
+### Projection-only workers
+
+Pass `functions: []` and `projections: [projection]` to `createWorker()` or
+`createStreamingWorker()` to run projections without a dummy function. Projection
+runners use their own HTTP streams and leases. These workers do not register a
+function worker, open a job stream, poll jobs, or send function-job heartbeats, so
+they do not appear as function workers in the worker list. `stop()` and `drain()`
+stop the runners; `start()` resolves after pending projection saves finish.
+
+
 Projections build derived state from event streams. Two modes: **managed** (pure reducer maintaining state) and **external** (side effects).
 
 ### ProjectionConfig
@@ -2303,7 +2335,7 @@ await handle.unregister();     // idempotent cleanup
 
 ## Testing
 
-The `@ironflow/node/test` entry point provides a `createTestClient` for unit testing functions without a running server.
+The `@ironflow/node/test` entry point provides a `createTestClient` for unit testing functions without a running server. An unqueued wait with `onTimeout: "return-null"` resolves immediately to null; a default wait still fails for a missing fixture. `sendEvent(name, null)` queues a real event whose data is null.
 
 ### Import
 

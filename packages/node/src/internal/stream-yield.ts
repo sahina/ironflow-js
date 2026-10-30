@@ -44,6 +44,7 @@ export function stepYieldedMessage(
           case: "waitEvent",
           value: create(WaitEventYieldSchema, {
             eventName: f.event,
+            onTimeout: f.on_timeout ?? "",
             matchExpression: f.match ?? "",
             matchValue: f.match_value ?? "",
             timeout: f.timeout ? timestampFromDate(new Date(Date.now() + parseDuration(f.timeout))) : undefined,

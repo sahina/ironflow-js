@@ -36,6 +36,7 @@ export interface PushRequest {
     timestamp: string;
     version?: number;
     idempotency_key?: string;
+    emitted_by?: string;
     source?: string;
     metadata?: Record<string, unknown>;
   };

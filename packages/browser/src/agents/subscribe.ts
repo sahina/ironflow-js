@@ -7,6 +7,7 @@
 
 import {
   ValidationError,
+  createRunVersionFilter,
   type SubscriptionEvent,
   type Subscription,
 } from "@ironflow/core";
@@ -45,6 +46,7 @@ function validateRunId(runId: string): void {
 
 interface RunEventData {
   status?: string;
+  version?: number;
   output?: unknown;
   error?: { message?: string; code?: string } | string;
 }
@@ -57,6 +59,10 @@ interface RunEventData {
  * event arrives, so the caller owns the lifetime: unsubscribe from a
  * terminal callback, not right after the await. The SDK does not close on a
  * terminal event, because ResumeRun can reopen a failed run under the same runId.
+ *
+ * Run and step frames rank independently by version. Lower versions and
+ * late frames for a remembered deleted run do not reach callbacks (see
+ * `createRunVersionFilter`); step IDs retain any embedded dots.
  *
  * Topic dispatch:
  *   system.run.{runId}.completed             → onComplete
@@ -73,14 +79,16 @@ export async function subscribe(
 ): Promise<Subscription> {
   validateRunId(runId);
 
+  const keep = createRunVersionFilter();
   const sub = await client.subscribe<RunEventData>(
     `system.run.${runId}.>`,
     {
       // Default replay 1000 matches the server's ReplayMaxEvents cap, so a
       // settled run that fits within the cap replays all of its events.
       replay: opts.replay ?? 1000,
-      onEvent: (event: SubscriptionEvent<RunEventData>) =>
-        dispatch(event, runId, callbacks),
+      onEvent: (event: SubscriptionEvent<RunEventData>) => {
+        if (keep(event)) dispatch(event, runId, callbacks);
+      },
       onError: callbacks.onError,
     }
   );
@@ -116,7 +124,7 @@ function dispatch(
   if (topic.startsWith(stepPrefix)) {
     if (!callbacks.onStep) return;
     const remainder = topic.slice(stepPrefix.length); // "{stepId}.{type}"
-    const dotIdx = remainder.indexOf(".");
+    const dotIdx = remainder.lastIndexOf(".");
     const stepId = dotIdx === -1 ? remainder : remainder.slice(0, dotIdx);
     const type = dotIdx === -1 ? "" : remainder.slice(dotIdx + 1);
     const stepEvent: AgentStepEvent = {

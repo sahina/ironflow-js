@@ -964,6 +964,50 @@ describe("SubscriptionClient", () => {
       client.close();
     });
 
+    it("a watcher ends on completed when running arrives late (#3283)", async () => {
+      const { createSubscriptionClient } = await importModule();
+      const { createRunVersionFilter } = await import("./index.js");
+      const client = createSubscriptionClient({
+        serverUrl: "http://localhost:9123",
+      });
+
+      await client.connect();
+
+      const keep = createRunVersionFilter();
+      const statuses: string[] = [];
+      const subPromise = client.subscribe("system.run.>", {
+        onEvent: (event) => {
+          if (keep(event)) {
+            statuses.push((event.data as { status: string }).status);
+          }
+        },
+      });
+
+      mockWs.simulateMessage({
+        type: "subscription_result",
+        results: [{ pattern: "system.run.>", status: "ok", subscriptionId: "sub_1" }],
+      });
+
+      await subPromise;
+
+      // Node B's completed frame is stored before node A's running frame.
+      for (const [leaf, status, version] of [
+        ["completed", "completed", 5],
+        ["updated", "running", 4],
+      ] as const) {
+        mockWs.simulateMessage({
+          type: "event",
+          subscriptionId: "sub_1",
+          topic: `system.run.run-1.${leaf}`,
+          data: { id: "run-1", status, version },
+        });
+      }
+
+      expect(statuses).toEqual(["completed"]);
+
+      client.close();
+    });
+
     it("delivers subscription errors to callback", async () => {
       const { createSubscriptionClient } = await importModule();
       const client = createSubscriptionClient({

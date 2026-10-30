@@ -98,7 +98,7 @@ describe("streaming worker job lifecycle (#2479)", () => {
     await startAndWaitForStream(worker);
     await internals.handleJobAssignment(job);
     await vi.waitFor(() => expect(gates).toHaveLength(1));
-    const { abortController } = internals.activeJobs.get("job-1")!;
+    const { abortController } = Array.from(internals.activeJobs.values()).at(-1)!;
 
     streams[0]!.drop();
     await vi.waitFor(() => expect(streams).toHaveLength(2));
@@ -135,14 +135,14 @@ describe("streaming worker job lifecycle (#2479)", () => {
     const { worker, internals } = makeWorker();
     await startAndWaitForStream(worker);
     await internals.handleJobAssignment(job);
-    await internals.handleJobAssignment(job);
+    await internals.handleJobAssignment({ ...job, executionSeq: 8n, leaseToken: "tok-8" });
     await vi.waitFor(() => expect(gates).toHaveLength(2));
-    const second = internals.activeJobs.get("job-1")!;
+    const second = Array.from(internals.activeJobs.values()).at(-1)!;
 
     gates[0]!();
     await flush();
 
-    expect(internals.activeJobs.get("job-1")).toBe(second);
+    expect(Array.from(internals.activeJobs.values())).toEqual([second]);
   });
 
   it("stops a cancelled job at its next step and keeps its slot until it exits", async () => {
@@ -154,7 +154,7 @@ describe("streaming worker job lifecycle (#2479)", () => {
     await internals.handleEngineMessage({
       payload: { case: "cancel", value: { jobId: "job-1", reason: "test" } },
     });
-    expect(internals.activeJobs.get("job-1")?.abortController.signal.aborted).toBe(true);
+    expect(Array.from(internals.activeJobs.values()).at(-1)?.abortController.signal.aborted).toBe(true);
 
     gates[0]!();
     await flush();
@@ -163,5 +163,21 @@ describe("streaming worker job lifecycle (#2479)", () => {
     expect(cases(0)).not.toContain("jobCompleted");
     expect(cases(0)).not.toContain("jobFailed");
     expect(internals.activeJobs.size).toBe(0);
+  });
+
+  it("cancels every local execution of a re-leased job and holds both slots until they exit", async () => {
+    const { worker, internals } = makeWorker();
+    await startAndWaitForStream(worker);
+    await internals.handleJobAssignment(job);
+    await internals.handleJobAssignment({ ...job, executionSeq: 8n, leaseToken: "tok-8" });
+    await vi.waitFor(() => expect(gates).toHaveLength(2));
+    await internals.handleEngineMessage({ payload: { case: "cancel", value: { jobId: "job-1", reason: "test" } } });
+    expect(internals.activeJobs.size).toBe(2);
+    expect(Array.from(internals.activeJobs.values()).every((j) => j.abortController.signal.aborted)).toBe(true);
+    gates[0]!();
+    await vi.waitFor(() => expect(internals.activeJobs.size).toBe(1));
+    gates[1]!();
+    await vi.waitFor(() => expect(internals.activeJobs.size).toBe(0));
+    expect(sideEffect).not.toHaveBeenCalled();
   });
 });

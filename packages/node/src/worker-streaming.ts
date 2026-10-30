@@ -282,7 +282,7 @@ class StreamingWorker implements Worker {
       }
       if (this.activeJobs.size > 0) {
         this.logger.warn(`Drain deadline reached; cancelling ${this.activeJobs.size} active jobs`);
-      } else {
+      } else if (!(this.functionMap.size === 0 && this.config.projections?.length)) {
         // Close the stream gracefully. stop() aborts it, and the engine can
         // then miss the last results. The stream sends what is queued and
         // half-closes, the engine reads to the end and closes it, and start()
@@ -344,6 +344,26 @@ class StreamingWorker implements Worker {
 
     // Clean up from a previous connection (e.g. after a server restart).
     this.stopProjectionRunners();
+
+    // Projection runners own their HTTP streams and leases; no function job
+    // transport is needed (and REST registration requires function IDs).
+    if (this.functionMap.size === 0 && this.config.projections?.length) {
+      this.state = "connected";
+      this.projectionRunners = startProjectionRunners({
+        projections: this.config.projections,
+        baseUrl: this.config.serverUrl!.replace(/\/$/, ""),
+        headers: this.buildHeaders(),
+        logger: this.logger,
+        signal: this.abortController?.signal,
+        after: this.projectionsStopped,
+      });
+      const signal = this.abortController!.signal;
+      await new Promise<void>((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+      return;
+    }
 
     // Register the function definitions so the event router can match triggers
     // to them. The register frame below carries function *names* only, so
@@ -538,6 +558,9 @@ class StreamingWorker implements Worker {
    * Handle a job assignment from the server
    */
   private async handleJobAssignment(job: JobAssignment): Promise<void> {
+    const key = JSON.stringify([job.jobId, job.executionSeq.toString()]);
+    // A duplicate must not nack the execution that is already running.
+    if (this.activeJobs.has(key)) return;
     // A job the worker cannot run gets a nack (#2456). A nack uses no run
     // attempt, and the engine re-queues the job at once. An engine older than
     // the nack drops the message; it then recovers the job after the lease
@@ -580,7 +603,7 @@ class StreamingWorker implements Worker {
       executionSeq: job.executionSeq,
       leaseToken: job.leaseToken,
     };
-    this.activeJobs.set(job.jobId, activeJob);
+    this.activeJobs.set(key, activeJob);
 
     // Execute in background
     this.executeJob(job, abortController.signal)
@@ -590,8 +613,8 @@ class StreamingWorker implements Worker {
       .finally(() => {
         // The engine can deliver this job again after a reconnect. Its entry
         // is not ours to remove (#2479).
-        if (this.activeJobs.get(job.jobId) === activeJob) {
-          this.activeJobs.delete(job.jobId);
+        if (this.activeJobs.get(key) === activeJob) {
+          this.activeJobs.delete(key);
         }
       });
   }
@@ -620,8 +643,8 @@ class StreamingWorker implements Worker {
    * Handle job cancellation
    */
   private handleJobCancel(jobId: string, reason: string): void {
-    const job = this.activeJobs.get(jobId);
-    if (job) {
+    for (const job of this.activeJobs.values()) {
+      if (job.jobId !== jobId) continue;
       this.logger.info("Cancelling job", { jobId, reason });
       // The entry stays until the handler exits, so the capacity count and
       // drain() still see the execution (#2479).
@@ -679,6 +702,7 @@ class StreamingWorker implements Worker {
           version: job.event.version || 1,
           timestamp: timestampToISO(job.event.timestamp),
           source: job.event.source || undefined,
+          emitted_by: job.event.emittedBy || undefined,
         }
       : {
           id: "",
@@ -750,6 +774,7 @@ class StreamingWorker implements Worker {
       const result = await withRunContext(ctx.runId, () =>
         fn.handler(functionContext)
       );
+      ctx.yieldGuard.assertClear();
       // A result or step output JSON cannot encode fails non-retryably below,
       // running compensations, instead of a report that throws (#2874).
       const encodeErr = serializationError(result, ctx.getExecutedSteps());
@@ -763,7 +788,7 @@ class StreamingWorker implements Worker {
       // Send completion via stream
       await this.sendJobCompleted(job.jobId, result, durationMs, fence);
     } catch (caught) {
-      let error = caught;
+      let error = ctx.yieldGuard.normalizeError(caught);
       if (signal.aborted) {
         return;
       }

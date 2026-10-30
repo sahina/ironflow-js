@@ -56,6 +56,9 @@ interface PollEvent {
   /** A payload that is not a JSON object arrives here instead of in `data`. */
   dataValue?: unknown;
   seq: number;
+  entityId?: string;
+  entityType?: string;
+  entityVersion?: number;
   timestamp?: string;
   metadata?: Record<string, unknown>;
 }
@@ -69,6 +72,9 @@ function normalizeEvent(event: PollEvent): PollEvent {
     seq: typeof event.seq === "string" ? parseInt(event.seq, 10) : (event.seq || 0),
     timestamp: event.timestamp,
     metadata: event.metadata,
+    entityId: event.entityId || undefined,
+    entityType: event.entityType || undefined,
+    entityVersion: event.entityId ? Number(event.entityVersion) : undefined,
   };
 }
 
@@ -1107,6 +1113,9 @@ export class ProjectionRunner {
         seq: event.seq || 0,
         timestamp: event.timestamp ? new Date(event.timestamp) : new Date(),
         metadata: event.metadata,
+    entityId: event.entityId || undefined,
+    entityType: event.entityType || undefined,
+    entityVersion: event.entityId ? Number(event.entityVersion) : undefined,
       },
       projection: {
         name: this.config.projection.config.name,

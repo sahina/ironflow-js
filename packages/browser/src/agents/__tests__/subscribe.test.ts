@@ -151,6 +151,33 @@ describe("agents.subscribe — event dispatch", () => {
   });
 });
 
+describe("agents.subscribe — stale frames (#3283)", () => {
+  it("drops a running frame that arrives after completed", async () => {
+    const { client, emit } = buildClient();
+    const onProgress = vi.fn();
+    const onComplete = vi.fn();
+    await subscribe(client, "run-1", { onProgress, onComplete });
+    emit({
+      topic: "system.run.run-1.completed",
+      data: { status: "completed", version: 5, output: { ok: true } },
+    });
+    emit({
+      topic: "system.run.run-1.updated",
+      data: { status: "running", version: 3 },
+    });
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onProgress).not.toHaveBeenCalled();
+  });
+
+  it("delivers an unversioned frame from an older server", async () => {
+    const { client, emit } = buildClient();
+    const onProgress = vi.fn();
+    await subscribe(client, "run-1", { onProgress });
+    emit({ topic: "system.run.run-1.updated", data: { status: "running" } });
+    expect(onProgress).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("agents.subscribe — unsubscribe idempotency", () => {
   it("calls underlying unsubscribe at most once", async () => {
     const { client, unsubscribe } = buildClient();
@@ -159,5 +186,21 @@ describe("agents.subscribe — unsubscribe idempotency", () => {
     sub.unsubscribe();
     sub.unsubscribe();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("agents.subscribe dotted step IDs", () => {
+  it.each(["memory.get", "memory.put"])("preserves %s and the final lifecycle token", async (name) => {
+    const { client, emit } = buildClient();
+    const onStep = vi.fn();
+    const onComplete = vi.fn();
+    await subscribe(client, "run-1", { onStep, onComplete });
+    for (const type of ["created", "updated", "completed"]) {
+      const stepId = `run-1:${name}:0`;
+      emit({ topic: `system.run.run-1.step.${stepId}.${type}`, data: { version: 1, type: "run" } });
+      expect(onStep).toHaveBeenLastCalledWith(expect.objectContaining({ stepId, type }));
+    }
+    expect(onComplete).not.toHaveBeenCalled();
   });
 });

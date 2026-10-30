@@ -55,7 +55,7 @@ describe("worker projection reconnect (#2770)", () => {
     let workerRegistrations = 0;
     const fetchMock = vi.fn(async (url: string, opts: RequestInit) => {
       if (url.endsWith("/register")) workerRegistrations++;
-      if (url.endsWith("RegisterProjection") || url.endsWith("/register") || url.endsWith("/heartbeat")) {
+      if (url.endsWith("RegisterFunction") || url.endsWith("RegisterProjection") || url.endsWith("/register") || url.endsWith("/heartbeat")) {
         return new Response("{}");
       }
       if (url.includes("/jobs?")) {
@@ -91,7 +91,7 @@ describe("worker projection reconnect (#2770)", () => {
       throw new Error(`Unexpected request: ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
-    const worker = createWorker({ serverUrl: "http://localhost:9123", functions: [], projections: [projection], logger: false });
+    const worker = createWorker({ serverUrl: "http://localhost:9123", functions: [{ config: { id: "fn", triggers: [] }, handler: async () => ({}) }], projections: [projection], reconnectDelay: 5, logger: false });
     const running = worker.start();
     try {
       await vi.waitFor(() => expect(finishSave).toBeDefined());
@@ -125,7 +125,7 @@ describe("worker projection reconnect (#2770)", () => {
 });
 
 describe("worker drain with projections (#2770)", () => {
-  it("resolves drain() only after the pending projection save finishes", async () => {
+  it.each([createWorker, createStreamingWorker])("resolves projection-only drain() only after the pending save finishes", async (factory) => {
     let finishSave: (() => void) | undefined;
     vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
       if (url.includes("/jobs?")) {
@@ -148,7 +148,7 @@ describe("worker drain with projections (#2770)", () => {
       if (url.endsWith("SaveProjectionState")) await new Promise<void>((resolve) => { finishSave = resolve; });
       return new Response("{}");
     }));
-    const worker = createWorker({ serverUrl: "http://localhost:9123", functions: [], projections: [projection], logger: false });
+    const worker = factory({ serverUrl: "http://localhost:9123", functions: [], projections: [projection], reconnectDelay: 5, logger: false });
     const running = worker.start();
     try {
       await vi.waitFor(() => expect(finishSave).toBeDefined());
@@ -200,7 +200,7 @@ describe("streaming worker projection reconnect (#2770)", () => {
     }));
     jobStreams.length = 0;
     const worker = createStreamingWorker({
-      serverUrl: "http://localhost:9123", functions: [], projections: [projection], reconnectDelay: 5, logger: false,
+      serverUrl: "http://localhost:9123", functions: [{ config: { id: "fn", triggers: [] }, handler: async () => ({}) }], projections: [projection], reconnectDelay: 5, logger: false,
     });
     const running = worker.start();
     try {
@@ -215,6 +215,39 @@ describe("streaming worker projection reconnect (#2770)", () => {
     } finally {
       worker.stop();
       finishSave?.();
+      await running;
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe("projection-only workers (#3390)", () => {
+  it.each([createWorker, createStreamingWorker])("runs projections without function registration, polling, job streams or job heartbeats", async (factory) => {
+    const urls: string[] = [];
+    jobStreams.length = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
+      urls.push(url);
+      if (url.includes("/workers/")) return Response.json({ error: "function_ids is required" }, { status: 400 });
+      if (url.endsWith("ProjectionLease")) return Response.json(LEASE);
+      if (url.endsWith("GetProjection")) return Response.json({ state: { count: 0 } });
+      if (url.endsWith("StreamProjectionEvents")) return new Response(new ReadableStream({
+        start(controller) {
+          controller.enqueue(envelope({ id: "evt-1", name: "created", data: {}, seq: 1 }));
+          opts.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")), { once: true });
+        },
+      }));
+      return Response.json({});
+    }));
+    const worker = factory({ serverUrl: "http://localhost:9123", functions: [], projections: [projection], heartbeatInterval: 5, reconnectDelay: 5, logger: false });
+    const running = worker.start();
+    try {
+      await vi.waitFor(() => expect(urls.some(url => url.endsWith("SaveProjectionState"))).toBe(true));
+      expect(urls.some(url => url.includes("/workers/") || url.endsWith("RegisterFunction"))).toBe(false);
+      expect(jobStreams).toHaveLength(0);
+      await worker.drain();
+      await running;
+    } finally {
+      worker.stop();
       await running;
       vi.unstubAllGlobals();
     }

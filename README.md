@@ -24,7 +24,7 @@ All five packages version in lockstep.
 
 ## Where the engine source lives
 
-The Ironflow engine is **closed source** and lives at `sahina/ironflow` (private). This mirror exists so that:
+The Ironflow engine source lives at `sahina/ironflow` (private). Ironflow is licensed under the Functional Source License v1.1 with an Apache-2.0 future grant. Each release converts to Apache-2.0 on its second anniversary. This mirror exists so that:
 
 - `npm` "Repository" links resolve to public source
 - README source links (`/blob/main/...`) resolve to public source

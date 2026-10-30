@@ -430,8 +430,8 @@ export interface IronflowEvent<T = unknown> {
   /**
    * Authenticated emitter the engine recorded (e.g. "apikey:<id>", "user:<id>",
    * "webhook:<source-id>", "nats", "platform"). Set by the engine from the
-   * caller's credential; the event body cannot change it. Only on events
-   * returned by waiting steps.
+   * caller's credential; the event body cannot change it. Unset when the
+   * engine reports no emitter.
    */
   emittedBy?: string;
 }
@@ -535,8 +535,13 @@ export interface StepClient {
    */
   waitForEvent<T = unknown>(
     name: string,
-    filter: EventFilter
+    filter: EventFilter & { onTimeout?: "fail" }
   ): Promise<IronflowEvent<T>>;
+  waitForEvent<T = unknown>(
+    name: string,
+    filter: EventFilter & { onTimeout: "return-null" }
+  ): Promise<IronflowEvent<T> | null>;
+  waitForEvent<T = unknown>(name: string, filter: EventFilter): Promise<IronflowEvent<T> | null>;
 
   /**
    * Execute multiple branches in parallel (allSettled mode)
@@ -724,6 +729,8 @@ export type Duration = string | number;
  * Event filter for waitForEvent
  */
 export interface EventFilter {
+  /** Fail the run by default; opt in to a memoized null result at the deadline. */
+  onTimeout?: "fail" | "return-null";
   /** Request payload stored as the waiting step input, visible via getRunSteps and the dashboard. */
   payload?: unknown;
   /** Event name to wait for */
@@ -1010,6 +1017,8 @@ export interface TriggerBatchResult extends EmitResult {
 
 /** An event persisted in Ironflow's event log. */
 export interface StoredEvent {
+  /** Authenticated emitter recorded by the engine, when available. */
+  emittedBy?: string;
   id: string;
   name: string;
   timestamp: string;
@@ -1395,6 +1404,8 @@ export interface ReadStreamOptions {
  * An event from an entity stream
  */
 export interface StreamEvent {
+  /** Authenticated emitter recorded by the engine, when available. */
+  emittedBy?: string;
   /** Unique event ID */
   id: string;
   /** Event name */
@@ -2581,6 +2592,7 @@ export function storedEventFromWire(
     timestamp: String(r.timestamp ?? ""),
     data: r.data,
     source: String(r.source ?? ""),
+    emittedBy: r.emitted_by ? String(r.emitted_by) : undefined,
     metadata: r.metadata,
     idempotencyKey: r.idempotency_key
       ? String(r.idempotency_key)

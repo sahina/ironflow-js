@@ -20,6 +20,8 @@ import { StepError, StepTimeoutError, isRetryable, parseDuration, InvokeError, H
 import { ExecutionContext, BranchContext } from "./internal/context.js";
 import {
   YieldSignal,
+  YieldGuard,
+  SwallowedYieldError,
   type SleepYieldInfo,
   type WaitEventYieldInfo,
   type InvokeFunctionYieldInfo,
@@ -32,6 +34,7 @@ import { sdkFetch } from "./sdk-fetch.js";
  * Context interface for step execution
  */
 interface StepContext {
+  readonly yieldGuard: YieldGuard;
   readonly runId: string;
   readonly logger: Logger;
   readonly stepTimeout?: string;
@@ -78,10 +81,10 @@ function createStepClientInternal(ctx: StepContext): StepClient {
     sleepUntil: (name: string, until: Date | string): Promise<void> =>
       executeSleepUntil(ctx, name, until),
 
-    waitForEvent: <T = unknown>(
+    waitForEvent: (<T = unknown>(
       name: string,
       filter: EventFilter
-    ): Promise<IronflowEvent<T>> => executeWaitForEvent(ctx, name, filter),
+    ): Promise<IronflowEvent<T> | null> => executeWaitForEvent<T>(ctx, name, filter)) as StepClient["waitForEvent"],
 
     parallel: <T extends unknown[]>(
       name: string,
@@ -104,6 +107,8 @@ function createStepClientInternal(ctx: StepContext): StepClient {
 
     compensate: (stepName: string, fn: () => Promise<void>): void => {
       ctx.signal?.throwIfAborted();
+      // Register cleanup for settled sibling work even after another scope failed.
+      ctx.yieldGuard.assertReturned();
       ctx.registerCompensation(stepName, fn);
     },
 
@@ -168,6 +173,7 @@ async function executeStep<T>(
   fn: (stepId: string) => Promise<T>,
   options?: StepRunOptions
 ): Promise<T> {
+  ctx.yieldGuard.assertClear();
   const stepId = ctx.generateStepId(name);
 
   // Check if step is already completed (memoized)
@@ -188,6 +194,7 @@ async function executeStep<T>(
     const output = timeoutStr
       ? await withStepTimeout(() => fn(stepId), name, timeoutStr)
       : await fn(stepId);
+    ctx.yieldGuard.assertReturned();
     const endedAt = new Date();
     const durationMs = endedAt.getTime() - startedAt.getTime();
 
@@ -274,6 +281,7 @@ async function executeSleep(
   name: string,
   duration: Duration
 ): Promise<void> {
+  ctx.yieldGuard.assertClear();
   const stepId = ctx.generateStepId(name);
 
   // Check if resuming from this sleep
@@ -315,7 +323,7 @@ async function executeSleep(
     until: wakeAt.toISOString(),
   };
 
-  throw new YieldSignal(yieldInfo);
+  return ctx.yieldGuard.yield(yieldInfo);
 }
 
 /**
@@ -326,6 +334,7 @@ async function executeSleepUntil(
   name: string,
   until: Date | string
 ): Promise<void> {
+  ctx.yieldGuard.assertClear();
   const stepId = ctx.generateStepId(name);
 
   // Check if resuming from this sleep
@@ -370,7 +379,7 @@ async function executeSleepUntil(
     until: wakeAt.toISOString(),
   };
 
-  throw new YieldSignal(yieldInfo);
+  return ctx.yieldGuard.yield(yieldInfo);
 }
 
 /**
@@ -385,7 +394,8 @@ async function executeWaitForEvent<T = unknown>(
   ctx: StepContext,
   name: string,
   filter: EventFilter
-): Promise<IronflowEvent<T>> {
+): Promise<IronflowEvent<T> | null> {
+  ctx.yieldGuard.assertClear();
   const stepId = ctx.generateStepId(name);
 
   // Check if resuming from this wait with the event data
@@ -395,6 +405,10 @@ async function executeWaitForEvent<T = unknown>(
 
     // The resume data contains the event that matched
     const resumeData = ctx.getResumeData<IronflowEvent<T>>();
+    if (resumeData === null) {
+      if (filter.onTimeout !== "return-null") throw new StepError("The memoized wait result is null; keep onTimeout: 'return-null' for this wait", {stepId, stepName: name, retryable: false});
+      return null;
+    }
     if (resumeData) {
       // Resume data is a wire event; restore the Date promised by IronflowEvent.
       return { ...resumeData, timestamp: new Date(resumeData.timestamp) };
@@ -405,6 +419,10 @@ async function executeWaitForEvent<T = unknown>(
   if (ctx.shouldSkipStep(stepId)) {
     ctx.logger.debug(`WaitForEvent memoized: ${name}`, { stepId });
     const output = ctx.getMemoizedOutput<IronflowEvent<T>>(stepId);
+    if (output === null) {
+      if (filter.onTimeout !== "return-null") throw new StepError("The memoized wait result is null; keep onTimeout: 'return-null' for this wait", {stepId, stepName: name, retryable: false});
+      return null;
+    }
     if (output) {
       // Completed steps cross JSON even when the original event held a Date.
       return { ...output, timestamp: new Date(output.timestamp) };
@@ -423,6 +441,9 @@ async function executeWaitForEvent<T = unknown>(
   // form but sending the raw " approval.received " wouldn't match the event
   // the producer publishes as "approval.received".
   const eventName = filter.event.trim();
+  if (filter.onTimeout !== undefined && filter.onTimeout !== "fail" && filter.onTimeout !== "return-null") {
+    throw new Error("step.waitForEvent: onTimeout must be fail or return-null");
+  }
 
   ctx.logger.debug(`WaitForEvent yielding: ${name}`, { stepId, filter });
 
@@ -462,10 +483,11 @@ async function executeWaitForEvent<T = unknown>(
       match: filter.match,
       match_value: filter.matchValue,
       timeout,
+      on_timeout: filter.onTimeout,
     },
   };
 
-  throw new YieldSignal(yieldInfo);
+  return ctx.yieldGuard.yield(yieldInfo);
 }
 
 /**
@@ -478,6 +500,7 @@ async function executeParallel<T>(
   options: ParallelOptions = {}
 ): Promise<T[]> {
   ctx.signal?.throwIfAborted();
+  ctx.yieldGuard.assertClear();
   const { concurrency, onError = "failFast", expectScopedClient = true } = options;
 
   // Opening a nested parallel/map counts as using the enclosing branch's
@@ -508,13 +531,19 @@ async function executeParallel<T>(
       const scopedStep = branchStepClients[index]!;
       const branchFn = branches[index]!;
       const result = await branchFn(scopedStep);
+      branchContexts[index]!.yieldGuard.assertClear();
       results[index] = result;
     } catch (error) {
-      if (error instanceof YieldSignal) {
-        yieldSignals[index] = error;
+      let branchError = error;
+      if (!(error instanceof YieldSignal)) {
+        try { branchContexts[index]!.yieldGuard.assertClear(); }
+        catch (guardError) { branchError = guardError; }
+      }
+      if (branchError instanceof YieldSignal) {
+        yieldSignals[index] = branchError;
         cancelled.value = true;
       } else {
-        const err = error instanceof Error ? error : new Error(String(error));
+        const err = branchError instanceof Error ? branchError : new Error(String(branchError));
         results[index] = err;
 
         if (onError === "failFast") {
@@ -547,10 +576,13 @@ async function executeParallel<T>(
     await Promise.all(branches.map((_, i) => executeBranch(i)));
   }
 
+  // A swallowed signal is a workflow programming error even under allSettled.
+  const swallowed = results.find((result) => result instanceof SwallowedYieldError);
+  if (swallowed) throw swallowed;
   // Handle yield signal
   const yieldSignal = yieldSignals.find((signal) => signal !== undefined);
   if (yieldSignal) {
-    throw yieldSignal;
+    return ctx.yieldGuard.yield(yieldSignal.yieldInfo);
   }
 
   if (onError !== "allSettled") {
@@ -638,6 +670,7 @@ export async function executeCompensations(ctx: ExecutionContext): Promise<void>
 
   for (const { stepName, fn } of compensations) {
     const compStepName = `compensate:${stepName}`;
+    // Terminal cleanup must run even when a swallowed yield poisoned normal steps.
     const stepId = ctx.generateStepId(compStepName);
 
     // Check memoization - skip if already completed
@@ -709,6 +742,7 @@ async function executeInvoke<T>(
   input?: unknown,
   options?: { timeout?: string }
 ): Promise<T> {
+  ctx.yieldGuard.assertClear();
   const stepId = ctx.generateStepId(functionId);
 
   // Check memoization — completed
@@ -743,7 +777,7 @@ async function executeInvoke<T>(
     input,
     invoke_timeout_ms: timeoutMs,
   };
-  throw new YieldSignal(yieldInfo);
+  return ctx.yieldGuard.yield(yieldInfo);
 }
 
 /**
@@ -754,6 +788,7 @@ async function executeInvokeAsync(
   functionId: string,
   input?: unknown
 ): Promise<{ runId: string }> {
+  ctx.yieldGuard.assertClear();
   const stepId = ctx.generateStepId(functionId);
 
   if (ctx.shouldSkipStep(stepId)) {
@@ -776,7 +811,7 @@ async function executeInvokeAsync(
     function_id: functionId,
     input,
   };
-  throw new YieldSignal(yieldInfo);
+  return ctx.yieldGuard.yield(yieldInfo);
 }
 
 /**
