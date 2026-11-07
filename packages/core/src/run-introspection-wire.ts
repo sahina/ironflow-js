@@ -34,6 +34,26 @@ function attemptsFromWire(value: unknown) {
     run_attempt: a.runAttempt as number | undefined,
   }));
 }
+function cancellationEventFromWire(value: unknown) {
+  if (typeof value !== "object" || value === null) return undefined;
+  if (
+    !("eventId" in value) ||
+    typeof value.eventId !== "string" ||
+    !("eventName" in value) ||
+    typeof value.eventName !== "string" ||
+    !("matchPath" in value) ||
+    typeof value.matchPath !== "string"
+  )
+    return undefined;
+  const matchValue = "matchValue" in value ? value.matchValue : "";
+  if (typeof matchValue !== "string") return undefined;
+  return {
+    event_id: value.eventId,
+    event_name: value.eventName,
+    match_path: value.matchPath,
+    match_value: matchValue,
+  };
+}
 export function runInspectionFromWire(r: Record<string, unknown>) {
   return {
     id: r.id ?? "",
@@ -65,6 +85,7 @@ export function runInspectionFromWire(r: Record<string, unknown>) {
     pause_requested: r.pauseRequested ?? false,
     pause_reason: r.pauseReason,
     cancellation_cause: r.cancellationCause,
+    cancellation_event: cancellationEventFromWire(r.cancellationEvent),
     attempts: attemptsFromWire(r.attempts),
   };
 }

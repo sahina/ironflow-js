@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IronflowError, PayloadTooLargeError,PreconditionFailedError, UnauthorizedError, UnsupportedMediaTypeError, ValidationError } from "@ironflow/core";
+import { IronflowError, PayloadTooLargeError,PreconditionFailedError, SchemaValidationError, UnauthorizedError, UnsupportedMediaTypeError, ValidationError } from "@ironflow/core";
 import { createClient } from "./client.js";
 import { FilesClient } from "./files.js";
 
@@ -55,14 +55,35 @@ describe("FilesClient", () => {
     expect(vi.mocked(fetch)).not.toHaveBeenCalled();
   });
 
+  it("decodes every file, bucket and signed URL timestamp, and throws on an unreadable one", async () => {
+    const b = client().bucket("b");
+    const when = new Date("2026-10-01T00:00:00Z");
+    vi.mocked(fetch).mockImplementation(async () => json(200, { url: "u", expiresAt: "2026-10-01T00:00:00Z", buckets: [{ createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }], files: [{ createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }], createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
+    expect(await client().createBucket("n")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await client().getBucket("n")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await client().updateBucket("n", {})).toMatchObject({ createdAt: when, updatedAt: when });
+    expect((await client().listBuckets())[0]).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.info("x")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.put("x", "abc", { contentType: "text/plain" })).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.move("x", "y")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.copy("x", "y")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect((await b.list()).files[0]).toMatchObject({ createdAt: when, updatedAt: when });
+    expect((await b.signDownload("x")).expiresAt).toEqual(when);
+
+    vi.mocked(fetch).mockImplementation(async () => json(200, { url: "u", expiresAt: "not-a-time", createdAt: "not-a-time" }));
+    await expect(b.info("x")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(b.signUpload("x")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client().getBucket("n")).rejects.toBeInstanceOf(SchemaValidationError);
+  });
+
   it("still escapes a slash in a bucket name", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(json(200, {}));
+    vi.mocked(fetch).mockResolvedValueOnce(json(200, { createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
     await client().getBucket("a/b");
     expect(String(vi.mocked(fetch).mock.calls[0]![0])).toBe("http://localhost:9123/api/v1/files/buckets/a%2Fb");
   });
 
   it("retries the sign calls, but not a move", async () => {
-    const signed = { url: "u", expiresAt: "t" };
+    const signed = { url: "u", expiresAt: "2026-10-02T00:00:00Z" };
     vi.mocked(fetch)
       .mockResolvedValueOnce(json(503, { message: "x" }))
       .mockResolvedValueOnce(json(200, signed))
@@ -70,22 +91,22 @@ describe("FilesClient", () => {
       .mockResolvedValueOnce(json(200, signed))
       .mockResolvedValueOnce(json(503, { message: "x" }));
     const b = client(3).bucket("b");
-    expect(await b.signUpload("x")).toEqual(signed);
-    expect(await b.signDownload("x")).toEqual(signed);
+    expect(await b.signUpload("x")).toEqual({ ...signed, expiresAt: new Date(signed.expiresAt) });
+    expect(await b.signDownload("x")).toEqual({ ...signed, expiresAt: new Date(signed.expiresAt) });
     await expect(b.move("a", "c")).rejects.toBeInstanceOf(IronflowError);
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(5);
   });
 
   it("sends createOnly on a signed upload request", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(json(200, { url: "u", expiresAt: "t" }));
+    vi.mocked(fetch).mockResolvedValueOnce(json(200, { url: "u", expiresAt: "2026-10-02T00:00:00Z" }));
     await client().bucket("b").signUpload("x", { createOnly: true });
     expect(JSON.parse(vi.mocked(fetch).mock.calls[0]![1]!.body as string)).toMatchObject({ path: "x", createOnly: true });
   });
 
   it("retries a sign call whose response body breaks", async () => {
     const broken = new Response(new ReadableStream({ start: (c) => c.error(new Error("reset")) }), { status: 200 });
-    vi.mocked(fetch).mockResolvedValueOnce(broken).mockResolvedValueOnce(json(200, { url: "u", expiresAt: "t" }));
-    expect(await client(3).bucket("b").signUpload("x")).toEqual({ url: "u", expiresAt: "t" });
+    vi.mocked(fetch).mockResolvedValueOnce(broken).mockResolvedValueOnce(json(200, { url: "u", expiresAt: "2026-10-02T00:00:00Z" }));
+    expect(await client(3).bucket("b").signUpload("x")).toEqual({ url: "u", expiresAt: new Date("2026-10-02T00:00:00Z") });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
   });
 
@@ -110,7 +131,7 @@ describe("FilesClient", () => {
   });
 
   it("puts raw bytes with an encoded path, metadata and preconditions", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce(json(201, { bucket: "docs", path: "a b/c.txt", etag: "e1" }));
+    vi.mocked(fetch).mockResolvedValueOnce(json(201, { bucket: "docs", path: "a b/c.txt", etag: "e1", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
     const info = await client()
       .bucket("docs")
       .put("a b/c.txt", new TextEncoder().encode("hi"), {
@@ -132,14 +153,14 @@ describe("FilesClient", () => {
   it("retries a Uint8Array body but not a stream body", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(json(503, { message: "x" }))
-      .mockResolvedValueOnce(json(201, { etag: "e" }));
+      .mockResolvedValueOnce(json(201, { etag: "e", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
     await client(3).bucket("b").put("x", new Uint8Array([1, 2, 3]), { contentType: "application/octet-stream" });
     expect(vi.mocked(fetch)).toHaveBeenCalledTimes(2);
 
     vi.mocked(fetch).mockReset();
     vi.mocked(fetch)
       .mockResolvedValueOnce(json(503, { message: "x" }))
-      .mockResolvedValueOnce(json(201, { etag: "e" }));
+      .mockResolvedValueOnce(json(201, { etag: "e", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
     await expect(
       client(3)
         .bucket("b")
@@ -222,7 +243,7 @@ describe("FilesClient", () => {
       (_u, init) =>
         new Promise((resolve, reject) => {
           init!.signal!.addEventListener("abort", () => reject(new Error("aborted")));
-          setTimeout(() => resolve(json(201, { etag: "e" })), 30);
+          setTimeout(() => resolve(json(201, { etag: "e", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" })), 30);
         }),
     );
     const c = new FilesClient({ serverUrl: "http://localhost:9123", timeout: 5 });

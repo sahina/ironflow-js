@@ -15,6 +15,8 @@ import type {
   StepResult,
   EventDefinitionRegistry,
 } from "@ironflow/core";
+import { createNoopLogger } from "@ironflow/core";
+import { createExecutionLogger } from "./logging.js";
 import { onExhaustedOf } from "./retry.js";
 
 /**
@@ -113,7 +115,7 @@ export class ExecutionContext {
    */
   signal?: AbortSignal;
 
-  constructor(request: PushRequest, logger?: Logger, eventDefinitions?: EventDefinitionRegistry, stepTimeout?: string, serverUrl?: string, apiKey?: string, environment?: string) {
+  constructor(request: PushRequest, logger?: Logger | false, eventDefinitions?: EventDefinitionRegistry, stepTimeout?: string, serverUrl?: string, apiKey?: string, environment?: string) {
     this.runId = request.run_id;
     this.functionId = request.function_id;
     this.attempt = request.attempt;
@@ -159,7 +161,7 @@ export class ExecutionContext {
     this.resumeContext = request.resume;
 
     // Use provided logger or create default
-    this.logger = logger ?? createDefaultLogger(this.runId);
+    this.logger = createExecutionLogger(this, logger === false ? createNoopLogger() : logger ?? createDefaultLogger(this.runId));
 
     this.stepTimeout = stepTimeout;
     this.serverUrl = serverUrl;
@@ -499,7 +501,7 @@ export class BranchContext {
  * Create a default logger that logs to console
  */
 function createDefaultLogger(runId: string): Logger {
-  const prefix = `[ironflow:${runId.slice(-8)}]`;
+  const prefix = `[ironflow:${runId}]`;
 
   return {
     debug(message: string, data?: Record<string, unknown>): void {

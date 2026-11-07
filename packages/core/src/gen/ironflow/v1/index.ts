@@ -14,6 +14,7 @@ export * from "./deployment_pb.js";
 export * from "./entity_stream_pb.js";
 export * from "./environment_pb.js";
 export * from "./event_schema_pb.js";
+export * from "./instance_admin_pb.js";
 export * from "./ironflow_pb.js";
 export * from "./projection_pb.js";
 export * from "./pubsub_pb.js";

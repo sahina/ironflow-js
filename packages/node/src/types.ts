@@ -22,6 +22,8 @@ export interface ServeConfig {
   skipVerification?: boolean;
   /** Logger instance (or false to disable) */
   logger?: Logger | false;
+  /** Application callback sink. Correlation is added per call; false silences callback logs. */
+  userLogger?: Logger | false;
   /** Target environment ID (default: IRONFLOW_ENV; unset sends no header) */
   environment?: string;
   /** Event definition registry for automatic upcasting of event data */
@@ -84,6 +86,8 @@ export interface WorkerConfig {
   labels?: Record<string, string>;
   /** Logger instance (or false to disable) */
   logger?: Logger | false;
+  /** Application callback sink. Correlation is added per call; false silences callback logs. */
+  userLogger?: Logger | false;
   /** Target environment ID (default: IRONFLOW_ENV; unset sends no header) */
   environment?: string;
   /** Event definition registry for automatic upcasting of event data */

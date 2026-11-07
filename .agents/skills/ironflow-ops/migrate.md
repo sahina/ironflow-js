@@ -32,7 +32,7 @@ read it):
 | Artifact | Where | Tag/version format |
 |---|---|---|
 | Server binary, release notes | `sahina/ironflow-releases` | `v0.50.0` |
-| Go SDK | `sahina/ironflow-go` (mirror) | `v0.50.0` — **not** `sdk/go/ironflow/v*` |
+| Go SDK | `sahina/ironflow-go` (mirror) | `v0.50.0` |
 | JS SDK | npm `@ironflow/{core,node,browser,langgraph}` | `0.50.0` |
 | Ironflow agent (CLI for ACP editors, run with `npx`, not an SDK library) | npm `@ironflow/agent` | `0.50.0` |
 | Python SDK (Tier 1 polling worker) | PyPI `ironflow-py` (import name `ironflow`) | `0.50.0` — stable releases only, no prereleases |
@@ -51,9 +51,6 @@ go list -m -versions github.com/sahina/ironflow-go
 # Latest Python SDK
 python3 -m pip index versions ironflow-py
 ```
-
-`sdk/go/ironflow/v*` tags exist only inside the private engine repo. Users consuming the
-public mirror see plain `v<version>`.
 
 If user just says "upgrade ironflow" without specifying, ask:
 > "What are you upgrading? Server binary, Go SDK, JS SDK packages, or Python SDK?"
@@ -214,8 +211,8 @@ before proposing an upcaster migration.
 
 There is also a lower-level `createUpcasterRegistry()` in `@ironflow/core`, but nothing
 accepts it as config — it only supports manual `.upcast(...)` calls. Don't hand a user a
-bare registry and imply it will be applied. (`UpcasterRegistry` is not exported at all;
-`import { UpcasterRegistry }` fails.)
+bare registry and imply it will be applied. (`UpcasterRegistry` is exported as a type only;
+`new UpcasterRegistry()` fails.)
 
 ### Go
 

@@ -619,7 +619,19 @@ describe("WSEventMessageSchema", () => {
       meta: { timestamp: "2024-01-01T00:00:00Z", sequence: 1 },
       eventId: "evt-1",
     };
-    expect(WSEventMessageSchema.parse(message)).toEqual(message);
+    expect(WSEventMessageSchema.parse(message)).toEqual({
+      ...message,
+      meta: { timestamp: new Date("2024-01-01T00:00:00Z"), sequence: 1 },
+    });
+  });
+
+  // An older server sends "" on a consumer group frame,
+  // and refusing that frame would lose an event the server has already acked.
+  it.each([[""], ["nope"]])("delivers a frame whose metadata timestamp is %j", (timestamp) => {
+    const frame = { type: "event", subscriptionId: "s", topic: "t", data: { n: 1 }, meta: { timestamp, sequence: 7 } };
+    const parsed = WSEventMessageSchema.parse(frame);
+    expect(parsed.data).toEqual({ n: 1 });
+    expect(parsed.meta).toEqual({ timestamp: undefined, sequence: 7 });
   });
 });
 

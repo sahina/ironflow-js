@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { SchemaValidationError } from "@ironflow/core";
 import { ConfigClient } from "./config-client.js";
 import type { ConfigClientConfig } from "./config-client.js";
 import { assertDefined } from "./internal/assert-defined.js";
@@ -150,10 +151,20 @@ describe("ConfigClient", () => {
       const client = new ConfigClient(defaultConfig());
       const res = await client.get("app");
 
-      expect(res).toEqual(config);
+      expect(res).toEqual({ ...config, updatedAt: new Date(config.updatedAt) });
       const { url, init } = lastFetchCall();
       expect(url).toBe(`${BASE_URL}/api/v1/config/app`);
       expect(init.method).toBe("GET");
+    });
+  });
+
+  describe("unreadable updatedAt", () => {
+    it("throws SchemaValidationError from get and list", async () => {
+      const client = new ConfigClient(defaultConfig());
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { name: "app", data: {}, revision: 1, updatedAt: "not-a-time" }));
+      await expect(client.get("app")).rejects.toBeInstanceOf(SchemaValidationError);
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { configs: [{ name: "app", revision: 1 }] }));
+      await expect(client.list()).rejects.toBeInstanceOf(SchemaValidationError);
     });
   });
 
@@ -185,7 +196,7 @@ describe("ConfigClient", () => {
       const client = new ConfigClient(defaultConfig());
       const res = await client.list();
 
-      expect(res).toEqual(configs);
+      expect(res).toEqual(configs.map((c) => ({ ...c, updatedAt: new Date(c.updatedAt) })));
       const { url, init } = lastFetchCall();
       expect(url).toBe(`${BASE_URL}/api/v1/config`);
       expect(init.method).toBe("GET");
@@ -330,7 +341,7 @@ describe("ConfigClient.watch()", () => {
     mockWs.simulateMessage(event);
 
     expect(onUpdate).toHaveBeenCalledOnce();
-    expect(onUpdate).toHaveBeenCalledWith(event);
+    expect(onUpdate).toHaveBeenCalledWith({ ...event, updatedAt: new Date(event.updatedAt) });
   });
 
   it("should not call onUpdate for unrecognised message types", () => {
@@ -473,8 +484,33 @@ describe("ConfigClient.watch()", () => {
       mockWs.simulateMessage(event2);
 
       expect(onUpdate).toHaveBeenCalledTimes(2);
-      expect(onUpdate).toHaveBeenNthCalledWith(1, event1);
-      expect(onUpdate).toHaveBeenNthCalledWith(2, event2);
+      expect(onUpdate).toHaveBeenNthCalledWith(1, { ...event1, updatedAt: new Date(event1.updatedAt) });
+      expect(onUpdate).toHaveBeenNthCalledWith(2, { ...event2, updatedAt: new Date(event2.updatedAt) });
+    });
+  });
+
+  describe("unreadable updatedAt", () => {
+    it("routes the frame to onError, keeps the socket open and delivers the next frame", () => {
+      const onUpdate = vi.fn();
+      const onError = vi.fn();
+      new ConfigClient(defaultConfig()).watch("cfg", { onUpdate, onError });
+
+      mockWs.simulateMessage({ type: "config_update", name: "cfg", data: {}, revision: 1, updatedAt: "not-a-time" });
+
+      expect(onUpdate).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledWith(expect.any(SchemaValidationError));
+      expect(mockWs.close).not.toHaveBeenCalled();
+
+      mockWs.simulateMessage({ type: "config_update", name: "cfg", data: {}, revision: 2, updatedAt: "2026-01-02T00:00:00Z" });
+      expect(onUpdate).toHaveBeenCalledOnce();
+    });
+
+    it("does not throw from the socket callback without onError", () => {
+      const onUpdate = vi.fn();
+      new ConfigClient(defaultConfig()).watch("cfg", { onUpdate });
+
+      expect(() => mockWs.simulateMessage({ type: "config_update", name: "cfg", data: {}, revision: 1 })).not.toThrow();
+      expect(onUpdate).not.toHaveBeenCalled();
     });
   });
 });

@@ -14,6 +14,9 @@ import type {
 } from "@ironflow/core";
 import {
   IronflowError,
+  configEntriesFromWire,
+  configResponseFromWire,
+  configWatchEventFromWire,
   connectCodeForStatus,
   restRetryable,
   AUTH_HELP,
@@ -72,7 +75,7 @@ export class ConfigClient {
    * Get a config by name.
    */
   async get(name: string): Promise<ConfigResponse> {
-    return this.restRequest<ConfigResponse>("GET", `/api/v1/config/${enc(name)}`, undefined, "config.get");
+    return configResponseFromWire(await this.restRequest("GET", `/api/v1/config/${enc(name)}`, undefined, "config.get"));
   }
 
   /**
@@ -94,8 +97,7 @@ export class ConfigClient {
    * List all configs.
    */
   async list(): Promise<ConfigEntry[]> {
-    const result = await this.restRequest<{ configs: ConfigEntry[] }>("GET", "/api/v1/config", undefined, "config.list");
-    return result.configs;
+    return configEntriesFromWire(await this.restRequest("GET", "/api/v1/config", undefined, "config.list"));
   }
 
   /**
@@ -138,9 +140,9 @@ export class ConfigClient {
 
     ws.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data as string) as ConfigWatchEvent & { message?: string };
+        const data = JSON.parse(event.data as string) as Record<string, unknown> & { message?: string };
         if (data.type === "config_update") {
-          callbacks.onUpdate(data as ConfigWatchEvent);
+          callbacks.onUpdate(configWatchEventFromWire(data));
         } else if (data.type === "error") {
           failed = true;
           callbacks.onError?.(new Error(data.message ?? "config watch error"));

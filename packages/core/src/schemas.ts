@@ -226,6 +226,15 @@ export const InvokeFunctionSyncResponseSchema = z.object({
  * (#1919).
  */
 export const RunResponseSchema = z.object({
+  cancellationCause: z.string().optional(),
+  cancellationEvent: z
+    .object({
+      eventId: z.string(),
+      eventName: z.string(),
+      matchPath: z.string(),
+      matchValue: z.string().default(""),
+    })
+    .optional(),
   id: z.string(),
   functionId: z.string().default(""),
   eventId: z.string().default(""),
@@ -363,6 +372,8 @@ export const JobEventSchema = z.object({
 });
 
 export const JobContextSchema = z.object({
+  traceparent: z.string().optional().catch(undefined),
+  tracestate: z.string().optional().catch(undefined),
   trace_id: z.string().optional(),
   metadata: z.record(z.string(), z.string()).optional(),
   secrets: z.record(z.string(), z.string()).optional(),
@@ -396,7 +407,15 @@ export const JobAssignmentSchema = z.object({
 // ============================================================================
 
 export const EventMetadataSchema = z.object({
-  timestamp: z.string(),
+  // Unreadable reads as absent. Refusing here would drop the frame and lose its
+  // payload, and an older server sends "" on a consumer group frame after acking it.
+  timestamp: z
+    .string()
+    .optional()
+    .transform((value) => {
+      const parsed = new Date(value ?? "");
+      return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+    }),
   sequence: z.number().optional(),
   sequenceExact: z.string().regex(/^\d+$/).optional(),
 });
@@ -457,7 +476,10 @@ export const AuditEventSchema = z.object({
   eventType: z.string().min(1),
   payload: z.record(z.string(), z.unknown()),
   metadata: z.record(z.string(), z.string()).optional(),
-  createdAt: z.string(),
+  createdAt: z
+    .string()
+    .refine((value) => !Number.isNaN(Date.parse(value)))
+    .transform((value) => new Date(value)),
 });
 
 // ============================================================================

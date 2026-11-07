@@ -51,8 +51,8 @@ export const DEFAULT_TIMEOUTS = {
 
 /** Default retry configuration for function steps */
 export const DEFAULT_RETRY = {
-  /** Default maximum retry attempts. */
-  MAX_ATTEMPTS: 3,
+  /** Default maximum retry attempts, the same as the server default. */
+  MAX_ATTEMPTS: 25,
   /** Default initial delay in milliseconds. */
   INITIAL_DELAY_MS: 1000,
   /** Default backoff factor. */

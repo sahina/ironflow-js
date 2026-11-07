@@ -17,7 +17,7 @@ import type {
   SignUploadOptions,
   SignedUrl,
 } from "@ironflow/core";
-import { DEFAULT_CLIENT_RETRY, HEADERS, IronflowError, encodeBucketName, encodeFilePath, fileErrorFor, throwIfAuthError } from "@ironflow/core";
+import { DEFAULT_CLIENT_RETRY, HEADERS, IronflowError, encodeBucketName, encodeFilePath, fileBucketInfoFromWire, fileBucketsFromWire, fileErrorFor, fileInfoFromWire, listFilesResultFromWire, signedUrlFromWire, throwIfAuthError } from "@ironflow/core";
 import type { ErrorContext, OnErrorHandler } from "./types.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
@@ -156,17 +156,17 @@ export class FilesClient {
     return (res.status === 204 ? undefined : await res.json()) as T;
   }
 
-  createBucket(name: string, config: FileBucketConfig = {}): Promise<FileBucketInfo> {
-    return this.request("POST", "/api/v1/files/buckets", { name, ...config }, "files.createBucket");
+  async createBucket(name: string, config: FileBucketConfig = {}): Promise<FileBucketInfo> {
+    return fileBucketInfoFromWire(await this.request("POST", "/api/v1/files/buckets", { name, ...config }, "files.createBucket"));
   }
   async listBuckets(): Promise<FileBucketInfo[]> {
-    return (await this.request<{ buckets: FileBucketInfo[] }>("GET", "/api/v1/files/buckets", undefined, "files.listBuckets")).buckets;
+    return fileBucketsFromWire(await this.request("GET", "/api/v1/files/buckets", undefined, "files.listBuckets"));
   }
   async getBucket(name: string): Promise<FileBucketInfo> {
-    return this.request("GET", `/api/v1/files/buckets/${encodeBucketName(name)}`, undefined, "files.getBucket");
+    return fileBucketInfoFromWire(await this.request("GET", `/api/v1/files/buckets/${encodeBucketName(name)}`, undefined, "files.getBucket"));
   }
   async updateBucket(name: string, config: FileBucketConfig): Promise<FileBucketInfo> {
-    return this.request("PATCH", `/api/v1/files/buckets/${encodeBucketName(name)}`, config, "files.updateBucket");
+    return fileBucketInfoFromWire(await this.request("PATCH", `/api/v1/files/buckets/${encodeBucketName(name)}`, config, "files.updateBucket"));
   }
   async deleteBucket(name: string): Promise<void> {
     await this.request("DELETE", `/api/v1/files/buckets/${encodeBucketName(name)}`, undefined, "files.deleteBucket");
@@ -217,7 +217,7 @@ export class FileBucketHandle {
       init.duplex = "half"; // required by fetch for a streamed request body
     }
     const res = await this.client.send(url, init, replayable, "files.put");
-    return (await res.json()) as FileInfo;
+    return fileInfoFromWire((await res.json()) as Record<string, unknown>);
   }
 
   async get(path: string, opts: GetFileOptions = {}): Promise<FileObject> {
@@ -238,10 +238,10 @@ export class FileBucketHandle {
   }
 
   async info(path: string): Promise<FileInfo> {
-    return this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/info/${encodeFilePath(path)}`, undefined, "files.info");
+    return fileInfoFromWire(await this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/info/${encodeFilePath(path)}`, undefined, "files.info"));
   }
 
-  list(opts: ListFilesOptions = {}): Promise<ListFilesResult> {
+  async list(opts: ListFilesOptions = {}): Promise<ListFilesResult> {
     const q = new URLSearchParams();
     if (opts.prefix) q.set("prefix", opts.prefix);
     if (opts.delimiter) q.set("delimiter", opts.delimiter);
@@ -249,19 +249,19 @@ export class FileBucketHandle {
     if (opts.limit) q.set("limit", String(opts.limit));
     // A nested template literal would hide the path from scripts/sdkcoverage.
     const qs = q.size > 0 ? `?${q}` : "";
-    return this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/objects${qs}`, undefined, "files.list");
+    return listFilesResultFromWire(await this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/objects${qs}`, undefined, "files.list"));
   }
 
   async delete(path: string): Promise<void> {
     await this.client.request("DELETE", `/api/v1/files/buckets/${this.bucket}/objects/${encodeFilePath(path)}`, undefined, "files.delete");
   }
 
-  move(from: string, to: string, opts: MoveFileOptions = {}): Promise<FileInfo> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/move`, { from, to, ...opts }, "files.move");
+  async move(from: string, to: string, opts: MoveFileOptions = {}): Promise<FileInfo> {
+    return fileInfoFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/move`, { from, to, ...opts }, "files.move"));
   }
 
-  copy(from: string, to: string, opts: CopyFileOptions = {}): Promise<FileInfo> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/copy`, { from, to, ...opts }, "files.copy");
+  async copy(from: string, to: string, opts: CopyFileOptions = {}): Promise<FileInfo> {
+    return fileInfoFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/copy`, { from, to, ...opts }, "files.copy"));
   }
 
   async movePrefix(from: string, to: string): Promise<number> {
@@ -274,11 +274,11 @@ export class FileBucketHandle {
     return res.count;
   }
 
-  signUpload(path: string, opts: SignUploadOptions = {}): Promise<SignedUrl> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/upload`, { path, ...opts }, "files.signUpload", true);
+  async signUpload(path: string, opts: SignUploadOptions = {}): Promise<SignedUrl> {
+    return signedUrlFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/upload`, { path, ...opts }, "files.signUpload", true));
   }
 
-  signDownload(path: string, ttlSeconds?: number): Promise<SignedUrl> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/download`, { path, ttlSeconds }, "files.signDownload", true);
+  async signDownload(path: string, ttlSeconds?: number): Promise<SignedUrl> {
+    return signedUrlFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/download`, { path, ttlSeconds }, "files.signDownload", true));
   }
 }

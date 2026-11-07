@@ -71,6 +71,7 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const seeded = await client.getRunSteps(seed.runId);
     expect(seeded.count).toBe(1);
     expect(seeded.steps[0]).toMatchObject({ stepId: seed.stepId, runId: seed.runId, status: "completed", output: seed.stepOutput });
+    expect(seeded.steps[0]?.createdAt).toBeInstanceOf(Date);
     const held = await client.getRunSteps(hold.runId);
     expect(held.steps).toHaveLength(2);
     expect(held.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", output: { sdk: "node" } });
@@ -92,7 +93,7 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const state = await client.getPausedState(hold.runId);
     expect(state.pauseReason).toBe("injection");
     expect(state.steps).toHaveLength(1);
-    expect(state.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", injected: false, completedAt: expect.stringMatching(/^\d{4}-/), output: { sdk: "node" } });
+    expect(state.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", injected: false, completedAt: expect.any(Date), output: { sdk: "node" } });
   });
 
   // The wait step is still open, so resume puts the run back on its wait.
@@ -182,7 +183,8 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     for (const e of trail.events) {
       expect(e.runId).toBe(seed.runId);
       expect(e.functionId).toBe(seed.functionId);
-      expect(e.createdAt).toBeTruthy();
+      expect(e.createdAt).toBeInstanceOf(Date);
+      expect(e.createdAt.getUTCFullYear()).toBeGreaterThan(2000);
       if (e.eventType.startsWith("step.")) expect(e.stepId).toBe(seed.stepId);
     }
 
@@ -250,7 +252,8 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const list = await client.projections.list();
     expect(list.find((p) => p.name === name)?.status).toBe("active");
     const status = await client.projections.getStatus(name);
-    expect(status).toMatchObject({ name, mode: "managed", status: "active", lastEventSeq: got.lastEventSeq });
+    expect(status).toMatchObject({ name, mode: "managed", status: "active", lastEventSeq: got.lastEventSeq, updatedAt: expect.any(Date) });
+    expect(list.find((p) => p.name === name)?.updatedAt).toBeInstanceOf(Date);
   });
 
   it("proj-wait-for-event", async () => {
@@ -297,7 +300,7 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const { name } = own();
     const job = await client.projections.rebuild(name);
     expect(job).toMatchObject({ name, status: "running" });
-    expect(job.startedAt).toBeTruthy();
+    expect(job.startedAt).toBeInstanceOf(Date);
     expect(await statusOf()).toBe("rebuilding");
     expect(await client.projections.getRebuildJob(name)).toMatchObject({ name, status: "running" });
     await client.projections.cancelRebuild(name);

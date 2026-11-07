@@ -187,7 +187,7 @@ export function peelProjectionEnvelope<TState = unknown>(
       mode: toMode(env["mode"]),
       status: toStatus(env["status"]),
       errorMessage: toOptionalString(env["error_message"]),
-      updatedAt: toDate(env["updated_at"]) ?? new Date(0),
+      updatedAt: requireUpdatedAt(env["updated_at"]),
     };
   }
 
@@ -229,8 +229,7 @@ export function peelProjectionEnvelope<TState = unknown>(
     mode: toMode(env["mode"]),
     status: toStatus(env["status"]),
     errorMessage: toOptionalString(env["error_message"]),
-    updatedAt:
-      toDate(env["updated_at"]) ?? toDate(innerObj["updated_at"]) ?? new Date(0),
+    updatedAt: requireUpdatedAt(env["updated_at"], innerObj["updated_at"]),
   };
 }
 
@@ -278,6 +277,17 @@ function toDate(v: unknown): Date | undefined {
     );
   }
   return undefined;
+}
+
+function requireUpdatedAt(...candidates: unknown[]): Date {
+  for (const candidate of candidates) {
+    const date = toDate(candidate);
+    if (date) return date;
+  }
+  throw new IronflowError(
+    "projection envelope drift: missing updated_at",
+    { code: "PROJECTION_ENVELOPE_DRIFT", retryable: false }
+  );
 }
 
 function toMode(v: unknown): ProjectionMode {

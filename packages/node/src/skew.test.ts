@@ -149,12 +149,13 @@ describe("SubscribeBidirectional against a server that lacks it", () => {
 
 describe("unknown enum values", () => {
   it("getRun, listRuns and getRunSteps accept a status a newer server added", async () => {
+    const stamps = { createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
     const respond = (path: string) =>
       path.endsWith("/GetRun")
-        ? { id: "r1", status: "RUN_STATUS_ZZ_FUTURE" }
+        ? { id: "r1", status: "RUN_STATUS_ZZ_FUTURE", ...stamps }
         : path.endsWith("/ListRuns")
-          ? { runs: [{ id: "r1", status: "RUN_STATUS_ZZ_FUTURE" }, { id: "r2", status: "RUN_STATUS_COMPLETED" }], totalCount: 2 }
-          : { steps: [{ id: "s1", stepType: "STEP_TYPE_ZZ_FUTURE", status: "STEP_STATUS_ZZ_FUTURE" }, { id: "s2" }] };
+          ? { runs: [{ id: "r1", status: "RUN_STATUS_ZZ_FUTURE", ...stamps }, { id: "r2", status: "RUN_STATUS_COMPLETED", ...stamps }], totalCount: 2 }
+          : { steps: [{ id: "s1", stepType: "STEP_TYPE_ZZ_FUTURE", status: "STEP_STATUS_ZZ_FUTURE", ...stamps }, { id: "s2", ...stamps }] };
     vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(respond(url)), { headers: { "content-type": "application/json" } })));
     const client = createClient({ serverUrl: "http://localhost:9123" });
 

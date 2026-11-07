@@ -4,6 +4,95 @@ Node.js SDK for [Ironflow](https://ironflow.run), an event-driven backend platfo
 
 Published as a public npm package under a commercial license — see [LICENSE](https://github.com/sahina/ironflow-js/blob/main/LICENSE).
 
+## OpenTelemetry tracing
+
+Install the optional `@opentelemetry/api` peer (`^1.9.0`) and configure your
+application's OpenTelemetry tracer provider and context manager before starting
+workers or `serve()`. The SDK uses the API only. It does not install an exporter
+or configure global tracing. Node.js 22 or later is required.
+
+REST polling and streaming workers continue each job's W3C `traceparent` and
+`tracestate`. Push handlers read these fields from HTTP headers. Each execution
+creates a `process` consumer span, and each executed `step.run` creates a child
+`step.run` span. Memoized steps do not create spans. Parallel branches retain
+their execution ancestry. A poll request's ambient span never becomes the job's
+parent. Invalid parents start a new trace; valid unsampled parents still propagate.
+
+Failures set error status. Yields and worker cancellation end spans without error
+status. Spans contain no baggage, payloads, secrets, or exception messages.
+Step names are recorded as `ironflow.step.name`; avoid putting sensitive data in
+step names. Span names and error events use bounded SDK labels.
+
+Without the optional peer, import and execution continue normally without spans.
+Use your application's OpenTelemetry setup to select sampling and exporters.
+
+## Correlated application logs
+
+`ctx.logger` adds five reserved fields to each call in push, polling, and
+streaming execution. `run_id` is the full dispatch run ID, `function_id` is the
+dispatch function ID, and `attempt` is the engine run attempt. `step_id` is the
+allocated memoization key inside an active callback, including escaped names
+and branch scope, or an empty string outside it. `trace_id` is the valid current
+execution trace ID, including unsampled traces, or an empty string without one.
+Step correlation works without OpenTelemetry installed.
+
+The default console output prints all five fields and the full run ID prefix.
+Pass a `Logger` as `userLogger` to `serve()`, `createWorker()`, or
+`createStreamingWorker()` to use your application's sink. Its filtering,
+formatting, exceptions, and silence remain yours. `userLogger: false` silences
+execution logs. The existing `logger` option controls transport diagnostics.
+Execution-step diagnostics still share `ctx.logger` with callback logs and keep
+their existing messages and levels. Application attributes survive, with the
+five reserved fields taking precedence over collisions.
+
+```typescript
+const worker = createWorker({
+  functions: [processOrder],
+  userLogger: applicationLogger,
+});
+// In processOrder's callback:
+// logger.info('charged', { orderId: event.data.orderId });
+```
+
+For an explicit OTel Logs route, install your application's Logs SDK and the
+optional `@opentelemetry/api` peer. Obtain a logger from your provider and adapt
+it once. Tested versions are `@opentelemetry/api` 1.9.0 and
+`@opentelemetry/api-logs` and `@opentelemetry/sdk-logs` 0.220.0 on Node.js 22+.
+
+```typescript
+import { createOTelLogger, createWorker } from '@ironflow/node';
+import { LoggerProvider, SimpleLogRecordProcessor } from '@opentelemetry/sdk-logs';
+
+// exporter is created and managed by your application.
+const provider = new LoggerProvider({
+  processors: [new SimpleLogRecordProcessor({ exporter })],
+});
+const worker = createWorker({
+  functions: [processOrder],
+  userLogger: createOTelLogger(provider.getLogger('my-app')),
+});
+```
+
+The adapter emits once per call, with the original message body, mapped
+DEBUG/INFO/WARN/ERROR severity, application attributes, and explicit current OTel
+context for intrinsic trace/span correlation. It works without a global context
+manager. It has no console tee and imports no Logs package. Application
+providers control filtering, limits, timestamps after processing, and export.
+Use OTel-compatible attribute values. Explicit `Error` attributes become
+`{ name, message }` without automatically including stacks. There is no implicit
+exception capture. Native custom sinks receive explicit errors unchanged.
+
+Applications own provider setup, exporters, flush, shutdown, and destinations.
+Configuring tracing alone does not enable Logs export. Ironflow introduces no
+log collection, storage, network export, or provider setup. Do not bridge an
+already bridged sink a second time for the same destination.
+
+Memoized callbacks do not run or log again. Other callback logs can repeat on
+resume. Logs are not checkpointed or deduplicated. Detached async work retains
+its inherited trace context but loses the step label after callback exit,
+cancellation, or timeout, even if user code keeps running. Arbitrary console
+calls and independently created loggers are not enriched.
+
 ## Installation
 
 ```bash
@@ -578,7 +667,8 @@ The `serve()` function creates a universal HTTP handler for serverless deploymen
 | `projections` | `IronflowProjection[]` | Logs a warning -- use `createWorker` for projections. |
 | `signingKey` | `string` | HMAC-SHA256 signing key for request verification. Verification needs the raw request body: do not run a JSON body parser such as `express.json()` before `serve()`. |
 | `skipVerification` | `boolean` | Skip signature verification (dev only). |
-| `logger` | `Logger \| false` | Custom logger or `false` to disable. |
+| `logger` | `Logger \| false` | Transport diagnostic logger or `false` to disable. |
+| `userLogger` | `Logger \| false` | Application execution logger or `false` to silence it. |
 | `environment` | `string` | Target environment ID (default: `IRONFLOW_ENV`). Unset sends no environment header. |
 | `eventDefinitions` | `EventDefinitionRegistry` | Registry for automatic event upcasting. |
 | `serverUrl` | `string` | Ironflow server URL (for emitting webhook events). |
@@ -654,7 +744,8 @@ Workers poll the Ironflow server for jobs via REST HTTP. Use for long-running ta
 | `reconnectDelay` | `number` | `5000` | Reconnect delay in ms. |
 | `pollWaitSeconds` | `number` | `20` | Seconds the server may hold an empty job poll open, so a new job reaches the worker at once. `0` disables long polling; the server caps it at 25. A proxy with a read timeout below this value must be raised, or this value lowered. REST polling worker only -- `createStreamingWorker` ignores it. |
 | `labels` | `Record<string, string>` | -- | Worker labels for routing. |
-| `logger` | `Logger \| false` | -- | Custom logger or `false` to disable. |
+| `logger` | `Logger \| false` | -- | Transport diagnostic logger or `false` to disable. |
+| `userLogger` | `Logger \| false` | -- | Application execution logger or `false` to silence it. |
 | `environment` | `string` | `IRONFLOW_ENV` | Target environment ID. Unset sends no environment header. |
 | `eventDefinitions` | `EventDefinitionRegistry` | -- | Registry for automatic event upcasting. |
 | `apiKey` | `string` | `IRONFLOW_API_KEY` env | API key for authentication. Empty or unset falls back to the env var. |
@@ -1029,7 +1120,7 @@ console.log(status); // "healthy"
 
 ### ready()
 
-Readiness probe. `health()` is liveness; `ready()` reads `GET /ready`, which checks the database and NATS. A server that is not ready makes it throw an `IronflowError` with code `NOT_READY`, `status` 503 and the failing dependencies in `details.issues`. It makes one attempt and does not retry.
+Readiness probe. `health()` is liveness; `ready()` reads `GET /ready`, which checks the database, NATS and the engine streams. A server that is not ready makes it throw an `IronflowError` with code `NOT_READY`, `status` 503 and the failing dependencies in `details.issues`, such as `stream:PUBSUB`. It makes one attempt and does not retry.
 
 ```typescript
 const { status, warnings } = await client.ready();
@@ -1980,7 +2071,7 @@ Receive and transform external HTTP events from third-party services.
 |-------|------|-------------|
 | `id` | `string` | Webhook source identifier (used in URL path). |
 | `verify` | `(req) => unknown \| Promise<unknown>` | Verify the request. Throw to reject (HTTP 401). The return value is ignored. `req` has `body` (raw string) and `headers`. |
-| `transform` | `(payload) => WebhookEvent \| Promise<WebhookEvent>` | Transform the JSON-parsed request body to an Ironflow event. |
+| `transform` | `(payload) => WebhookEvent \| Promise<WebhookEvent>` | Transform the parsed request body to an Ironflow event. A form-encoded body arrives as an object; any other body is parsed as JSON. |
 
 ### Stripe webhook example
 
@@ -2465,6 +2556,8 @@ describe('transferFunds', () => {
 | `KVClient` / `KVBucketHandle` | Direct KV client constructors (advanced — prefer `client.kv()`). |
 | `ConfigClient` | Direct config client (advanced — prefer `client.config()`). |
 | `CommandDedup` / `DEFAULT_COMMAND_DEDUP_TTL_SECONDS` | Command-level idempotency primitive. |
+| `createRunVersionFilter()` / `RunEvent` | Drop stale run and step frames that arrive out of order on a `system.run.>` subscription. |
+| `createOTelLogger(sink)` | Build a `Logger` that writes to an OpenTelemetry log sink. See [Correlated application logs](#correlated-application-logs). |
 | `withRunContext` / `getCurrentRunId` | Run-scoped async context for advanced instrumentation. |
 | `agent(config, handler)` / `defineTool` / `exposeMcp` | Agent primitives. Import from `@ironflow/node/agent`. |
 | `ironflow` | Singleton with `ironflow.createFunction()`. |

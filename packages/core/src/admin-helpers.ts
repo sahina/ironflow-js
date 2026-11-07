@@ -4,8 +4,11 @@
  *
  * The Connect routes answer in protobuf JSON: camelCase, int64 as a string,
  * and zero values (false, 0, "") left out. The REST ops routes answer in
- * snake_case with plain numbers, so their types mirror the wire as is.
+ * snake_case with plain numbers, so their types keep the wire's field names and
+ * only their timestamps are decoded.
  */
+
+import { optionalTimestampFromWire, timestampFromWire } from "./timestamp-wire.js";
 
 // ── Definition history (projections and event schemas) ──────────────────
 
@@ -46,8 +49,7 @@ export interface DefinitionHistoryEntry<TDefinition> {
   actorId: string;
   changeReason: string;
   changeType: string;
-  /** RFC 3339 timestamp. */
-  recordedAt: string;
+  recordedAt: Date;
 }
 
 export interface DefinitionHistoryPage<TDefinition> {
@@ -120,7 +122,7 @@ export function definitionHistoryEntryFromWire<TDefinition>(
     actorId: str(e.actorId),
     changeReason: str(e.changeReason),
     changeType: str(e.changeType),
-    recordedAt: str(e.recordedAt),
+    recordedAt: timestampFromWire("definitionHistoryEntry.recordedAt", e.recordedAt),
   };
 }
 
@@ -193,8 +195,7 @@ export interface Deployment {
   mode: "push" | "pull" | "unspecified";
   endpointUrl: string;
   createdBy: string;
-  /** RFC 3339 timestamp. */
-  createdAt: string;
+  createdAt: Date;
 }
 
 export interface RegisterDeploymentResult {
@@ -216,8 +217,9 @@ export interface FunctionExecutionRouting {
   routingRevision: number;
   /** Non-empty only while `mode` is `adopting`. */
   transitionId: string;
-  transitionStartedAt?: string;
-  updatedAt: string;
+  transitionStartedAt?: Date;
+  /** Absent while the function has no routing row. */
+  updatedAt?: Date;
 }
 
 function enumSuffix(value: unknown, prefix: string): string {
@@ -248,7 +250,7 @@ export function deploymentFromWire(raw: unknown): Deployment {
     mode: enumSuffix(d.mode, "EXECUTION_MODE_") as Deployment["mode"],
     endpointUrl: str(d.endpointUrl),
     createdBy: str(d.createdBy),
-    createdAt: str(d.createdAt),
+    createdAt: timestampFromWire("deployment.createdAt", d.createdAt),
   };
 }
 
@@ -260,8 +262,8 @@ export function executionRoutingFromWire(raw: unknown): FunctionExecutionRouting
     activeDeploymentId: str(r.activeDeploymentId),
     routingRevision: num(r.routingRevision),
     transitionId: str(r.transitionId),
-    ...(r.transitionStartedAt ? { transitionStartedAt: str(r.transitionStartedAt) } : {}),
-    updatedAt: str(r.updatedAt),
+    transitionStartedAt: optionalTimestampFromWire("executionRouting.transitionStartedAt", r.transitionStartedAt),
+    updatedAt: optionalTimestampFromWire("executionRouting.updatedAt", r.updatedAt),
   };
 }
 
@@ -310,8 +312,8 @@ export interface CapacityLane {
   limit: number;
   active_reserved: number;
   config_version: number;
-  created_at: string;
-  last_used_at: string;
+  created_at: Date;
+  last_used_at: Date;
 }
 
 export interface CapacityQueueEntry {
@@ -324,12 +326,13 @@ export interface CapacityQueueEntry {
   lane_id: string | null;
   timeout_ms: number | null;
   environment_id: string;
-  first_enqueued_at: string;
-  eligible_at: string;
+  first_enqueued_at: Date;
+  eligible_at: Date;
   blocking_reason: string;
   reservation_owner: string | null;
-  reservation_expires_at: string | null;
-  created_at: string;
+  /** Absent until the entry holds a reservation. */
+  reservation_expires_at?: Date;
+  created_at: Date;
 }
 
 /** `function_id` is always `""` on this view; match a lease by `run_id`. */
@@ -339,8 +342,8 @@ export interface CapacityLease {
   execution_seq: number;
   lane_id: string | null;
   lease_token_hash: string;
-  activated_at: string;
-  expires_at: string;
+  activated_at: Date;
+  expires_at: Date;
   engine_node_id: string | null;
   environment_id: string;
   function_id: string;
@@ -350,8 +353,9 @@ export interface CapacityBucket {
   environment_id: string;
   function_id: string;
   lane_id: string | null;
-  last_dispatched_at: string | null;
-  created_at: string;
+  /** Absent until the bucket first dispatches. */
+  last_dispatched_at?: Date;
+  created_at: Date;
 }
 
 export interface CapacityWorkerSession {
@@ -362,8 +366,8 @@ export interface CapacityWorkerSession {
   labels?: Record<string, string>;
   protocol_caps?: Record<string, unknown>;
   draining: boolean;
-  heartbeat_expiry: string;
-  created_at: string;
+  heartbeat_expiry: Date;
+  created_at: Date;
 }
 
 export interface CapacityWorkerCredit {
@@ -373,11 +377,11 @@ export interface CapacityWorkerCredit {
   session_id: string;
   engine_node_id: string;
   slot_ordinal: number;
-  expires_at: string;
+  expires_at: Date;
   claimed: boolean;
   claimed_run_id: string;
   claimed_execution_seq: number;
-  created_at: string;
+  created_at: Date;
 }
 
 export interface CapacityStat {
@@ -397,8 +401,8 @@ export interface DebounceEntry {
   event_id: string;
   function_version: number;
   period_ms: number;
-  armed_at: string;
-  fires_at: string;
+  armed_at: Date;
+  fires_at: Date;
 }
 
 /** The query string for a capacity view, with its leading `?`, or `""`. */
@@ -409,4 +413,62 @@ export function capacityQuery(options: CapacityListOptions = {}): string {
   if (options.limit !== undefined) q.set("limit", String(options.limit));
   const s = q.toString();
   return s ? `?${s}` : "";
+}
+
+export function capacityLaneFromWire(raw: Record<string, unknown>): CapacityLane {
+  return {
+    ...raw,
+    created_at: timestampFromWire("CapacityLane.created_at", raw.created_at),
+    last_used_at: timestampFromWire("CapacityLane.last_used_at", raw.last_used_at),
+  } as unknown as CapacityLane;
+}
+
+export function capacityQueueEntryFromWire(raw: Record<string, unknown>): CapacityQueueEntry {
+  return {
+    ...raw,
+    first_enqueued_at: timestampFromWire("CapacityQueueEntry.first_enqueued_at", raw.first_enqueued_at),
+    eligible_at: timestampFromWire("CapacityQueueEntry.eligible_at", raw.eligible_at),
+    created_at: timestampFromWire("CapacityQueueEntry.created_at", raw.created_at),
+    reservation_expires_at: optionalTimestampFromWire("CapacityQueueEntry.reservation_expires_at", raw.reservation_expires_at),
+  } as unknown as CapacityQueueEntry;
+}
+
+export function capacityLeaseFromWire(raw: Record<string, unknown>): CapacityLease {
+  return {
+    ...raw,
+    activated_at: timestampFromWire("CapacityLease.activated_at", raw.activated_at),
+    expires_at: timestampFromWire("CapacityLease.expires_at", raw.expires_at),
+  } as unknown as CapacityLease;
+}
+
+export function capacityBucketFromWire(raw: Record<string, unknown>): CapacityBucket {
+  return {
+    ...raw,
+    created_at: timestampFromWire("CapacityBucket.created_at", raw.created_at),
+    last_dispatched_at: optionalTimestampFromWire("CapacityBucket.last_dispatched_at", raw.last_dispatched_at),
+  } as unknown as CapacityBucket;
+}
+
+export function capacityWorkerSessionFromWire(raw: Record<string, unknown>): CapacityWorkerSession {
+  return {
+    ...raw,
+    heartbeat_expiry: timestampFromWire("CapacityWorkerSession.heartbeat_expiry", raw.heartbeat_expiry),
+    created_at: timestampFromWire("CapacityWorkerSession.created_at", raw.created_at),
+  } as unknown as CapacityWorkerSession;
+}
+
+export function capacityWorkerCreditFromWire(raw: Record<string, unknown>): CapacityWorkerCredit {
+  return {
+    ...raw,
+    expires_at: timestampFromWire("CapacityWorkerCredit.expires_at", raw.expires_at),
+    created_at: timestampFromWire("CapacityWorkerCredit.created_at", raw.created_at),
+  } as unknown as CapacityWorkerCredit;
+}
+
+export function debounceEntryFromWire(raw: Record<string, unknown>): DebounceEntry {
+  return {
+    ...raw,
+    armed_at: timestampFromWire("DebounceEntry.armed_at", raw.armed_at),
+    fires_at: timestampFromWire("DebounceEntry.fires_at", raw.fires_at),
+  } as unknown as DebounceEntry;
 }

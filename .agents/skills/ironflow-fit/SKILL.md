@@ -1,6 +1,6 @@
 ---
 name: ironflow-fit
-version: 0.54.0
+version: 0.55.0
 description: |
   Analyze a codebase or workspace and produce a visual HTML report on whether and where
   Ironflow fits — event-driven readiness, ranked opportunities with file:line evidence,
@@ -54,7 +54,7 @@ Snippets come from the docs pages listed in the `ironflow-docs` skill — fetch 
 invent Ironflow API surface.** A wrong snippet in a vendor report is worse than no
 snippet.
 
-For anything about non-Go/TS adoption, the published docs are the source and the
+For anything about adoption outside the three Tier-1 SDKs (Go, Node, Python), the published docs are the source and the
 report should **link rather than restate**:
 
 ```

@@ -8,6 +8,7 @@
  * - Generic Fetch API (native Request/Response)
  */
 
+import { traceProcess, recordExecutionError } from "./internal/tracing.js";
 import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { dropUnencodable, encodeResponse, serializationError } from "./internal/encode-guard.js";
 import type {
@@ -232,7 +233,7 @@ export function serve(config: ServeConfig): UniversalHandler {
         }
 
         try {
-          const payload = JSON.parse(body);
+          const payload = parseWebhookBody(body, headers["content-type"]);
           const event = await wh.config.transform(payload);
 
           // Emit event to Ironflow server if configured
@@ -340,7 +341,10 @@ export function serve(config: ServeConfig): UniversalHandler {
 
       // Execute function
       const serverUrl = config.serverUrl || getConfiguredServerUrl();
-      const response = await executeHandler(fn, pushRequest, config.eventDefinitions, serverUrl, environment);
+      const response = await traceProcess({
+        traceparent: request.headers.get("traceparent") ?? undefined,
+        tracestate: request.headers.get("tracestate") ?? undefined,
+      }, () => executeHandler(fn, pushRequest, config.eventDefinitions, serverUrl, environment, config.userLogger));
       return sendResponse(200, response);
     } catch (error) {
       // Unexpected error
@@ -367,7 +371,8 @@ async function executeHandler(
   request: ValidatedPushRequest,
   eventDefinitions?: EventDefinitionRegistry,
   serverUrl?: string,
-  environment?: string
+  environment?: string,
+  userLogger?: Logger | false
 ): Promise<PushResponse> {
   // Create execution context (with optional upcasting)
   // Step callbacks authenticate with the same env key the worker uses; serve()
@@ -376,7 +381,7 @@ async function executeHandler(
   try {
     ctx = new ExecutionContext(
       request,
-      undefined,
+      userLogger,
       eventDefinitions,
       fn.config.stepTimeout,
       serverUrl,
@@ -384,6 +389,7 @@ async function executeHandler(
       environment
     );
   } catch (error) {
+    recordExecutionError(error);
     // The constructor upcasts the event. A broken upcaster fails every
     // attempt the same way: a non-retryable failure, not a 500 the engine
     // retries and counts against the circuit breaker (#2874).
@@ -445,6 +451,7 @@ async function executeHandler(
       error = encodeErr;
     }
 
+    recordExecutionError(error);
     // Handle actual errors
     const errorMessage = error instanceof Error ? error.message : String(error);
     const errorStack = error instanceof Error ? error.stack : undefined;
@@ -624,6 +631,23 @@ function extractRequestPath(req: Request | NodeRequest): string {
   }
   const nodeReq = req as NodeRequest;
   return nodeReq.url ?? "";
+}
+
+/**
+ * Parses a webhook body for transform(). A form-encoded body, the Twilio default,
+ * becomes an object; a repeated key keeps every value. Anything else is JSON.
+ */
+function parseWebhookBody(body: string, contentType: string | undefined): unknown {
+  const mediaType = contentType?.split(";")[0]?.trim().toLowerCase();
+  if (mediaType !== "application/x-www-form-urlencoded") return JSON.parse(body);
+  const params = new URLSearchParams(body);
+  // fromEntries defines own properties, so a "__proto__" field cannot reach the prototype.
+  return Object.fromEntries(
+    [...new Set(params.keys())].map((key) => {
+      const values = params.getAll(key);
+      return [key, values.length === 1 ? values[0] : values];
+    }),
+  );
 }
 
 const SIGNATURE_TOLERANCE_SECONDS = 300;

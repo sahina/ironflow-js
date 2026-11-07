@@ -1270,11 +1270,25 @@ describe("SubscriptionClient", () => {
           data: { total: 5 },
           entityVersion: 2,
           version: 1,
-          timestamp: "2026-10-01T00:00:00Z",
+          timestamp: new Date("2026-10-01T00:00:00Z"),
           source: undefined,
           metadata: undefined,
         },
       ]);
+      client.close();
+    });
+
+    it("reports a frame with an unreadable timestamp instead of throwing into the socket", async () => {
+      const errors: Error[] = [];
+      const { client, events } = await connectAndSubscribe({ onError: (e) => errors.push(e) });
+      mockWs.simulateMessage({
+        type: "event",
+        subscriptionId: "sub_e",
+        topic: "entity:order.1.placed",
+        data: { id: "evt-1", name: "order.placed", timestamp: "nope" },
+      });
+      expect(events).toEqual([]);
+      expect(errors[0]?.message).toMatch(/streamEvent\.timestamp/);
       client.close();
     });
 

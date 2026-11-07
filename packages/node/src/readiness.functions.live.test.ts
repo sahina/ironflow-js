@@ -67,8 +67,8 @@ describe.skipIf(!SEED_PATH)("readiness functions — live server", () => {
       status: "active",
       version: 1,
       metadata: { team: "readiness" },
-      createdAt: expect.stringMatching(/^\d{4}-/),
-      updatedAt: expect.stringMatching(/^\d{4}-/),
+      createdAt: expect.any(Date),
+      updatedAt: expect.any(Date),
     });
 
     // A second registration updates in place: version 2, new description.
@@ -91,11 +91,11 @@ describe.skipIf(!SEED_PATH)("readiness functions — live server", () => {
     const result = await client.invoke(id, { data: { who: "José" } });
     expect(result).toMatchObject({ functionId: id, status: "completed", output: { echoed: { who: "José" } } });
     expect(result.runId).toBeTruthy();
-    // Typed with the package's public Run: the timestamps it declares are the strings getRun returns.
+    // Typed with the package's public Run: the timestamps it declares are the Dates getRun returns.
     const run: Run = await client.getRun(result.runId);
     expect(run).toMatchObject({ functionId: id, input: { who: "José" } });
-    expect(typeof run.createdAt).toBe("string");
-    expect(Number.isNaN(Date.parse(run.createdAt))).toBe(false);
+    expect(run.createdAt).toBeInstanceOf(Date);
+    expect(Number.isNaN(run.createdAt.getTime())).toBe(false);
     await expect(client.invoke(`${id}-missing`, { data: {} })).rejects.toMatchObject({ code: "not_found" });
   }, LONG);
 
@@ -116,7 +116,7 @@ describe.skipIf(!SEED_PATH)("readiness functions — live server", () => {
     expect(hist.entries.map((e) => e.functionSnapshot?.status)).toEqual(["active", "paused", "active", "active"]);
     expect(hist.hasMore).toBe(false);
     hist.entries.forEach((e, i) => {
-      expect(e).toMatchObject({ functionId: id, eventId: expect.any(String), recordedAt: expect.stringMatching(/^\d{4}-/) });
+      expect(e).toMatchObject({ functionId: id, eventId: expect.any(String), recordedAt: expect.any(Date) });
       if (i > 0) expect(e.entityVersion).toBe(hist.entries[i - 1]!.entityVersion - 1);
     });
     expect(hist.entries[0]!.functionSnapshot?.description).toBe("second");

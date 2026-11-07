@@ -43,7 +43,7 @@ export interface KVBucketInfo {
   /** History depth */
   history: number;
   /** When the bucket was created */
-  created_at: string;
+  created_at: Date;
 }
 
 // ============================================================================
@@ -60,8 +60,8 @@ export interface KVEntry {
   value: unknown;
   /** Revision number */
   revision: number;
-  /** When the entry was created/updated */
-  created_at: string;
+  /** When this revision was written */
+  created_at: Date;
   /** Operation type: "put" or "delete" */
   operation: string;
 }

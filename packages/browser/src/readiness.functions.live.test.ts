@@ -74,8 +74,8 @@ describe.skipIf(!SEED_PATH)("readiness functions — live server", () => {
       status: "active",
       version: 1,
       metadata: { team: "readiness" },
-      createdAt: expect.stringMatching(/^\d{4}-/),
-      updatedAt: expect.stringMatching(/^\d{4}-/),
+      createdAt: expect.any(Date),
+      updatedAt: expect.any(Date),
     });
   });
 
@@ -116,7 +116,7 @@ describe.skipIf(!SEED_PATH)("readiness functions — live server", () => {
     expect(hist.entries.map((e) => e.functionSnapshot?.status)).toEqual(["active", "paused", "active", "active"]);
     expect(hist.hasMore).toBe(false);
     hist.entries.forEach((e, i) => {
-      expect(e).toMatchObject({ functionId: id, eventId: expect.any(String), recordedAt: expect.stringMatching(/^\d{4}-/) });
+      expect(e).toMatchObject({ functionId: id, eventId: expect.any(String), recordedAt: expect.any(Date) });
       if (i > 0) expect(e.entityVersion).toBe(hist.entries[i - 1]!.entityVersion - 1);
     });
     expect(hist.entries[0]!.functionSnapshot?.description).toBe("second");

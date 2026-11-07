@@ -320,7 +320,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
 
   describe("restRequest() via apiKeys.*", () => {
     it("omits Content-Type on a bodyless GET", async () => {
-      const fetchMock = vi.fn(async () => mockResponse('{"keys":[]}'));
+      const fetchMock = vi.fn(async () => mockResponse("[]"));
       vi.stubGlobal("fetch", fetchMock);
       ironflow.configure({
         serverUrl: "http://test:9123",
@@ -338,7 +338,7 @@ describe("HTTP helper characterization (pre-send() extraction)", () => {
     });
 
     it("sets Content-Type and a body on POST", async () => {
-      const fetchMock = vi.fn(async () => mockResponse('{"id":"k1","key":"secret"}'));
+      const fetchMock = vi.fn(async () => mockResponse('{"id":"k1","key":"secret","created_at":"2026-01-01T00:00:00Z"}'));
       vi.stubGlobal("fetch", fetchMock);
       ironflow.configure({ serverUrl: "http://test:9123", logger: false });
 

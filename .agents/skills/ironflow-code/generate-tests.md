@@ -1,13 +1,13 @@
 # Generate Tests
 
-### Step 1: Detect framework
+## Step 1: Detect framework
 
 - `vitest.config.ts` or `vitest` in devDependencies → vitest
 - `jest.config.*` or `jest` in devDependencies → Jest
 - `go.mod` → Go testing
 - None? Recommend vitest (TS) or stdlib (Go) and offer install.
 
-### Step 2: Find components to test
+## Step 2: Find components to test
 
 ```bash
 grep -rn "createFunction\|createProjection\|createWorker\|createWebhook" src/ --include="*.ts"
@@ -15,7 +15,7 @@ grep -rn "ironflow.CreateFunction\|ironflow.CreateProjection\|ironflow.NewWorker
 grep -rn "from ironflow.worker import\|@function(" . --include="*.py"
 ```
 
-### Step 3: Apply test patterns
+## Step 3: Apply test patterns
 
 | Component | Type | Must test | Server required? |
 |---|---|---|---|
@@ -37,7 +37,7 @@ grep -rn "from ironflow.worker import\|@function(" . --include="*.py"
 4. Command handler integration — one happy path, one rejection
 5. Process manager / reactor integration — if present
 
-### Step 4: Projection unit test (vitest)
+## Step 4: Projection unit test (vitest)
 
 ```typescript
 import { describe, it, expect } from "vitest";
@@ -76,7 +76,7 @@ describe("order-stats projection", () => {
 });
 ```
 
-### Step 4a: Aggregate decider — Given/When/Then (vitest)
+## Step 4a: Aggregate decider — Given/When/Then (vitest)
 
 The canonical ES test shape. Zero SDK dependency — the decider is a pure function, so
 these tests are fast, deterministic, and cover every invariant.
@@ -135,7 +135,7 @@ Rules:
 - **Rejections throw `NonRetryableError`** — assert the error class, not the string
 - Cover every guard clause — one negative test per invariant
 
-### Step 5: Function integration test (vitest)
+## Step 5: Function integration test (vitest)
 
 Requires `ironflow serve` running.
 
@@ -171,7 +171,7 @@ async function waitForRun(client: any, fnId: string, evId: string, timeoutMs: nu
 }
 ```
 
-### Step 6: Entity stream test (optimistic concurrency)
+## Step 6: Entity stream test (optimistic concurrency)
 
 ```typescript
 it("enforces optimistic concurrency", async () => {
@@ -188,7 +188,7 @@ it("enforces optimistic concurrency", async () => {
 });
 ```
 
-### Step 7: Run tests
+## Step 7: Run tests
 
 ```bash
 pnpm vitest run path/to/file.test.ts
@@ -198,8 +198,7 @@ go test -v -run TestName ./path/...
 
 If integration tests fail with connection errors, prompt user to start `ironflow serve`.
 
-### Test file naming
+## Test file naming
 
 - TS: `*.test.ts` next to source; integration in `tests/` or `*.integration.test.ts`
 - Go: `*_test.go` in same package
-

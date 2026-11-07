@@ -10,7 +10,6 @@ import type {
   KVEntry,
   KVPutResult,
   KVListKeysResult,
-  KVListBucketsResult,
   KVWatchEvent,
   KVWatchCallbacks,
   KVWatchOptions,
@@ -19,6 +18,9 @@ import type {
 import {
   IronflowError,
   connectCodeForStatus,
+  kvBucketInfoFromWire,
+  kvBucketsFromWire,
+  kvEntryFromWire,
   restRetryable,
   AUTH_HELP,
   UnauthenticatedError,
@@ -81,8 +83,8 @@ export class KVBucketHandle {
   }
 
   // The path stays a literal at the restRequest call: scripts/sdkcoverage reads it from there.
-  private getEntry(key: string, clientMethod: string): Promise<KVEntry> {
-    return this.restRequest<KVEntry>("GET", `/api/v1/kv/buckets/${enc(this.bucketName)}/keys/${key}`, undefined, undefined, clientMethod);
+  private async getEntry(key: string, clientMethod: string): Promise<KVEntry> {
+    return kvEntryFromWire(await this.restRequest("GET", `/api/v1/kv/buckets/${enc(this.bucketName)}/keys/${key}`, undefined, undefined, clientMethod));
   }
 
   /**
@@ -309,12 +311,12 @@ export class KVClient {
     if (config.maxBytes) body.max_bytes = config.maxBytes;
     if (config.history) body.history = config.history;
 
-    return this.restRequest<KVBucketInfo>(
+    return kvBucketInfoFromWire(await this.restRequest(
       "POST",
       "/api/v1/kv/buckets",
       body,
       "kv.createBucket"
-    );
+    ));
   }
 
   /**
@@ -333,25 +335,24 @@ export class KVClient {
    * List all buckets.
    */
   async listBuckets(): Promise<KVBucketInfo[]> {
-    const result = await this.restRequest<KVListBucketsResult>(
+    return kvBucketsFromWire(await this.restRequest(
       "GET",
       "/api/v1/kv/buckets",
       undefined,
       "kv.listBuckets"
-    );
-    return result.buckets;
+    ));
   }
 
   /**
    * Get bucket info.
    */
   async getBucketInfo(name: string): Promise<KVBucketInfo> {
-    return this.restRequest<KVBucketInfo>(
+    return kvBucketInfoFromWire(await this.restRequest(
       "GET",
       `/api/v1/kv/buckets/${enc(name)}`,
       undefined,
       "kv.getBucketInfo"
-    );
+    ));
   }
 
   /**

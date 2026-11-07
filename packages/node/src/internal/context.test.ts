@@ -84,7 +84,9 @@ describe("ExecutionContext", () => {
       const ctx = new ExecutionContext(createPushRequest(), customLogger);
 
       ctx.logger.info("test");
-      expect(customLogger.info).toHaveBeenCalledWith("test");
+      expect(customLogger.info).toHaveBeenCalledExactlyOnceWith("test", {
+        run_id: "run-123", function_id: "test-function", step_id: "", attempt: 1, trace_id: "",
+      });
     });
 
     it("should store completed steps for memoization", () => {

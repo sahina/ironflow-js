@@ -442,16 +442,6 @@ scan_ts() {
       fi
     done
 
-  # WARNING: waitForEvent match without data. prefix
-  awk '
-    /step\.waitForEvent/{wfe=1}
-    wfe && /match:[[:space:]]*"/ && !/match:[[:space:]]*"data\./{
-      print FILENAME":"NR":WARNING:wrong-match-prefix:waitForEvent match field missing \"data.\" prefix"
-      wfe=0
-    }
-    wfe && /\}/ {wfe=0}
-  ' "$file" 2>/dev/null
-
   # WARNING: streams.append without expectedVersion.
   # Anchor on paren depth: the call starts with "(" after streams.append, and
   # ends when depth returns to 0. Scan everything inside the call args; if

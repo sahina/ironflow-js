@@ -36,6 +36,13 @@ import { sdkFetch, ServerTooOldError } from "./sdk-fetch.js";
 
 /** The first server with the projection lease RPCs (ADR 0120). Go and Python carry the same value. */
 const MIN_SERVER_VERSION_PROJECTION_LEASE = "0.44.0";
+/** The first server that honors the projection delivery position (ADR 0164). Go and Python carry the same value. */
+const MIN_SERVER_VERSION_PROJECTION_POSITION = "0.55.0";
+
+/** protojson sends an int64 as a JSON string. */
+function seqOf(v: unknown): number {
+  return typeof v === "string" ? parseInt(v, 10) : Number(v ?? 0);
+}
 
 export interface ProjectionRunnerConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -69,7 +76,7 @@ function normalizeEvent(event: PollEvent): PollEvent {
     id: event.id || "",
     name: event.name || "",
     data: event.dataValue ?? event.data,
-    seq: typeof event.seq === "string" ? parseInt(event.seq, 10) : (event.seq || 0),
+    seq: seqOf(event.seq),
     timestamp: event.timestamp,
     metadata: event.metadata,
     entityId: event.entityId || undefined,
@@ -84,6 +91,10 @@ interface PollResponse {
   currentState?: unknown;
   /** A global state that is not a JSON object arrives here instead of in `currentState` (#1963). */
   currentStateValue?: unknown;
+  /** The watermark the position may rise to once the response is committed (ADR 0164). */
+  lastEventSeq?: string | number;
+  /** The floor the server honored; absent from a server older than ADR 0164. */
+  position?: string | number;
 }
 
 /** The runner lease (ADR 0120). The epoch is an int64, so JSON carries it as a string: send it back unchanged. */
@@ -147,6 +158,9 @@ function throwConnectError(err: ConnectErrorBody, what: string): never {
   if (err.code === "unimplemented" || err.code === "not_found") {
     throw new StreamingUnsupportedError(detail);
   }
+  if (err.code === "failed_precondition") {
+    throw new ProjectionRefusedError(detail);
+  }
   throwIfAuthError(err.code === "unauthenticated" ? 401 : err.code === "permission_denied" ? 403 : 0, what);
   throw new Error(detail);
 }
@@ -167,6 +181,13 @@ async function throwIfLeaseLost(resp: Response, what: string): Promise<void> {
   if (err.code === "aborted") throwConnectError(err, what);
 }
 
+/** Connect sends failed_precondition as HTTP 400, as it does invalid_argument, so the body decides. */
+async function throwIfRefused(resp: Response, what: string): Promise<void> {
+  if (resp.status !== 400) return;
+  const err = await connectErrorOf(resp);
+  if (err.code === "failed_precondition") throwConnectError(err, what);
+}
+
 export class ProjectionRunner {
   private config: ProjectionRunnerConfig;
   private stopAbort = new AbortController();
@@ -185,12 +206,19 @@ export class ProjectionRunner {
   private managedStateInitialized = false;
   /** Aborts the current stream fetch; a failed flush uses it to force a reconnect (#2404). */
   private streamAbort: AbortController | null = null;
-  /** Set by a failed flush; later flushes are dropped until the reconnect, which replays from the saved cursor. */
+  /** Set by a failed flush; later flushes are dropped until the reconnect, which replays from the delivery position. */
   private flushFailed = false;
   /** A failed save may still have landed (only its response was lost): reload the state before the next stream (#2977). */
   private reloadState = false;
   /** A batch with events succeeded on the current stream. */
   private progressed = false;
+  /**
+   * The delivery position under the lease (ADR 0164). It rises only after a whole batch commits,
+   * to the watermark the server reported for it, so it never covers an unsaved frame.
+   */
+  private position = 0;
+  /** The highest seq the pending stream frames carry, heartbeat marks included. */
+  private pendingMark = 0;
 
   // Lease state (ADR 0120). Per instance: worker and worker-streaming each bundle this module.
   /** The held lease, or null in standby. */
@@ -235,7 +263,8 @@ export class ProjectionRunner {
       if (err.code === "invalid_argument") {
         throw new ProjectionConfigError(`Failed to register projection: ${err.code}: ${err.message ?? ""}`);
       }
-      throw new Error(`Failed to register projection: ${resp.status}`);
+      const reason = err.code ? `: ${err.code}: ${err.message ?? ""}` : "";
+      throw new Error(`Failed to register projection: ${resp.status}${reason}`);
     }
   }
 
@@ -252,7 +281,7 @@ export class ProjectionRunner {
         return true;
       } catch (err) {
         if (this.intakeSignal.aborted) return false;
-        if (err instanceof UnauthenticatedError || err instanceof UnauthorizedError) throw err;
+        if (err instanceof UnauthenticatedError || err instanceof UnauthorizedError || err instanceof ProjectionRefusedError) throw err;
         const name = this.config.projection.config.name;
         if (err instanceof ProjectionConfigError) {
           this.config.logger.error(`Projection ${name} ${what} failed, stopping: ${err.message}`);
@@ -375,6 +404,7 @@ export class ProjectionRunner {
           const data = (await resp.json()) as { granted?: boolean; lease?: ProjectionLease; ttl?: string };
           if (data.granted && data.lease) {
             this.lease = data.lease;
+            this.position = 0;
             if (this.intakeSignal.aborted) return false;
             logger.info(`Projection ${name}: lease granted (epoch ${data.lease.epoch})`);
             this.startRenew(durationMs(data.ttl) || runnerTimings.fallbackTtlMs);
@@ -520,6 +550,8 @@ export class ProjectionRunner {
     }
     await this.flushChain; // a batch of the lost grant must not send the next grant's lease
     this.pendingEvents = [];
+    this.pendingMark = 0;
+    this.position = 0;
     this.flushFailed = false;
     this.reloadState = false; // the next grant loads the state before it streams
     this.resetManagedState();
@@ -578,6 +610,7 @@ export class ProjectionRunner {
               // ~15s so idle streams don't get closed by proxies/LBs or
               // Node's default fetch socket idle timer.
               acceptHeartbeats: true,
+              position: String(this.position),
             }))),
             signal: this.streamAbort.signal,
           }
@@ -609,6 +642,7 @@ export class ProjectionRunner {
         // Read the streaming response using the ConnectRPC streaming envelope format.
         // Each message is: 1 byte flags + 4 bytes big-endian length + JSON payload.
         const reader = resp.body.getReader();
+        let opened = false;
         let streamFailed = false;
         let streamError: unknown;
 
@@ -648,22 +682,28 @@ export class ProjectionRunner {
                 break; // End of stream
               }
 
-              worked = true;
-
               const text = new TextDecoder().decode(payload);
-              try {
-                const event = JSON.parse(text) as PollEvent & { kind?: string | number };
-                // Skip server-side keepalive heartbeats (issue #550).
-                // Proto enum renders as string name in ConnectRPC JSON,
-                // but accept the numeric form defensively.
-                if (event.kind === "PROJECTION_EVENT_KIND_HEARTBEAT" || event.kind === 2) {
-                  continue;
+              // A frame the runner cannot read fails the stream: skipping it would let the
+              // position rise over it.
+              const event = JSON.parse(text) as PollEvent & { kind?: string | number };
+              // Proto enum renders as string name in ConnectRPC JSON, but accept the numeric form.
+              if (!opened) {
+                // A server older than ADR 0164 ignores the position and sends no OPEN frame.
+                if (event.kind !== "PROJECTION_EVENT_KIND_OPEN" && event.kind !== 3) {
+                  throw new ServerTooOldError("StreamProjectionEvents position", MIN_SERVER_VERSION_PROJECTION_POSITION);
                 }
-                this.enqueueEvent(normalizeEvent(event));
-              } catch {
-                // Skip malformed messages
-                logger.warn(`Skipping malformed stream message: ${text.slice(0, 100)}`);
+                opened = true;
+                continue;
               }
+              worked = true;
+              if (event.kind === "PROJECTION_EVENT_KIND_HEARTBEAT" || event.kind === 2) {
+                this.enqueueMark(seqOf(event.seq));
+                continue;
+              }
+              this.enqueueEvent(normalizeEvent(event));
+              // The server does not wait for saves, so the reader stays at most one batch
+              // ahead of the flush in progress.
+              if (this.pendingEvents.length >= 2 * (projection.config.batchSize || 100)) await this.flushChain;
             }
           }
         } catch (e) {
@@ -691,6 +731,8 @@ export class ProjectionRunner {
 
         // Stream ended normally (server restart, etc.)
         if (!this.intakeSignal.aborted) {
+          // A current server sends OPEN before it can end a stream cleanly, so a clean end without OPEN is an old server.
+          if (!opened) throw new ServerTooOldError("StreamProjectionEvents position", MIN_SERVER_VERSION_PROJECTION_POSITION);
           // A failed batch is not a clean end. The flush above returns early in this case, so
           // the catch below must count it.
           if (this.flushFailed) throw new Error(`Projection ${name}: batch failed, reconnecting`);
@@ -698,6 +740,7 @@ export class ProjectionRunner {
           consecutiveFailures = 0;
           await this.flushChain;
           this.pendingEvents = [];
+          this.pendingMark = 0;
           this.flushFailed = false;
           await this.sleep(1000);
         }
@@ -715,10 +758,12 @@ export class ProjectionRunner {
           throw err;
         }
 
-        // Auth failures will not fix themselves on the reconnect cadence (#1673).
+        // Auth failures, an old server and a refused delivery will not fix themselves on the reconnect cadence (#1673).
         if (
           err instanceof UnauthenticatedError ||
-          err instanceof UnauthorizedError
+          err instanceof UnauthorizedError ||
+          err instanceof ServerTooOldError ||
+          err instanceof ProjectionRefusedError
         ) {
           throw err;
         }
@@ -746,6 +791,7 @@ export class ProjectionRunner {
         // one belongs to the polling fallback and mutating it from here would corrupt its ladder.
         await this.flushChain;
         this.pendingEvents = [];
+        this.pendingMark = 0;
         if (this.flushFailed) this.reloadState = true;
         this.flushFailed = false;
         await this.sleep(
@@ -762,6 +808,7 @@ export class ProjectionRunner {
    */
   private enqueueEvent(event: PollEvent): void {
     this.pendingEvents.push(event);
+    this.pendingMark = Math.max(this.pendingMark, event.seq);
 
     const batchSize = this.config.projection.config.batchSize || 100;
     if (this.pendingEvents.length >= batchSize) {
@@ -776,12 +823,27 @@ export class ProjectionRunner {
     }
   }
 
+  /**
+   * A heartbeat's watermark joins the pending batch, so the position reaches it only after
+   * every frame received before it has committed.
+   */
+  private enqueueMark(seq: number): void {
+    this.pendingMark = Math.max(this.pendingMark, seq);
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushTimer = null;
+        this.scheduleFlush();
+      }, runnerTimings.flushIntervalMs);
+    }
+  }
+
   /** Serializes flush calls so only one runs at a time */
   private scheduleFlush(): void {
     this.flushChain = this.flushChain.then(() => this.flushPending()).catch((err) => {
-      // A failed save/ack: drop the rest and reconnect; the engine rewinds to the saved cursor (#2404).
+      // A failed save/ack: drop the rest and reconnect; the position did not rise, so the batch comes again.
       this.flushFailed = true;
       this.pendingEvents = [];
+      this.pendingMark = 0;
       // A lost lease closes the stream too, and goes to standby instead of the reconnect.
       if (this.lost(err)) return;
       this.config.logger.warn(`Projection flush failed, reconnecting: ${err}`);
@@ -800,20 +862,22 @@ export class ProjectionRunner {
 
     if (this.flushFailed) {
       this.pendingEvents = [];
+      this.pendingMark = 0;
       return; // flushing past a failed batch would skip it
     }
 
     const events = this.pendingEvents.splice(0);
-    if (events.length === 0) return;
-
-    const projConfig = this.config.projection.config;
-
-    if (projConfig.mode === "managed") {
-      await this.processManagedBatch(events);
-    } else {
-      await this.processExternalBatch(events);
+    const mark = this.pendingMark;
+    this.pendingMark = 0;
+    if (events.length > 0) {
+      if (this.config.projection.config.mode === "managed") {
+        await this.processManagedBatch(events);
+      } else {
+        await this.processExternalBatch(events);
+      }
+      this.progressed = true;
     }
-    this.progressed = true;
+    this.position = Math.max(this.position, mark);
   }
 
   /**
@@ -923,6 +987,7 @@ export class ProjectionRunner {
     if (resp.status === 404) return; // no saved state yet, as in the Python runner
     if (!resp.ok) {
       throwIfAuthError(resp.status, `Projection ${projection.config.name} state`);
+      await throwIfRefused(resp, `Projection ${projection.config.name} state`);
       throw new Error(`Failed to load projection state: ${resp.status}`);
     }
     const data = await resp.json() as { state?: unknown; stateValue?: unknown };
@@ -956,6 +1021,7 @@ export class ProjectionRunner {
     );
     if (!resp.ok) {
       throwIfAuthError(resp.status, `Projection ${projection.config.name} partition ${partition}`);
+      await throwIfRefused(resp, `Projection ${projection.config.name} partition ${partition}`);
       throw new Error(`Failed to load state of partition ${partition}: ${resp.status}`);
     }
     const data = (await resp.json()) as { state?: unknown; stateValue?: unknown };
@@ -1011,7 +1077,9 @@ export class ProjectionRunner {
         // polling a 401 forever (#1673). The worker keeps running.
         if (
           err instanceof UnauthenticatedError ||
-          err instanceof UnauthorizedError
+          err instanceof UnauthorizedError ||
+          err instanceof ServerTooOldError ||
+          err instanceof ProjectionRefusedError
         ) {
           throw err;
         }
@@ -1075,32 +1143,36 @@ export class ProjectionRunner {
         body: JSON.stringify(this.withLease({
           name: projection.config.name,
           batchSize: projection.config.batchSize || 100,
+          position: String(this.position),
         })),
         signal: this.intakeSignal,
       }
     );
     if (!resp.ok) {
       await throwIfLeaseLost(resp, `Projection ${projection.config.name} poll`);
+      await throwIfRefused(resp, `Projection ${projection.config.name} poll`);
       throwIfAuthError(resp.status, `Projection ${projection.config.name} poll`);
       throw new Error(`Poll failed: ${resp.status}`);
     }
 
     const data = (await resp.json()) as PollResponse;
+    if (data.position === undefined || data.position === null) {
+      throw new ServerTooOldError("PollProjectionEvents position", MIN_SERVER_VERSION_PROJECTION_POSITION);
+    }
     if (this.intakeSignal.aborted) return 0;
     const events = (data.events || []).map(normalizeEvent);
-    if (events.length === 0) return 0;
 
     const projConfig = projection.config;
-
-    if (projConfig.mode === "managed") {
+    if (events.length > 0 && projConfig.mode === "managed") {
       // The poll response carries the __global__ state; partitions load their own.
       await this.processManagedBatch(
         events,
         data.currentStateValue ?? data.currentState ?? (projConfig.initialState ? projConfig.initialState() : {})
       );
-    } else {
+    } else if (events.length > 0) {
       await this.processExternalBatch(events);
     }
+    this.position = Math.max(this.position, seqOf(data.lastEventSeq));
 
     return events.length;
   }
@@ -1214,6 +1286,17 @@ class ProjectionConfigError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "ProjectionConfigError";
+  }
+}
+
+/**
+ * The server refused delivery with failed_precondition, a state no retry fixes, such as a
+ * projection bound to a PUBSUB stream that was recreated (ADR 0164). The runner stops.
+ */
+class ProjectionRefusedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProjectionRefusedError";
   }
 }
 

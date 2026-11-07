@@ -1,8 +1,12 @@
 # Deploy the Packaged App to a Target
 
-Deploy the image that `deploy.md` packaged to a VPS, Fly or Railway, with the user's own
-account. This file runs commands that cost money or are public. Every such step stops for a
-plain yes first.
+Deploy the image that `deploy.md` packaged to Fly or Railway, with the user's own account.
+This file runs commands that cost money or are public. Every such step stops for a plain yes
+first.
+
+This file does not deploy to a server of your own. Ironflow ships no deploy command for one.
+If the user asks for a VPS, tell them to run the image there with Docker: one container, one
+volume at `/data`, the env file from Step 3 as its `env_file`. Then stop.
 
 ## Rules
 
@@ -32,7 +36,7 @@ plain yes first.
 | The image exists and has a pinned tag | the tag from `deploy.md` Step 6 or the CI workflow (`ghcr.io/<owner>/<repo>:<sha>`) |
 | The engine in the image supports key seeding | see the probe below. It must print `1` or more. If it prints `0`, stop: the image needs a newer engine; see `migrate.md` |
 | `openssl` is installed (Step 3 needs it) | `openssl version` prints a version. If not, stop and tell the user |
-| The target CLI is installed and logged in | VPS: `ssh -o BatchMode=yes <host> true`. Fly: `fly auth whoami`. Railway: `railway whoami` |
+| The target CLI is installed and logged in | Fly: `fly auth whoami`. Railway: `railway whoami` |
 | The image is public or private | ask the user |
 
 The seeding probe. `docker run` pulls the image if it is not on this machine. For a private image
@@ -50,11 +54,10 @@ rm -f "$f"
 If the user is not logged in, tell them to run the login themselves (`! fly auth login`,
 `! railway login`). Do not run a login.
 
-Ask the target, one question: VPS, Fly or Railway. For a VPS also ask the host (`user@host`) and
-the domain (optional but recommended: without it the app is plain HTTP). For Fly also ask the
-region and the organization. For Railway ask for nothing more.
+Ask the target, one question: Fly or Railway. For Fly also ask the region and the
+organization. For Railway ask for nothing more.
 
-For Fly or Railway, run the `--help` checks for that target before the plan. For each flag in
+Run the `--help` checks for the target before the plan. For each flag in
 the table, the help must list it. If one is missing, STOP and tell the user.
 
 | Target | Run | Find |
@@ -122,29 +125,6 @@ Tell the user the path, that the file holds the admin key and the dashboard pass
 they should keep a copy: Fly cannot show a secret again. Do not `cat` the file.
 
 ## Step 4: Run the target
-
-### VPS
-
-Gated steps: private-image login, the deploy (installs Docker, starts a public service), the
-domain going live. The command does its own DNS, certificate and URL checks. Do not repeat them.
-
-1. If the image is private, tell the user to run `! ssh -t <host> docker login ghcr.io -u <user>` and
-   type a read-only package token at the prompt. The `-t` gives `docker login` a terminal for the
-   prompt; without it `docker login` refuses. Never ask for the token in chat, and never put it on a
-   command line.
-2. `ironflow deploy vps --host <host> --domain <domain> --app <image> --env-file ~/.config/ironflow/<app>.env`
-   (add `--app-port` and `--health-path` if the app differs from 8000 and `/healthz`).
-   Always pass `--env-file` on a seeded deploy, also on a re-deploy. Without it the new compose
-   file has no `env_file`, the container loses `IRONFLOW_BOOTSTRAP_ADMIN_KEY` and the app fails at
-   startup. The command refuses a re-deploy without `--env-file` when the host already has a `.env`.
-   Say so in the report.
-3. Read the result. With `--domain`, the command prints the URL only after the URL answered. A
-   warning means the DNS or certificate is not ready; follow its hint. Without `--domain`, the
-   command prints the URL with no check ("No check was made without --domain"), so run the Step 5
-   checks yourself.
-
-The command refuses a `latest` tag, an env file that is not mode 0600, and a host that holds a
-stack-mode deploy. Report the refusal. Do not work around it.
 
 ### Fly
 
@@ -276,8 +256,8 @@ Source, Registry Credentials; Pro plan). Tell the user to set them. Never ask fo
 
 ## Step 5: Verify
 
-Run every check. Use the public URL: VPS, the URL `deploy vps` printed; Fly,
-`https://<app>.fly.dev`; Railway, the URL `railway domain` printed.
+Run every check. Use the public URL: Fly, `https://<app>.fly.dev`; Railway, the URL
+`railway domain` printed.
 
 Write platform logs to a private file, then count with `grep -c`. Run `mktemp` once per capture.
 It creates the file with mode 0600. Use its path as `<logfile>` below. `grep -c` exits 1 when the
@@ -289,7 +269,6 @@ boot only. Every later boot prints a short key prefix and `(created on first boo
 
 | Target | Log command |
 |---|---|
-| VPS | `ssh <host> 'cd /opt/ironflow && docker compose logs app' > <logfile> 2>&1` |
 | Fly | `fly logs --no-tail --app <app> > <logfile> 2>&1` |
 | Railway | `railway logs --lines 1000 --service <app> > <logfile> 2>&1` |
 
@@ -299,8 +278,8 @@ boot only. Every later boot prints a short key prefix and `(created on first boo
    redeploy: `grep -c 'Seeded from IRONFLOW_BOOTSTRAP_ADMIN_KEY' <logfile>` must print `1` or
    more, and `grep -c 'Written to:' <logfile>` must print `0`. On Railway, the first deployment is
    the one that started after the volume was added. Check 1 already proves the app's key works.
-3. Redeploy the same image, then the earlier run is still listed. VPS: re-run the Step 4
-   command. Fly: `fly deploy --app <app> --ha=false`. Railway: use the redeploy command from the
+3. Redeploy the same image, then the earlier run is still listed. Fly:
+   `fly deploy --app <app> --ha=false`. Railway: use the redeploy command from the
    preflight, or ask the user to press Redeploy in the dashboard. The redeploy is a gated step.
 4. No capture holds a key: `grep -cE 'ifkey_[A-Za-z0-9]{16,}' <logfile>` must
    print `0` for each. The engine banner prints a short key prefix; the pattern needs 16 or more
@@ -309,7 +288,6 @@ boot only. Every later boot prints a short key prefix and `(created on first boo
 
    | Target | Command | Must show |
    |---|---|---|
-   | VPS | `ssh <host> 'cd /opt/ironflow && docker compose ps -q app'` | one id |
    | Fly | `fly machine list --app <app> --quiet` and `fly volumes list --app <app>` | one machine id, one volume |
    | Railway | `railway status` | one replica, one volume |
 
@@ -321,7 +299,7 @@ claim success.
 ## Step 6: Report
 
 State the URL; the checks that passed; where the key file is; how to rotate (`### Rotation`); how
-to stop the bill (`### Teardown`); and the limits. On a VPS, say that you passed `--env-file`.
+to stop the bill (`### Teardown`); and the limits.
 
 ### Rotation
 
@@ -342,7 +320,6 @@ two `grep -c` checks from Step 3 on the new file. Each must print `1`. If not, r
 
 | Target | Command |
 |---|---|
-| VPS | re-run the Step 4 command with `--env-file` |
 | Fly | `fly secrets import --app <app> < ~/.config/ironflow/<app>.env` (no `--stage`: it restarts the machine) |
 | Railway | the `IRONFLOW_BOOTSTRAP_ADMIN_KEY` call of Step 4 item 3, with `--skip-deploys` removed so it starts the redeploy |
 
@@ -361,8 +338,6 @@ Deleting a volume deletes the data. Tell the user to get the data out first.
 
 | Target | Command | Effect |
 |---|---|---|
-| VPS | `ssh <host> 'cd /opt/ironflow && docker compose down'` | stops the app, keeps the volume. The server bills until the user deletes it at the provider |
-| VPS | `ssh <host> 'cd /opt/ironflow && docker compose down -v'` | stops the app, deletes the data |
 | Fly | `fly apps destroy <app> --yes` | removes machines, volumes, secrets and images. Stops all billing |
 | Fly | `fly volumes destroy <volume-id> --app <app> --yes` | deletes the volume only. Get the id from `fly volumes list --app <app>` |
 | Railway | `railway volume delete --volume <name> --yes` | deletes the volume. Billing for storage stops. Restorable for 48 hours |
@@ -381,7 +356,6 @@ it. Do not guess it.
   `IRONFLOW_API_KEY` (only the app process does) but does hold `IRONFLOW_BOOTSTRAP_ADMIN_KEY`.
   Copy one into the other inside the container, so the shell in the container expands the value
   and nobody types it:
-  VPS `ssh <host> "cd /opt/ironflow && docker compose exec -T app sh -c 'IRONFLOW_API_KEY=\$IRONFLOW_BOOTSTRAP_ADMIN_KEY ironflow <args>'"`;
   Fly `fly ssh console --app <app> --command "sh -c 'IRONFLOW_API_KEY=\$IRONFLOW_BOOTSTRAP_ADMIN_KEY ironflow <args>'"`;
   Railway `railway ssh --service <app> sh -c 'IRONFLOW_API_KEY=$IRONFLOW_BOOTSTRAP_ADMIN_KEY ironflow <args>'`.
   First check that the session holds the variable. Run the same command, with the whole

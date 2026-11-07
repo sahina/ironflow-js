@@ -6,6 +6,7 @@
  */
 
 import type { z } from "zod";
+import { optionalTimestampFromWire, timestampFromWire } from "./timestamp-wire.js";
 
 // ============================================================================
 // Event Source Constants
@@ -130,7 +131,11 @@ export interface FunctionConfig<TEventSchema extends z.ZodType = z.ZodType> {
   triggers: Trigger[];
   /** Retry configuration for failed steps */
   retry?: RetryConfig;
-  /** Function timeout in milliseconds (default: 600000 = 10 minutes) */
+  /**
+   * Function timeout in milliseconds. Unset sends nothing. In push mode it can
+   * only tighten the server's `engine.pushTimeout` (default 10s). Pull mode
+   * does not apply it.
+   */
   timeout?: number;
   /** Concurrency control configuration */
   concurrency?: ConcurrencyConfig;
@@ -333,8 +338,8 @@ export interface RegisteredFunction {
   actorKey: string;
   status: FunctionStatus;
   version: number;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt: Date;
+  updatedAt: Date;
   recording: boolean;
   recordingProfile?: RecordingProfile;
   metadata?: Record<string, unknown>;
@@ -358,7 +363,7 @@ export interface FunctionHistoryEntry {
   actorId: string;
   changeReason: string;
   changeType: FunctionChangeType;
-  recordedAt?: string;
+  recordedAt: Date;
 }
 
 /** Keyset pagination options for function history. */
@@ -794,10 +799,20 @@ export type RunStatus =
   | "waiting_for_capacity"
   | "waiting";
 
+/** The matched rule and event retained for a cancelled run. */
+export interface CancellationEvent {
+  eventId: string;
+  eventName: string;
+  matchPath: string;
+  matchValue: string;
+}
+
 /**
  * Run details
  */
 export interface Run {
+  cancellationCause?: string;
+  cancellationEvent?: CancellationEvent;
   id: string;
   functionId: string;
   eventId: string;
@@ -854,16 +869,16 @@ export interface RunStep {
   inputHash?: string;
   attempt: number;
   durationMs?: number;
-  startedAt?: string;
-  endedAt?: string;
-  sleepUntil?: string;
+  startedAt?: Date;
+  endedAt?: Date;
+  sleepUntil?: Date;
   waitEventName?: string;
-  waitTimeout?: string;
-  patchedAt?: string;
+  waitTimeout?: Date;
+  patchedAt?: Date;
   patchedBy?: string;
   compensationFor?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /** Durable steps recorded for a run. */
@@ -1021,13 +1036,13 @@ export interface StoredEvent {
   emittedBy?: string;
   id: string;
   name: string;
-  timestamp: string;
+  timestamp: Date;
   data: unknown;
   source: string;
   metadata?: unknown;
   idempotencyKey?: string;
   processed: boolean;
-  createdAt: string;
+  createdAt: Date;
   entityId?: string;
   entityType?: string;
   runId?: string;
@@ -1039,8 +1054,12 @@ export interface ListEventsOptions {
   names?: string[];
   sources?: string[];
   search?: string;
-  since?: string;
-  until?: string;
+  /**
+   * A `Date` bound is cut to milliseconds and stored timestamps are finer, so a
+   * bound taken from an event can miss its neighbors. Page with `cursor`.
+   */
+  since?: Date | string;
+  until?: Date | string;
   limit?: number;
   cursor?: string;
   before?: string;
@@ -1068,8 +1087,8 @@ export interface EventNameCount {
 /** Filters for the event-name facet. */
 export interface ListEventNamesOptions {
   sources?: string[];
-  since?: string;
-  until?: string;
+  since?: Date | string;
+  until?: Date | string;
 }
 
 /** Bounded event-name facet response. */
@@ -1165,8 +1184,8 @@ export interface SubscriptionEvent<T = unknown> {
  * Event metadata from the subscription
  */
 export interface EventMetadata {
-  /** Event timestamp in ISO 8601 format */
-  timestamp: string;
+  /** Event timestamp. Absent when the server sent none it could read. */
+  timestamp?: Date;
   /** Event sequence number within the stream */
   sequence?: number;
   /** Exact uint64 sequence for values that exceed Number.MAX_SAFE_INTEGER. */
@@ -1394,7 +1413,7 @@ export interface AppendResult {
 export interface ReadStreamOptions {
   /** Start reading from this version (inclusive, default: 0) */
   fromVersion?: number;
-  /** Maximum number of events to return (0 = all) */
+  /** Maximum number of events to return (unset or 0 = all) */
   limit?: number;
   /** Read direction (default: "forward") */
   direction?: "forward" | "backward";
@@ -1416,8 +1435,8 @@ export interface StreamEvent {
   entityVersion: number;
   /** Event schema version */
   version: number;
-  /** Event timestamp in ISO 8601 format */
-  timestamp: string;
+  /** Event timestamp */
+  timestamp: Date;
   /** Event source */
   source?: string;
   /** Additional metadata */
@@ -1437,9 +1456,9 @@ export interface StreamInfo {
   /** Total number of events in the stream */
   eventCount: number;
   /** When the stream was created */
-  createdAt: string;
+  createdAt: Date;
   /** When the stream was last updated */
-  updatedAt: string;
+  updatedAt: Date;
 }
 
 /**
@@ -1458,7 +1477,7 @@ export interface StreamSnapshot {
   /** Materialized state at this version */
   state: Record<string, unknown>;
   /** When the snapshot was created */
-  createdAt: string;
+  createdAt: Date;
 }
 
 /**
@@ -1536,9 +1555,9 @@ export interface TopicInfo {
   /** Number of active consumers. */
   consumerCount: number;
   /** Timestamp of first message. */
-  firstMessageAt?: string;
+  firstMessageAt?: Date;
   /** Timestamp of last message. */
-  lastMessageAt?: string;
+  lastMessageAt?: Date;
 }
 
 /** Detailed statistics for a topic. */
@@ -1573,8 +1592,8 @@ export interface PausedStepInfo {
   output: unknown;
   /** Whether this step's output was injected */
   injected: boolean;
-  /** When the step completed (ISO 8601) */
-  completedAt: string;
+  /** When the step completed. Absent if the server has no end time for it. */
+  completedAt?: Date;
 }
 
 /**
@@ -1659,26 +1678,14 @@ export interface TimeTravelStepOutputSnapshot {
 // `@ironflow/core/projection-types` instead. See issue #610.
 
 /**
- * Operational status information for a projection.
- */
-export interface ProjectionStatusInfo {
-  name: string;
-  status: string;
-  eventCount: number;
-  lastEventAt: string;
-  errorCount: number;
-  lastError: string;
-  consumerName: string;
-}
-
-/**
  * Status of an in-progress or completed projection rebuild job.
  */
 export interface RebuildJob {
   name: string;
   status: string;
   progress: number;
-  startedAt: string;
+  /** Absent until the job has started. */
+  startedAt?: Date;
 }
 
 // ============================================================================
@@ -1724,7 +1731,7 @@ export interface AuditEvent {
   eventType: string;
   payload: Record<string, unknown>;
   metadata?: Record<string, string>;
-  createdAt: string;
+  createdAt: Date;
 }
 
 /**
@@ -1732,8 +1739,12 @@ export interface AuditEvent {
  */
 export interface GetAuditTrailOptions {
   eventType?: string;
-  fromTimestamp?: string;
-  toTimestamp?: string;
+  fromTimestamp?: Date | string;
+  /**
+   * Inclusive. Rows hold finer than milliseconds, so a `Date` taken from
+   * `AuditEvent.createdAt` excludes that row. Page with `cursor` instead.
+   */
+  toTimestamp?: Date | string;
   limit?: number;
   cursor?: string;
 }
@@ -1764,8 +1775,8 @@ export interface AuditTrailResult {
 export interface Secret {
   name: string;
   value: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /**
@@ -1773,8 +1784,8 @@ export interface Secret {
  */
 export interface SecretListEntry {
   name: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /** Rename a secret and/or update its description without changing its value. */
@@ -1795,7 +1806,7 @@ export interface StreamListEntry {
   entityType: string;
   version: number;
   eventCount: number;
-  lastEventAt: string;
+  lastEventAt: Date;
 }
 
 /**
@@ -1805,7 +1816,13 @@ export interface EntityHistoryEntry {
   eventName: string;
   data: unknown;
   version: number;
-  timestamp: string;
+  timestamp: Date;
+  /**
+   * `timestamp` exactly as the server sent it. Pass this as a `from` or `to`
+   * bound: stored timestamps are finer than a `Date` can hold, so a bound copied
+   * from `timestamp` can drop the entry it came from.
+   */
+  timestampExact: string;
 }
 
 /**
@@ -1852,8 +1869,8 @@ export interface Project {
   name: string;
   description: string;
   org_id: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /**
@@ -1863,8 +1880,8 @@ export interface Environment {
   id: string;
   name: string;
   project_id: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 // ============================================================================
@@ -1879,7 +1896,8 @@ export interface EventSchema {
   event_name: string;
   version: number;
   schema: Record<string, unknown>;
-  created_at: string;
+  /** Absent on the `schemas.register` result: the server answers that call with a status only. */
+  created_at?: Date;
 }
 
 /**
@@ -2003,7 +2021,7 @@ export interface WebhookSource {
    */
   verifySecretPrevSet?: boolean;
   /** Expiry of the previous secret slot. Absent when no prev is configured. */
-  verifySecretPrevExpiresAt?: string;
+  verifySecretPrevExpiresAt?: Date;
   /** Short display fragment of the ingest token (ifwh_ + 8 chars). */
   ingestTokenPrefix?: string;
   /**
@@ -2015,8 +2033,14 @@ export interface WebhookSource {
   ingestToken?: string;
   /** Signature descriptor (ADR 0049). Absent means legacy verification. */
   verifyConfig?: WebhookVerifyConfig;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
+  /**
+   * `updatedAt` exactly as the server sent it. Pass this as `expectedUpdatedAt`:
+   * the server compares for equality at finer than a `Date` can hold, so a value
+   * that went through a `Date` always conflicts.
+   */
+  updatedAtExact?: string;
 }
 
 /**
@@ -2059,7 +2083,7 @@ export interface CreateWebhookSourceInput {
  *   verifyHeader: current.verifyHeader,       // preserve
  *   verifyAlgorithm: current.verifyAlgorithm, // preserve
  *   metadata: current.metadata,               // preserve
- *   expectedUpdatedAt: current.updatedAt,     // guard the write
+ *   expectedUpdatedAt: current.updatedAtExact, // guard the write
  * });
  * ```
  *
@@ -2088,8 +2112,9 @@ export interface UpdateWebhookSourceInput {
   /** Replaces the metadata blob entirely. Omitting it clears the column. */
   metadata?: Record<string, unknown>;
   /**
-   * Optimistic-concurrency token: pass the `updatedAt` you last read and the
-   * write is rejected with aborted if the row moved. Worth sending precisely
+   * Optimistic-concurrency token: pass the `updatedAtExact` you last read and the
+   * write is refused if the row moved: `ContendedError` in Node, code `aborted`
+   * in browser. Worth sending precisely
    * because `verifyConfig` is preserve-on-omit — an unguarded rename can
    * otherwise revert someone else's descriptor change. Omit to skip the check.
    */
@@ -2143,7 +2168,7 @@ export interface WebhookDelivery {
    * Absent on rows recorded before migration 033.
    */
   signatureKey?: string;
-  createdAt?: string;
+  createdAt?: Date;
 }
 
 /**
@@ -2169,8 +2194,8 @@ export interface User {
   email: string;
   name?: string;
   roles?: string[];
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 /**
@@ -2210,7 +2235,7 @@ export interface Tenant {
   name: string;
   envCount: number;
   keyCount: number;
-  createdAt?: string;
+  createdAt: Date;
 }
 
 /** Input for provisioning an organization, environment, and initial API key. */
@@ -2234,8 +2259,8 @@ export function userFromWire(r: Record<string, unknown>): User {
     email: String(r.email ?? ""),
     name: r.name as string | undefined,
     roles: r.roles as string[] | undefined,
-    createdAt: r.created_at as string | undefined,
-    updatedAt: r.updated_at as string | undefined,
+    createdAt: timestampFromWire("user.createdAt", r.created_at),
+    updatedAt: timestampFromWire("user.updatedAt", r.updated_at),
   };
 }
 
@@ -2245,7 +2270,7 @@ export function tenantFromWire(r: Record<string, unknown>): Tenant {
     name: String(r.name ?? ""),
     envCount: Number(r.env_count ?? 0),
     keyCount: Number(r.key_count ?? 0),
-    createdAt: r.created_at as string | undefined,
+    createdAt: timestampFromWire("tenant.createdAt", r.created_at),
   };
 }
 
@@ -2426,14 +2451,18 @@ export function webhookSourceFromWire(
     // undefined if the server ever starts emitting it.
     verifySecretSet: bool("verify_secret_set"),
     verifySecretPrevSet: bool("verify_secret_prev_set"),
-    verifySecretPrevExpiresAt: str("verify_secret_prev_expires_at"),
+    verifySecretPrevExpiresAt: optionalTimestampFromWire(
+      "webhookSource.verifySecretPrevExpiresAt",
+      r.verify_secret_prev_expires_at,
+    ),
     ingestTokenPrefix: str("ingest_token_prefix"),
     ingestToken: str("ingest_token"),
     verifyConfig: webhookVerifyConfigFromWire(
       r.verify_config as Record<string, unknown> | undefined,
     ),
-    createdAt: str("created_at"),
-    updatedAt: str("updated_at"),
+    createdAt: optionalTimestampFromWire("webhookSource.createdAt", r.created_at),
+    updatedAt: optionalTimestampFromWire("webhookSource.updatedAt", r.updated_at),
+    updatedAtExact: str("updated_at"),
   };
 }
 
@@ -2454,7 +2483,7 @@ export function webhookDeliveryFromWire(
     eventId: str("event_id"),
     error: str("error"),
     signatureKey: str("signature_key"),
-    createdAt: str("created_at"),
+    createdAt: optionalTimestampFromWire("webhookDelivery.createdAt", r.created_at),
   };
 }
 
@@ -2552,8 +2581,8 @@ export function registeredFunctionFromWire(
         ? status
         : "unspecified",
     version: wireNumber(r.version),
-    createdAt: r.createdAt ? String(r.createdAt) : undefined,
-    updatedAt: r.updatedAt ? String(r.updatedAt) : undefined,
+    createdAt: timestampFromWire("function.createdAt", r.createdAt),
+    updatedAt: timestampFromWire("function.updatedAt", r.updatedAt),
     recording: Boolean(r.recording) || recordingProfile !== undefined,
     recordingProfile,
     metadata: r.metadata as Record<string, unknown> | undefined,
@@ -2577,7 +2606,7 @@ export function functionHistoryEntryFromWire(
     actorId: String(r.actorId ?? ""),
     changeReason: String(r.changeReason ?? ""),
     changeType: String(r.changeType ?? "update") as FunctionChangeType,
-    recordedAt: r.recordedAt ? String(r.recordedAt) : undefined,
+    recordedAt: timestampFromWire("functionHistoryEntry.recordedAt", r.recordedAt),
   };
 }
 
@@ -2589,7 +2618,7 @@ export function storedEventFromWire(
   return {
     id: String(r.id ?? ""),
     name: String(r.name ?? ""),
-    timestamp: String(r.timestamp ?? ""),
+    timestamp: timestampFromWire("event.timestamp", r.timestamp),
     data: r.data,
     source: String(r.source ?? ""),
     emittedBy: r.emitted_by ? String(r.emitted_by) : undefined,
@@ -2598,7 +2627,7 @@ export function storedEventFromWire(
       ? String(r.idempotency_key)
       : undefined,
     processed: Boolean(r.processed),
-    createdAt: String(r.created_at ?? ""),
+    createdAt: timestampFromWire("event.createdAt", r.created_at),
     entityId: r.entity_id ? String(r.entity_id) : undefined,
     entityType: r.entity_type ? String(r.entity_type) : undefined,
     runId: r.run_id ? String(r.run_id) : undefined,
@@ -2627,16 +2656,16 @@ export function runStepFromWire(
     attempt: wireNumber(r.attempt),
     durationMs:
       r.duration_ms === undefined ? undefined : wireNumber(r.duration_ms),
-    startedAt: optionalString("started_at"),
-    endedAt: optionalString("ended_at"),
-    sleepUntil: optionalString("sleep_until"),
+    startedAt: optionalTimestampFromWire("step.startedAt", r.started_at),
+    endedAt: optionalTimestampFromWire("step.endedAt", r.ended_at),
+    sleepUntil: optionalTimestampFromWire("step.sleepUntil", r.sleep_until),
     waitEventName: optionalString("wait_event_name"),
-    waitTimeout: optionalString("wait_timeout"),
-    patchedAt: optionalString("patched_at"),
+    waitTimeout: optionalTimestampFromWire("step.waitTimeout", r.wait_timeout),
+    patchedAt: optionalTimestampFromWire("step.patchedAt", r.patched_at),
     patchedBy: optionalString("patched_by"),
     compensationFor: optionalString("compensation_for"),
-    createdAt: String(r.created_at ?? ""),
-    updatedAt: String(r.updated_at ?? ""),
+    createdAt: timestampFromWire("step.createdAt", r.created_at),
+    updatedAt: timestampFromWire("step.updatedAt", r.updated_at),
   };
 }
 
@@ -2672,7 +2701,7 @@ export function consumerGroupFromWire(
     metadata: r.metadata as Record<string, unknown> | undefined,
     status,
     memberCount: wireNumber(r.memberCount),
-    createdAt: new Date(String(r.createdAt ?? 0)),
-    updatedAt: new Date(String(r.updatedAt ?? 0)),
+    createdAt: timestampFromWire("consumerGroup.createdAt", r.createdAt),
+    updatedAt: timestampFromWire("consumerGroup.updatedAt", r.updatedAt),
   };
 }

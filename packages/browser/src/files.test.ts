@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { IronflowError, PreconditionFailedError, UnauthorizedError, ValidationError } from "@ironflow/core";
+import { IronflowError, PreconditionFailedError, SchemaValidationError, UnauthorizedError, ValidationError } from "@ironflow/core";
 import { BrowserFilesClient, downloadFromSignedUrl, uploadToSignedUrl } from "./files.js";
 import type { IronflowConfig } from "./config.js";
 
@@ -13,6 +13,30 @@ const config = { serverUrl: "http://localhost:9123", environment: "test-env", au
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 
 describe("BrowserFilesClient", () => {
+  it("decodes every file, bucket and signed URL timestamp, and throws on an unreadable one", async () => {
+    const client = new BrowserFilesClient(config);
+    const b = client.bucket("b");
+    const when = new Date("2026-10-01T00:00:00Z");
+    mockFetch.mockImplementation(async () => json(200, { url: "u", expiresAt: "2026-10-01T00:00:00Z", buckets: [{ createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }], files: [{ createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }], createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
+    expect(await client.createBucket("n")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await client.getBucket("n")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await client.updateBucket("n", {})).toMatchObject({ createdAt: when, updatedAt: when });
+    expect((await client.listBuckets())[0]).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.info("x")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.put("x", "abc", { contentType: "text/plain" })).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.move("x", "y")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect(await b.copy("x", "y")).toMatchObject({ createdAt: when, updatedAt: when });
+    expect((await b.list()).files[0]).toMatchObject({ createdAt: when, updatedAt: when });
+    expect((await b.signDownload("x")).expiresAt).toEqual(when);
+    expect(await uploadToSignedUrl("https://h/s?token=t", new Uint8Array([1]))).toMatchObject({ createdAt: when, updatedAt: when });
+
+    mockFetch.mockImplementation(async () => json(200, { url: "u", expiresAt: "not-a-time", createdAt: "not-a-time" }));
+    await expect(b.info("x")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(b.signUpload("x")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client.getBucket("n")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(uploadToSignedUrl("https://h/s?token=t", new Uint8Array([1]))).rejects.toBeInstanceOf(SchemaValidationError);
+  });
+
   it("rejects a dot-segment path without sending a request", async () => {
     const b = new BrowserFilesClient(config).bucket("a");
     const bad = "../../b/objects/x";
@@ -43,7 +67,7 @@ describe("BrowserFilesClient", () => {
   });
 
   it("uploads a File with auth, environment and an encoded path", async () => {
-    mockFetch.mockResolvedValueOnce(json(201, { etag: "e1" }));
+    mockFetch.mockResolvedValueOnce(json(201, { etag: "e1", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
     const file = new File(["hi"], "c.txt", { type: "text/plain" });
     const info = await new BrowserFilesClient(config).bucket("docs").put("a b/c.txt", file, { contentType: file.type });
     expect(info.etag).toBe("e1");
@@ -57,7 +81,7 @@ describe("BrowserFilesClient", () => {
   });
 
   it("sends metadata and preconditions", async () => {
-    mockFetch.mockResolvedValueOnce(json(200, { etag: "e2" }));
+    mockFetch.mockResolvedValueOnce(json(200, { etag: "e2", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
     await new BrowserFilesClient(config)
       .bucket("b")
       .put("x", new Uint8Array([1]), { contentType: "text/plain", metadata: { source: "t" }, ifMatch: "e1" });
@@ -84,7 +108,7 @@ describe("BrowserFilesClient", () => {
       ["File", () => new File(["x"], "x.txt")],
       ["string", () => "x"],
     ])("retries a %s body after a 503 and reports it through onRetry", async (_name, body) => {
-      mockFetch.mockResolvedValueOnce(json(503, { message: "x" })).mockResolvedValueOnce(json(201, { etag: "e" }));
+      mockFetch.mockResolvedValueOnce(json(503, { message: "x" })).mockResolvedValueOnce(json(201, { etag: "e", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
       const onRetry = vi.fn();
       const cfg = { ...config, retry: { ...retry, onRetry } } as IronflowConfig;
       const info = await new BrowserFilesClient(cfg).bucket("b").put("x", body() as never, { contentType: "text/plain" });
@@ -128,28 +152,28 @@ describe("BrowserFilesClient", () => {
     });
 
     it("retries the sign calls", async () => {
-      const signed = { url: "u", expiresAt: "t" };
+      const signed = { url: "u", expiresAt: "2026-10-02T00:00:00Z" };
       mockFetch
         .mockResolvedValueOnce(json(503, { message: "x" }))
         .mockResolvedValueOnce(json(200, signed))
         .mockResolvedValueOnce(json(503, { message: "x" }))
         .mockResolvedValueOnce(json(200, signed));
       const b = new BrowserFilesClient(retrying).bucket("b");
-      expect(await b.signUpload("x")).toEqual(signed);
-      expect(await b.signDownload("x")).toEqual(signed);
+      expect(await b.signUpload("x")).toEqual({ ...signed, expiresAt: new Date(signed.expiresAt) });
+      expect(await b.signDownload("x")).toEqual({ ...signed, expiresAt: new Date(signed.expiresAt) });
       expect(mockFetch).toHaveBeenCalledTimes(4);
     });
 
     it("sends createOnly on a signed upload request", async () => {
-      mockFetch.mockResolvedValueOnce(json(200, { url: "u", expiresAt: "t" }));
+      mockFetch.mockResolvedValueOnce(json(200, { url: "u", expiresAt: "2026-10-02T00:00:00Z" }));
       await new BrowserFilesClient(config).bucket("b").signUpload("x", { createOnly: true });
       expect(JSON.parse(mockFetch.mock.calls[0]![1].body as string)).toMatchObject({ path: "x", createOnly: true });
     });
 
     it("retries a sign call whose response body breaks", async () => {
       const broken = new Response(new ReadableStream({ start: (c) => c.error(new Error("reset")) }), { status: 200 });
-      mockFetch.mockResolvedValueOnce(broken).mockResolvedValueOnce(json(200, { url: "u", expiresAt: "t" }));
-      expect(await new BrowserFilesClient(retrying).bucket("b").signUpload("x")).toEqual({ url: "u", expiresAt: "t" });
+      mockFetch.mockResolvedValueOnce(broken).mockResolvedValueOnce(json(200, { url: "u", expiresAt: "2026-10-02T00:00:00Z" }));
+      expect(await new BrowserFilesClient(retrying).bucket("b").signUpload("x")).toEqual({ url: "u", expiresAt: new Date("2026-10-02T00:00:00Z") });
       expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
@@ -193,7 +217,7 @@ describe("BrowserFilesClient", () => {
 
 describe("signed URL helpers", () => {
   it("uploadToSignedUrl sends no credentials and no metadata", async () => {
-    mockFetch.mockResolvedValueOnce(json(201, { path: "in/x.txt" }));
+    mockFetch.mockResolvedValueOnce(json(201, { path: "in/x.txt", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }));
     await uploadToSignedUrl("http://h/api/v1/files/signed?token=t", new Blob(["x"], { type: "text/plain" }));
     const [url, init] = mockFetch.mock.calls[0]!;
     expect(url).toBe("http://h/api/v1/files/signed?token=t");

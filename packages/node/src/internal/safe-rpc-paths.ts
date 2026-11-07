@@ -38,7 +38,11 @@ const SAFE_METHODS: Record<string, string[]> = {
     "ListSchemas",
     "TestUpcast",
   ],
+  "ironflow.v1.InstanceAdminService": [
+    "ReadInstance",
+  ],
   "ironflow.v1.IronflowService": [
+    "ExplainEventMatch",
     "GetFunction",
     "GetFunctionAtVersion",
     "GetPausedState",

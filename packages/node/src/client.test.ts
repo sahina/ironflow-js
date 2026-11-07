@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+import { SchemaValidationError } from "@ironflow/core";
 import { assertDefined } from "./internal/assert-defined.js";
 
 // Mock @ironflow/core before importing client
 vi.mock("@ironflow/core", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@ironflow/core")>();
   return {
+    SchemaValidationError: actual.SchemaValidationError,
+    timestampFromWire: actual.timestampFromWire,
+    timestampFilterToWire: actual.timestampFilterToWire,
+    optionalTimestampFromWire: actual.optionalTimestampFromWire,
     API_ENDPOINTS: {
       TRIGGER: "/ironflow.v1.IronflowService/Trigger",
       GET_RUN: "/ironflow.v1.IronflowService/GetRun",
@@ -37,6 +42,17 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     runStatusFromWire: actual.runStatusFromWire,
     userFromWire: actual.userFromWire,
     tenantFromWire: actual.tenantFromWire,
+    auditEventFromWire: actual.auditEventFromWire,
+    apiKeyFromWire: actual.apiKeyFromWire,
+    apiKeyWithSecretFromWire: actual.apiKeyWithSecretFromWire,
+    organizationFromWire: actual.organizationFromWire,
+    roleFromWire: actual.roleFromWire,
+    policySetFromWire: actual.policySetFromWire,
+    policySetVersionsFromWire: actual.policySetVersionsFromWire,
+    secretFromWire: actual.secretFromWire,
+    secretListEntryFromWire: actual.secretListEntryFromWire,
+    projectFromWire: actual.projectFromWire,
+    environmentFromWire: actual.environmentFromWire,
     runStatusToWire: actual.runStatusToWire,
     RunWaitTimeoutError: actual.RunWaitTimeoutError,
     RunFailedError: actual.RunFailedError,
@@ -64,6 +80,13 @@ vi.mock("@ironflow/core", async (importOriginal) => {
     runStepFromWire: actual.runStepFromWire,
     stepInspectionFromWire: actual.stepInspectionFromWire,
     consumerGroupFromWire: actual.consumerGroupFromWire,
+    capacityBucketFromWire: actual.capacityBucketFromWire,
+    capacityLaneFromWire: actual.capacityLaneFromWire,
+    capacityLeaseFromWire: actual.capacityLeaseFromWire,
+    capacityQueueEntryFromWire: actual.capacityQueueEntryFromWire,
+    capacityWorkerCreditFromWire: actual.capacityWorkerCreditFromWire,
+    capacityWorkerSessionFromWire: actual.capacityWorkerSessionFromWire,
+    debounceEntryFromWire: actual.debounceEntryFromWire,
   };
 });
 
@@ -265,6 +288,7 @@ describe("IronflowClient", () => {
           ok: true,
           json: () => Promise.resolve({
             id: "fn-1",
+            createdAt: "2026-09-06T12:00:00Z", updatedAt: "2026-09-06T12:00:00Z",
             status: "FUNCTION_STATUS_ACTIVE",
             preferredMode: "EXECUTION_MODE_PULL",
           }),
@@ -273,6 +297,7 @@ describe("IronflowClient", () => {
           ok: true,
           json: () => Promise.resolve({
             id: "fn-1",
+            createdAt: "2026-09-06T12:00:00Z", updatedAt: "2026-09-06T12:00:00Z",
             status: "FUNCTION_STATUS_PAUSED",
           }),
         })
@@ -285,6 +310,7 @@ describe("IronflowClient", () => {
               entityVersion: "12",
               functionId: "fn-1",
               changeType: "update",
+              recordedAt: "2026-09-06T12:00:00Z",
             }],
             hasMore: true,
           }),
@@ -297,13 +323,14 @@ describe("IronflowClient", () => {
               entityVersion: "9",
               functionId: "fn-1",
               changeType: "update",
+              recordedAt: "2026-09-06T12:00:00Z",
             },
           }),
         })
         .mockResolvedValueOnce({
           ok: true,
           json: () => Promise.resolve({
-            function: { id: "fn-1", status: "FUNCTION_STATUS_ACTIVE" },
+            function: { id: "fn-1", createdAt: "2026-09-06T12:00:00Z", updatedAt: "2026-09-06T12:00:00Z", status: "FUNCTION_STATUS_ACTIVE" },
           }),
         });
       vi.stubGlobal("fetch", mockFetch);
@@ -531,7 +558,7 @@ describe("IronflowClient", () => {
         .mockResolvedValueOnce({
           ok: true,
           json: () => Promise.resolve({
-            steps: [{ id: "row-1", runId: "run-1", stepId: "charge", stepType: "STEP_TYPE_INVOKE", sequence: 1, status: "STEP_STATUS_COMPLETED", attempt: 1, createdAt: "now", updatedAt: "now" }],
+            steps: [{ id: "row-1", runId: "run-1", stepId: "charge", stepType: "STEP_TYPE_INVOKE", sequence: 1, status: "STEP_STATUS_COMPLETED", attempt: 1, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }],
             count: 1,
           }),
         })
@@ -608,12 +635,16 @@ describe("IronflowClient", () => {
     it("follows pagination until every consumer group is returned", async () => {
       const firstGroup = {
         id: "cg-1",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
         namespace: "default",
         name: "orders",
         pattern: "order.*",
       };
       const secondGroup = {
         id: "cg-2",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-01T00:00:00Z",
         namespace: "default",
         name: "payments",
         pattern: "payment.*",
@@ -663,6 +694,8 @@ describe("IronflowClient", () => {
           Promise.resolve({
             id: "run_123",
             status: "RUN_STATUS_COMPLETED",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -685,8 +718,8 @@ describe("IronflowClient", () => {
         json: () =>
           Promise.resolve({
             runs: [
-              { id: "run_1", status: "RUN_STATUS_COMPLETED" },
-              { id: "run_2", status: "RUN_STATUS_RUNNING" },
+              { id: "run_1", status: "RUN_STATUS_COMPLETED", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+              { id: "run_2", status: "RUN_STATUS_RUNNING", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
             ],
             totalCount: 2,
           }),
@@ -709,6 +742,8 @@ describe("IronflowClient", () => {
           Promise.resolve({
             id: "run_123",
             status: "RUN_STATUS_CANCELLED",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -1009,8 +1044,8 @@ describe("IronflowClient", () => {
       expect(t0.name).toBe("notifications");
       expect(t0.messageCount).toBe(42);
       expect(t0.consumerCount).toBe(3);
-      expect(t0.firstMessageAt).toBe("2026-01-01T00:00:00Z");
-      expect(t0.lastMessageAt).toBe("2026-02-01T00:00:00Z");
+      expect(t0.firstMessageAt).toEqual(new Date("2026-01-01T00:00:00Z"));
+      expect(t0.lastMessageAt).toEqual(new Date("2026-02-01T00:00:00Z"));
       expect(t1.name).toBe("orders");
       expect(t1.firstMessageAt).toBeUndefined();
       expect(t1.lastMessageAt).toBeUndefined();
@@ -1134,6 +1169,8 @@ describe("IronflowClient", () => {
           Promise.resolve({
             id: "run_123",
             status: "RUN_STATUS_RUNNING",
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -1162,7 +1199,7 @@ describe("IronflowClient", () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_RUNNING" }),
+        json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_RUNNING", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -1188,7 +1225,7 @@ describe("IronflowClient", () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_RUNNING" }),
+        json: () => Promise.resolve({ id: "run_123", status: "RUN_STATUS_RUNNING", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -1707,8 +1744,8 @@ describe("IronflowClient", () => {
         expect(result.entityType).toBe("order");
         expect(result.version).toBe(5);
         expect(result.eventCount).toBe(5);
-        expect(result.createdAt).toBe("2026-01-01T00:00:00Z");
-        expect(result.updatedAt).toBe("2026-01-05T00:00:00Z");
+        expect(result.createdAt).toEqual(new Date("2026-01-01T00:00:00Z"));
+        expect(result.updatedAt).toEqual(new Date("2026-01-05T00:00:00Z"));
         expect(mockFetch).toHaveBeenCalledWith(
           "http://localhost:9123/ironflow.v1.EntityStreamService/GetStreamInfo",
           expect.objectContaining({
@@ -1899,7 +1936,7 @@ describe("IronflowClient", () => {
         result: 42,
       });
       expect(s0.injected).toBe(false);
-      expect(s0.completedAt).toBe("2026-03-01T10:00:00Z");
+      expect(s0.completedAt).toEqual(new Date("2026-03-01T10:00:00Z"));
       expect(s1.id).toBe("step_2");
       expect(s1.injected).toBe(true);
       expect(result.nextStepHint).toBe("validate");
@@ -1953,7 +1990,7 @@ describe("IronflowClient", () => {
 
       const result = await createClient().getPausedState("run_abc123");
 
-      expect(assertDefined(result.steps[0])).toMatchObject({ injected: false, completedAt: "" });
+      expect(assertDefined(result.steps[0])).toMatchObject({ injected: false, completedAt: undefined });
       expect([result.nextStepHint, result.pauseReason]).toEqual(["", ""]);
     });
 
@@ -2876,8 +2913,8 @@ describe("IronflowClient", () => {
           Promise.resolve({
             name: "stripe-key",
             value: "sk_live_abc",
-            createdAt: "2026-01-01T00:00:00Z",
-            updatedAt: "2026-01-01T00:00:00Z",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -2887,6 +2924,7 @@ describe("IronflowClient", () => {
 
       expect(result.name).toBe("stripe-key");
       expect(result.value).toBe("sk_live_abc");
+      expect(result.created_at).toEqual(new Date("2026-01-01T00:00:00Z"));
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/api/v1/secrets/stripe-key",
         expect.objectContaining({ method: "GET" })
@@ -2914,8 +2952,8 @@ describe("IronflowClient", () => {
           Promise.resolve({
             name: "db-password",
             value: "s3cr3t",
-            createdAt: "2026-01-01T00:00:00Z",
-            updatedAt: "2026-01-01T00:00:00Z",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -2956,8 +2994,8 @@ describe("IronflowClient", () => {
           Promise.resolve({
             name: "stripe-key",
             value: "sk_live_new",
-            createdAt: "2026-01-01T00:00:00Z",
-            updatedAt: "2026-02-01T00:00:00Z",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-02-01T00:00:00Z",
           }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -3390,9 +3428,9 @@ describe("IronflowClient", () => {
       expect(s.sourceType).toBe("api");
       expect(s.verifySecretSet).toBe(true);
       expect(s.verifySecretPrevSet).toBe(true);
-      expect(s.verifySecretPrevExpiresAt).toBe("2026-03-29T00:00:00Z");
+      expect(s.verifySecretPrevExpiresAt).toEqual(new Date("2026-03-29T00:00:00Z"));
       expect(s.ingestTokenPrefix).toBe("ifwh_1a2b3c4d");
-      expect(s.createdAt).toBe("2026-03-28T00:00:00Z");
+      expect(s.createdAt).toEqual(new Date("2026-03-28T00:00:00Z"));
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/ironflow.v1.WebhookService/ListWebhookSources",
         expect.objectContaining({ method: "POST" })
@@ -3541,7 +3579,8 @@ describe("IronflowClient", () => {
         expect.objectContaining({ method: "POST", body: JSON.stringify({ id: "wh_1" }) })
       );
       expect(source.ingestToken).toBe("ifwh_rotated");
-      expect(source.updatedAt).toBe("2026-03-28T01:00:00Z");
+      expect(source.updatedAt).toEqual(new Date("2026-03-28T01:00:00Z"));
+      expect(source.updatedAtExact).toBe("2026-03-28T01:00:00Z");
     });
 
     it("should delete a webhook source", async () => {
@@ -3622,6 +3661,7 @@ describe("IronflowClient", () => {
           email: "alice@example.com",
           name: "Alice",
           roles: ["admin"],
+          created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
         }),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -3636,6 +3676,7 @@ describe("IronflowClient", () => {
       expect(user.id).toBe("user-1");
       expect(user.email).toBe("alice@example.com");
       expect(user.orgId).toBe("org_default"); // the wire sends org_id (#2945)
+      expect(user.createdAt).toEqual(new Date("2026-01-01T00:00:00Z"));
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/api/v1/users",
         expect.objectContaining({ method: "POST" })
@@ -3646,8 +3687,8 @@ describe("IronflowClient", () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve([
-          { id: "user-1", email: "alice@example.com" },
-          { id: "user-2", email: "bob@example.com" },
+          { id: "user-1", email: "alice@example.com", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+          { id: "user-2", email: "bob@example.com", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
         ]),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -3662,7 +3703,7 @@ describe("IronflowClient", () => {
     it("should get a user by id", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "user-1", email: "alice@example.com" }),
+        json: () => Promise.resolve({ id: "user-1", email: "alice@example.com", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -3679,7 +3720,7 @@ describe("IronflowClient", () => {
     it("should update a user", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ id: "user-1", email: "alice@example.com", name: "Alice Smith" }),
+        json: () => Promise.resolve({ id: "user-1", email: "alice@example.com", name: "Alice Smith", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -3711,12 +3752,28 @@ describe("IronflowClient", () => {
     });
   });
 
+  describe("apiKeys", () => {
+    it("keeps the one-time key and leaves unset timestamps absent", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ id: "ak_1", name: "ci", key_prefix: "ifkey_ab", key: "ifkey_abcd", created_at: "2026-01-01T00:00:00Z" }),
+      }));
+
+      const created = await createClient({ serverUrl: "http://localhost:9123" }).apiKeys.create({ name: "ci" });
+
+      expect(created.key).toBe("ifkey_abcd");
+      expect(created.created_at).toEqual(new Date("2026-01-01T00:00:00Z"));
+      expect(created.expires_at).toBeUndefined();
+      expect(created.last_used_at).toBeUndefined();
+    });
+  });
+
   describe("tenants", () => {
     it("should list tenants", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve([
-          { id: "org_acme", name: "Acme Corp", env_count: 2, key_count: 3, created_at: "2026-01-01" },
+          { id: "org_acme", name: "Acme Corp", env_count: 2, key_count: 3, created_at: "2026-01-01T12:34:56.789Z" },
         ]),
       });
       vi.stubGlobal("fetch", mockFetch);
@@ -3726,7 +3783,7 @@ describe("IronflowClient", () => {
 
       expect(tenants).toHaveLength(1);
       // The wire sends snake_case (#2945).
-      expect(tenants[0]).toEqual({ id: "org_acme", name: "Acme Corp", envCount: 2, keyCount: 3, createdAt: "2026-01-01" });
+      expect(tenants[0]).toEqual({ id: "org_acme", name: "Acme Corp", envCount: 2, keyCount: 3, createdAt: new Date("2026-01-01T12:34:56.789Z") });
       expect(mockFetch).toHaveBeenCalledWith(
         "http://localhost:9123/api/v1/tenants",
         expect.objectContaining({ method: "GET" })
@@ -3791,6 +3848,33 @@ describe("IronflowClient", () => {
 
       expect(result).toEqual({ events: [], totalCount: 0, nextCursor: undefined });
     });
+
+    it("returns createdAt as a Date and sends Date filters as RFC 3339", async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ events: [{ id: "ae-1", createdAt: "2026-03-28T00:00:00.123456Z" }] }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      const { events } = await createClient().getAuditTrail("run-123", {
+        fromTimestamp: new Date("2026-03-01T00:00:00Z"),
+        toTimestamp: "2026-03-02T00:00:00.123456Z",
+      });
+
+      expect(assertDefined(events[0]).createdAt).toEqual(new Date("2026-03-28T00:00:00.123Z"));
+      const body = JSON.parse(mockFetch.mock.calls[0]?.[1].body as string);
+      expect(body.from_timestamp).toBe("2026-03-01T00:00:00.000Z");
+      expect(body.to_timestamp).toBe("2026-03-02T00:00:00.123456Z");
+    });
+
+    it("throws SchemaValidationError for an unreadable createdAt", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ events: [{ id: "ae-1", createdAt: "now" }] }),
+      }));
+
+      await expect(createClient().getAuditTrail("run-123")).rejects.toBeInstanceOf(SchemaValidationError);
+    });
   });
 
   describe("remaining parity wrappers", () => {
@@ -3841,7 +3925,7 @@ describe("IronflowClient", () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ name: "renamed" }),
+        json: () => Promise.resolve({ name: "renamed", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }),
       });
       vi.stubGlobal("fetch", mockFetch);
       const client = createClient();
@@ -4016,8 +4100,33 @@ describe("resumeRun Connect decoding", () => {
     expect(result.maxAttempts).toBe(3);
     expect(result.attempt).toBe(2);
     expect(result.status).toBe("running");
-    expect(result.createdAt).toBe("2025-01-01T00:00:00Z");
-    expect(result.startedAt).toBe("2025-01-01T00:00:00Z");
+    expect(result.createdAt).toEqual(new Date("2025-01-01T00:00:00Z"));
+    expect(result.startedAt).toEqual(new Date("2025-01-01T00:00:00Z"));
+    expect(result.endedAt).toBeUndefined();
+  });
+
+  it.each([
+    ["an absent createdAt", { createdAt: undefined }],
+    ["an absent updatedAt", { updatedAt: undefined }],
+    ["a malformed createdAt", { createdAt: "not-a-time" }],
+    ["a malformed startedAt", { startedAt: "not-a-time" }],
+  ])("rejects a run with %s", async (_name, fields) => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            id: "run_123",
+            status: "RUN_STATUS_RUNNING",
+            createdAt: "2025-01-01T00:00:00Z",
+            updatedAt: "2025-01-01T00:02:00Z",
+            ...fields,
+          }),
+      })
+    );
+
+    await expect(createClient().resumeRun("run_123")).rejects.toBeInstanceOf(SchemaValidationError);
   });
 
   it("rejects a status off the wire spelling", async () => {

@@ -27,7 +27,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("deployments", () => {
   it("reads created=false when the wire omits it", async () => {
     const f = stubFetch(
-      { body: { deployment: { deploymentId: "v1", mode: "EXECUTION_MODE_PULL" } } },
+      { body: { deployment: { deploymentId: "v1", mode: "EXECUTION_MODE_PULL", createdAt: "2026-09-06T12:00:00Z" } } },
       { body: { functionId: "f", mode: "FUNCTION_ROUTING_MODE_VERSIONED", activeDeploymentId: "v1", routingRevision: "4" } },
     );
     const c = client();
@@ -40,7 +40,7 @@ describe("deployments", () => {
 
 describe("deployments reads", () => {
   it("decodes get and list", async () => {
-    const d = { deploymentId: "v1", mode: "EXECUTION_MODE_PUSH", endpointUrl: "https://x" };
+    const d = { deploymentId: "v1", mode: "EXECUTION_MODE_PUSH", endpointUrl: "https://x", createdAt: "2026-09-06T12:00:00Z" };
     const f = stubFetch({ body: { deployment: d } }, { body: { deployments: [d] } }, { body: {} });
     const c = client();
     expect(await c.deployments.get("f", "v1")).toMatchObject({ deploymentId: "v1", mode: "push" });
@@ -76,13 +76,44 @@ describe("capacity", () => {
       "/api/v1/capacity/stats",
     ]);
   });
+
+  it("decodes each view's timestamps and tolerates a null body", async () => {
+    const at = "2026-09-06T12:00:00Z";
+    stubFetch(
+      { body: [{ created_at: at, last_used_at: at }] },
+      { body: [{ first_enqueued_at: at, eligible_at: at, reservation_expires_at: null, created_at: at }] },
+      { body: [{ activated_at: at, expires_at: at }] },
+      { body: [{ last_dispatched_at: null, created_at: at }] },
+      { body: [{ heartbeat_expiry: at, created_at: at }] },
+      { body: [{ expires_at: at, created_at: at }] },
+      { body: null },
+    );
+    const c = client();
+    const date = new Date(at);
+    expect((await c.capacity.listLanes())[0]!.last_used_at).toEqual(date);
+    const [queued] = await c.capacity.listQueue();
+    expect(queued!.eligible_at).toEqual(date);
+    expect(queued!.reservation_expires_at).toBeUndefined();
+    expect((await c.capacity.listLeases())[0]!.expires_at).toEqual(date);
+    expect((await c.capacity.listBuckets())[0]!.last_dispatched_at).toBeUndefined();
+    expect((await c.capacity.listSessions())[0]!.heartbeat_expiry).toEqual(date);
+    expect((await c.capacity.listCredits())[0]!.expires_at).toEqual(date);
+    expect(await c.capacity.listLanes()).toEqual([]);
+  });
+
+  it("rejects a row with an unreadable timestamp", async () => {
+    stubFetch({ body: [{ created_at: "nope", last_used_at: "2026-09-06T12:00:00Z" }] });
+    await expect(client().capacity.listLanes()).rejects.toThrow("CapacityLane.created_at");
+  });
 });
 
 describe("debounce list", () => {
-  it("returns the entries as sent", async () => {
+  it("returns the entries with their times as Date", async () => {
     const entry = { environment_id: "env_default", function_id: "fn", debounce_key: "k", period_ms: 500 };
-    stubFetch({ body: [entry] });
-    expect(await client().debounce.list()).toEqual([entry]);
+    stubFetch({ body: [{ ...entry, armed_at: "2026-09-06T12:00:00.000Z", fires_at: "2026-09-06T12:00:00.500Z" }] });
+    expect(await client().debounce.list()).toEqual([
+      { ...entry, armed_at: new Date("2026-09-06T12:00:00.000Z"), fires_at: new Date("2026-09-06T12:00:00.500Z") },
+    ]);
   });
 });
 
@@ -102,7 +133,7 @@ describe("debounce", () => {
 
 describe("definition history", () => {
   it("sends int64 cursors and revisions as strings", async () => {
-    const f = stubFetch({ body: {} }, { body: { entry: { revision: "2" } } }, { body: {} }, { body: { entry: { revision: "5" } } });
+    const f = stubFetch({ body: {} }, { body: { entry: { revision: "2", recordedAt: "2026-09-06T12:00:00Z" } } }, { body: {} }, { body: { entry: { revision: "5", recordedAt: "2026-09-06T12:00:00Z" } } });
     const c = client();
     expect(await c.projections.listHistory("p", { limit: 1, beforeRevision: 3 })).toEqual({ entries: [], hasMore: false, nextBeforeRevision: 0 });
     expect((await c.projections.getRevision("p", 2)).revision).toBe(2);

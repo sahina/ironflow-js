@@ -1,4 +1,5 @@
 import { IronflowError, ValidationError } from "./errors.js";
+import { timestampFromWire } from "./timestamp-wire.js";
 import type { EntityHistoryEntry, EntityHistoryOptions } from "./types.js";
 
 /** One GetEntityHistory page as ProtoJSON encodes it. */
@@ -12,7 +13,7 @@ export const ENTITY_HISTORY_PAGE_SIZE = 500;
 
 // A string bound goes on the wire unchanged: toISOString() cuts it to
 // milliseconds, and stored timestamps carry nanoseconds, so an inclusive `to`
-// copied from an entry's timestamp would drop that entry.
+// must be an entry's `timestampExact`, not its `timestamp`, or it drops that entry.
 function wireTimestamp(name: string, value: Date | string | undefined): string | undefined {
   if (value === undefined || value === "") return undefined;
   if (value instanceof Date) {
@@ -54,7 +55,8 @@ export async function collectEntityHistory(
         eventName: String(entry.eventName ?? ""),
         data: Object.hasOwn(entry, "eventDataValue") ? entry.eventDataValue : entry.eventData,
         version: Number(entry.entityVersion ?? 0),
-        timestamp: String(entry.timestamp ?? ""),
+        timestamp: timestampFromWire("entityHistory.timestamp", entry.timestamp),
+        timestampExact: String(entry.timestamp),
       });
     }
     const next = Number(page.nextCursor ?? 0);

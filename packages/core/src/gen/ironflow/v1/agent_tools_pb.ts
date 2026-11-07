@@ -57,9 +57,7 @@ export type ToolDef = Message<"ironflow.v1.ToolDef"> & {
 
   /**
    * Per-tool dispatch timeout in milliseconds. Bounded
-   * [1ms, 60000ms] by the SDK contract; server caps at the env
-   * setting IRONFLOW_AGENT_TOOLS_MAX_TIMEOUT_MS (default 60000).
-   * Hard cap is 120000ms.
+   * [1ms, 60000ms] by the SDK contract; the server caps it at 60000ms.
    *
    * @generated from field: uint32 timeout_ms = 5;
    */

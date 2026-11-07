@@ -12,8 +12,8 @@ afterEach(() => vi.unstubAllGlobals());
 describe("event emitter reads (#3390)", () => {
   it.each(["apikey:k1", undefined])("exposes stored and stream emitter %s", async (emitter) => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(url.includes("ReadStream")
-      ? { events: [{ id: "e", emittedBy: emitter }] }
-      : { id: "e", emitted_by: emitter })));
+      ? { events: [{ id: "e", emittedBy: emitter, timestamp: "2026-01-01T00:00:00Z" }] }
+      : { id: "e", emitted_by: emitter, timestamp: "2026-01-01T00:00:00Z", created_at: "2026-01-01T00:00:00Z" })));
     const client = createClient({ serverUrl: "http://localhost:9123" });
     expect(await client.getEvent("e")).toHaveProperty("emittedBy", emitter);
     expect((await client.streams.read("seat-1")).events[0]).toHaveProperty("emittedBy", emitter);

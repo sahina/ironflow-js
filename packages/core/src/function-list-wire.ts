@@ -1,8 +1,10 @@
+import { optionalTimestampFromWire } from "./timestamp-wire.js";
 import { registeredFunctionFromWire } from "./types.js";
 
 /** Keep the public function-list fields when reading a Connect Function. */
 export function functionListFromWire(raw: Record<string, unknown>) {
   const fn = registeredFunctionFromWire(raw);
+  const nextRun = optionalTimestampFromWire("function.nextRun", raw.nextRun);
   return {
     id: fn.id,
     name: fn.name,
@@ -31,7 +33,7 @@ export function functionListFromWire(raw: Record<string, unknown>) {
     updated_at: fn.updatedAt,
     recording: fn.recording,
     recording_profile: fn.recordingProfile ?? "",
-    ...(typeof raw.nextRun === "string" ? { next_run: raw.nextRun } : {}),
+    ...(nextRun ? { next_run: nextRun } : {}),
     ...(raw.metadata ? { metadata: raw.metadata } : {}),
     ...(fn.debounce
       ? {

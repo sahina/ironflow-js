@@ -21,6 +21,12 @@ interface Seed {
   schemaDocs: string[];
 }
 
+// A year-1 Go zero time decodes to a valid Date, so instanceof alone would pass it.
+function expectRealDate(value: Date | undefined): void {
+  expect(value).toBeInstanceOf(Date);
+  expect(value!.getUTCFullYear()).toBeGreaterThan(2000);
+}
+
 describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
   const seed = SEED_PATH ? (JSON.parse(readFileSync(SEED_PATH, "utf8")) as Seed) : ({} as Seed);
   const serverUrl = process.env["IRONFLOW_TEST_SERVER"]!;
@@ -39,7 +45,7 @@ describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
     expect(first.created).toBe(true);
     expect(first.deployment).toMatchObject({ deploymentId: "nodesdk-v1", mode: "pull", artifactDigest: input.artifactDigest });
     expect(first.deployment.snapshot).toMatchObject({ timeoutMs: 30000, metadata: { who: "José" } });
-    expect(first.deployment.createdAt).toMatch(/^\d{4}-/);
+    expect(first.deployment.createdAt).toBeInstanceOf(Date);
     // An identical registration answers with `created` absent on the wire.
     expect((await client.deployments.register(input)).created).toBe(false);
 
@@ -54,7 +60,7 @@ describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
     const routing = await client.deployments.getExecutionRouting(seed.debounceFunctionId);
     // Registering never activates: the function stays on legacy routing.
     expect(routing).toMatchObject({ functionId: seed.debounceFunctionId, mode: "legacy", activeDeploymentId: "" });
-    expect(routing.updatedAt).toMatch(/^\d{4}-/);
+    expect(routing.updatedAt).toBeInstanceOf(Date);
   });
 
   it("capacity-views", async () => {
@@ -64,19 +70,30 @@ describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
     expect(lanes[0]).toMatchObject({ function_id: seed.capacityFunctionId, limit: 1, active_reserved: 1 });
     const lane = lanes[0]!.lane_id;
     expect(lane).not.toBe("");
+    expectRealDate(lanes[0]!.created_at);
+    expectRealDate(lanes[0]!.last_used_at);
 
     const queue = await platform.capacity.listQueue(fn);
     expect(queue).toHaveLength(1);
     expect(queue[0]).toMatchObject({ run_id: seed.queuedRunId, lane_id: lane, reservation_owner: null });
+    expectRealDate(queue[0]!.first_enqueued_at);
+    expectRealDate(queue[0]!.eligible_at);
+    expectRealDate(queue[0]!.created_at);
+    expect(queue[0]!.reservation_expires_at).toBeUndefined();
 
     const leases = await platform.capacity.listLeases();
     const lease = leases.find((l) => l.run_id === seed.leasedRunId);
     expect(lease?.lane_id).toBe(lane);
-    expect(Date.parse(lease!.expires_at)).toBeGreaterThan(Date.parse(lease!.activated_at));
+    expectRealDate(lease!.activated_at);
+    expectRealDate(lease!.expires_at);
+    expect(lease!.expires_at.getTime()).toBeGreaterThan(lease!.activated_at.getTime());
 
     const buckets = await platform.capacity.listBuckets(fn);
     expect(buckets).toHaveLength(1);
     expect(buckets[0]!.lane_id).toBe(lane);
+    expectRealDate(buckets[0]!.created_at);
+    // The server sends null here until a queued run is reserved, which the seed's held lease blocks.
+    expect(buckets[0]!.last_dispatched_at).not.toBeNull();
 
     const stat = (await platform.capacity.stats()).find((s) => s.function_id === seed.capacityFunctionId);
     expect(stat).toMatchObject({ active_leases: 1, queued: 1, lane_limit: 1 });
@@ -85,9 +102,15 @@ describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
     expect(sessions.length).toBeGreaterThan(0);
     const session = sessions[0]!;
     expect(session.draining).toBe(false);
+    expectRealDate(session.heartbeat_expiry);
+    expectRealDate(session.created_at);
     const credits = (await platform.capacity.listCredits()).filter((c) => c.session_id === session.session_id);
     expect(credits.length).toBeGreaterThan(0);
-    for (const c of credits) expect(c.worker_id).toBe(session.worker_id);
+    for (const c of credits) {
+      expect(c.worker_id).toBe(session.worker_id);
+      expectRealDate(c.expires_at);
+      expectRealDate(c.created_at);
+    }
   });
 
   it("debounce-manage", async () => {
@@ -97,7 +120,8 @@ describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
       (await client.debounce.list()).find((e) => e.function_id === seed.debounceFunctionId && e.debounce_key === key);
     const entry = await find();
     expect(entry).toMatchObject({ period_ms: 600000 });
-    expect(Date.parse(entry!.fires_at)).toBeGreaterThan(Date.parse(entry!.armed_at));
+    expectRealDate(entry!.armed_at);
+    expect(entry!.fires_at.getTime()).toBeGreaterThan(entry!.armed_at.getTime());
 
     await client.debounce.cancel(entry!.environment_id, seed.debounceFunctionId, key);
     expect(await find()).toBeUndefined();
@@ -111,7 +135,7 @@ describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
     expect(first.nextBeforeRevision).toBe(newest.revision);
     expect(newest.previousDefinition.events).toEqual(seed.projectionEvents[1]);
     expect(newest).toMatchObject({ changeType: "updated", changeReason: "change 2" });
-    expect(newest.recordedAt).toMatch(/^\d{4}-/);
+    expect(newest.recordedAt).toBeInstanceOf(Date);
 
     const second = await client.projections.listHistory(seed.projection, { limit: 1, beforeRevision: first.nextBeforeRevision });
     expect(second.entries).toHaveLength(1);

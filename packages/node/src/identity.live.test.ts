@@ -40,7 +40,7 @@ describe.skipIf(!PLATFORM_TOKEN)("identity — live server", () => {
   it("tenant-list", async () => {
     const row = (await operator.tenants.list()).find((t) => t.id === tenant.org.id);
     expect(row).toMatchObject({ name: orgName, envCount: 1, keyCount: 1 });
-    expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(row?.createdAt.getUTCFullYear()).toBeGreaterThan(2000);
   });
 
   it("user-crud", async () => {
@@ -48,7 +48,7 @@ describe.skipIf(!PLATFORM_TOKEN)("identity — live server", () => {
     const email = `node-user-${suffix}@example.com`;
     const u = await users.create({ email, name: "Zoë Node", password: "first-pass-123", roles: ["viewer"] });
     expect(u).toMatchObject({ orgId: tenant.org.id, email, name: "Zoë Node", roles: ["viewer"] });
-    expect(u.createdAt).toBeTruthy();
+    expect(u.createdAt.getUTCFullYear()).toBeGreaterThan(2000);
     expect((await users.list()).map((x) => x.id)).toContain(u.id);
     const updated = await users.update(u.id, { name: "Zoë Renamed", roles: ["developer"] });
     expect(updated).toMatchObject({ id: u.id, name: "Zoë Renamed", roles: ["developer"] });
@@ -75,6 +75,7 @@ describe.skipIf(!PLATFORM_TOKEN)("identity — live server", () => {
   it("org-crud: create with a platform credential, the rest on the tenant's own org", async () => {
     const platform = new IronflowClient({ serverUrl: SERVER, apiKey: PLATFORM_TOKEN! });
     const created = await platform.orgs.create({ name: `Node Plattform Ünïcode ${suffix}` });
+    expect(created.created_at.getUTCFullYear()).toBeGreaterThan(2000);
     expect(created.id).toMatch(/^org_/);
     expect(created.name).toBe(`Node Plattform Ünïcode ${suffix}`);
     await expect(self().orgs.create({ name: "Escalate" })).rejects.toBeInstanceOf(UnauthorizedError);

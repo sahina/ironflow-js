@@ -34,7 +34,7 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("roles and policy 
     const created = await admin.roles.create({ name, org_id: tenant.org.id });
     expect(created).toMatchObject({ name, org_id: tenant.org.id, is_default: false });
     expect(created.id).toBeTruthy();
-    expect(created.created_at).toBeTruthy();
+    expect(created.created_at.getUTCFullYear()).toBeGreaterThan(2000);
     await expect(admin.roles.create({ name, org_id: tenant.org.id })).rejects.toMatchObject({ status: 409 });
     await expect(admin.roles.create({ name: "admin", org_id: tenant.org.id })).rejects.toMatchObject({ status: 400 });
 
@@ -64,6 +64,7 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("roles and policy 
     const empty = await admin.policySet.get();
     expect(empty).toMatchObject({ version: 0, modules: {} });
     expect(typeof empty.enforcement_active).toBe("boolean");
+    expect(empty.updated_at).toBeUndefined();
 
     // validate and dry-run store nothing.
     await admin.policySet.validate(v1);
@@ -76,14 +77,16 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("roles and policy 
     expect((await admin.policySet.dryRun({ set: v1, input: cancelInput })).decision).toBe("allow");
     expect((await admin.policySet.get()).version).toBe(0);
 
-    expect(await admin.policySet.put(v1, 0)).toMatchObject({ version: 1, mode: "monitor", modules: v1.modules });
+    const first = await admin.policySet.put(v1, 0);
+    expect(first).toMatchObject({ version: 1, mode: "monitor", modules: v1.modules });
+    expect(first.updated_at!.getUTCFullYear()).toBeGreaterThan(2000);
     await expect(admin.policySet.put(v2, 0)).rejects.toBeInstanceOf(PreconditionFailedError);
     expect(await admin.policySet.put(v2, 1)).toMatchObject({ version: 2, modules: v2.modules });
     expect(await admin.policySet.get()).toMatchObject({ version: 2, modules: v2.modules });
 
     const versions = await admin.policySet.versions();
     expect(versions.map((v) => v.version).sort()).toEqual([1, 2]);
-    for (const v of versions) expect(v).toMatchObject({ mode: "monitor", created_at: expect.any(String) });
+    for (const v of versions) expect(v).toMatchObject({ mode: "monitor", created_at: expect.any(Date) });
     expect(await admin.policySet.version(1)).toMatchObject({ version: 1, modules: v1.modules });
     await expect(admin.policySet.version(99)).rejects.toMatchObject({ status: 404 });
 

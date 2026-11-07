@@ -26,6 +26,7 @@ import {
   WSServerMessageSchema,
   calculateBackoff,
   subscriptionOptionsForReconnect,
+  timestampFromWire,
 } from "@ironflow/core";
 import type {
   WSSubscribeRequest,
@@ -433,13 +434,21 @@ export class SubscriptionClient {
       {
         replay: options.replay,
         onEvent: ({ data }) => {
+          let timestamp: Date;
+          try {
+            timestamp = timestampFromWire("streamEvent.timestamp", data.timestamp);
+          } catch (err) {
+            // Delivered from a socket callback, where a throw has no caller to reach.
+            options.onError?.(err as Error);
+            return;
+          }
           const event: StreamEvent = {
             id: (data.id as string) ?? "",
             name: (data.name as string) ?? "",
             data: (data.data as Record<string, unknown>) ?? {},
             entityVersion: (data.entityVersion as number) ?? 0,
             version: (data.version as number) ?? 0,
-            timestamp: (data.timestamp as string) ?? "",
+            timestamp,
             source: data.source as string | undefined,
             metadata: data.metadata as Record<string, unknown> | undefined,
           };

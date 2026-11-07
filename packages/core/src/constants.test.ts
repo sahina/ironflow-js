@@ -72,8 +72,8 @@ describe("Default Constants", () => {
   });
 
   describe("DEFAULT_RETRY", () => {
-    it("should have MAX_ATTEMPTS of 3", () => {
-      expect(DEFAULT_RETRY.MAX_ATTEMPTS).toBe(3);
+    it("should have MAX_ATTEMPTS of 25", () => {
+      expect(DEFAULT_RETRY.MAX_ATTEMPTS).toBe(25);
     });
 
     it("should have INITIAL_DELAY_MS of 1000", () => {

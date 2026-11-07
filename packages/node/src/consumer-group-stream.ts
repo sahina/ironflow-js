@@ -123,7 +123,7 @@ function toEvent<T>(e: ProtoSubscriptionEvent): SubscriptionEvent<T> {
   };
   if (e.metadata) {
     event.meta = {
-      timestamp: e.metadata.timestamp ? timestampDate(e.metadata.timestamp).toISOString() : "",
+      timestamp: e.metadata.timestamp ? timestampDate(e.metadata.timestamp) : undefined,
       sequence: Number(e.sequence),
       sequenceExact: e.sequence.toString(),
     };

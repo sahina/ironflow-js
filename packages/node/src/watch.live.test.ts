@@ -101,7 +101,7 @@ describe.skipIf(!SERVER)("watch — live server", () => {
     try {
       const replay = await q.next("replay");
       expect(replay).toMatchObject({ name, data: { a: 1 }, revision: pre.revision });
-      expect(replay.updatedAt).toMatch(/Z$/);
+      expect(replay.updatedAt).toBeInstanceOf(Date);
 
       await sleep(IDLE_GAP_MS);
       const set = await cfg.set(name, { a: 2, s: "é" });
@@ -109,7 +109,9 @@ describe.skipIf(!SERVER)("watch — live server", () => {
       await cfg.patch(name, { b: true });
       expect((await q.next("patch")).data).toEqual({ a: 2, s: "é", b: true });
       await cfg.delete(name);
-      expect((await q.next("delete")).data).toBeNull();
+      const del = await q.next("delete");
+      expect(del.data).toBeNull();
+      expect(del.updatedAt.getUTCFullYear()).toBeGreaterThan(2000);
     } finally {
       w.stop();
     }

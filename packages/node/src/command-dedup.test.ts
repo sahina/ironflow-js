@@ -37,7 +37,7 @@ function makeDedup<T>(ttlSeconds = 604800) {
 }
 
 const bucketOk = () =>
-  mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" });
+  mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" });
 const putCalls = () =>
   vi.mocked(fetch).mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "PUT");
 
@@ -56,7 +56,7 @@ afterEach(() => {
 describe("CommandDedup.ensureBucket", () => {
   it("createBucket called once and cached for subsequent calls", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" })) // createBucket
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" })) // createBucket
       .mockResolvedValueOnce(mockResponse(201, { revision: 1 })) // create cmd-1 (first tryClaim, wins)
       .mockResolvedValueOnce(mockResponse(201, { revision: 2 })); // create cmd-2 (second tryClaim, wins)
 
@@ -82,7 +82,7 @@ describe("CommandDedup.ensureBucket", () => {
   it("non-409 error resets bucketReady so next call retries", async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(mockResponse(503, { error: "unavailable" }))
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(201, {}));
 
     const dedup = makeDedup();
@@ -100,7 +100,7 @@ describe("CommandDedup.ensureBucket", () => {
 describe("CommandDedup.tryClaim", () => {
   it("winner: create succeeds → returns null", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(201, { revision: 1 }));
 
     const dedup = makeDedup<{ orderId: string }>();
@@ -111,7 +111,7 @@ describe("CommandDedup.tryClaim", () => {
   it("loser: create → 412 → reads prior entry → returns decoded T", async () => {
     const stored = { orderId: "ord-1", claimedAt: "2026-01-01T00:00:00Z" };
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }))
       .mockResolvedValueOnce(mockResponse(200, kvEntry("cmd-1", stored)));
 
@@ -206,7 +206,7 @@ describe("CommandDedup.tryClaim", () => {
 
   it("non-412 error from create → re-throws", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(500, { error: "internal error" }));
 
     const dedup = makeDedup();
@@ -216,7 +216,7 @@ describe("CommandDedup.tryClaim", () => {
   it("loser with corrupt KV value → throws SyntaxError (fail-closed)", async () => {
     const corruptBase64 = Buffer.from("not-valid-json").toString("base64");
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(412, { error: "key already exists" }))
       .mockResolvedValueOnce(mockResponse(200, {
         key: "cmd-1", value: corruptBase64, revision: 1, operation: "put", created_at: "2026-01-01T00:00:00Z",
@@ -228,7 +228,7 @@ describe("CommandDedup.tryClaim", () => {
 
   it("commandId with special chars is URL-encoded in the request path", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(201, { revision: 1 }));
 
     const dedup = makeDedup<{ id: string }>();
@@ -248,7 +248,7 @@ describe("CommandDedup.finalize", () => {
   it("serializes result as JSON string and calls kv.put", async () => {
     const result = { orderId: "ord-1", entityVersion: 3 };
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(200, { revision: 2 }));
 
     const dedup = makeDedup<typeof result>();
@@ -261,7 +261,7 @@ describe("CommandDedup.finalize", () => {
 
   it("error from kv.put propagates", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(500, { error: "server error" }));
 
     const dedup = makeDedup();
@@ -276,7 +276,7 @@ describe("CommandDedup.finalize", () => {
 describe("CommandDedup.release", () => {
   it("calls kv.delete", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(204));
 
     const dedup = makeDedup();
@@ -285,7 +285,7 @@ describe("CommandDedup.release", () => {
 
   it("404 from delete is swallowed (idempotent)", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(404, { error: "key not found" }));
 
     const dedup = makeDedup();
@@ -294,7 +294,7 @@ describe("CommandDedup.release", () => {
 
   it("non-404 error from delete re-throws", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       .mockResolvedValueOnce(mockResponse(500, { error: "server error" }));
 
     const dedup = makeDedup();
@@ -323,7 +323,7 @@ describe("CommandDedup.tryClaim concurrent", () => {
     // loser:  createBucket(409) → create(412) → get(200)
     vi.mocked(fetch)
       // winner: createBucket
-      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "" }))
+      .mockResolvedValueOnce(mockResponse(201, { name: "test-bucket", values: 0, bytes: 0, history: 1, created_at: "2026-01-01T00:00:00Z" }))
       // loser: createBucket (bucket already exists)
       .mockResolvedValueOnce(mockResponse(409, { error: "bucket already exists" }))
       // winner: create wins

@@ -110,6 +110,7 @@ describe("WebSocketTransport subscription result", () => {
       "future.*",
       expect.objectContaining({ message: expect.stringContaining("accepted") }),
       undefined,
+      undefined,
     );
     expect(ws.send).toHaveBeenCalledWith(
       JSON.stringify({ type: "unsubscribe", subscriptionId: "sub-9" }),

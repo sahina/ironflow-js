@@ -1,8 +1,8 @@
 # Package an App with Ironflow
 
 Package the user's app and the Ironflow engine into ONE container, and prove it on the
-user's machine. This file is for the user's own app. To operate the engine (Compose
-stack, VPS, Kubernetes), read `platform.md`.
+user's machine. This file is for the user's own app. To operate the engine as its own
+service (the Docker Compose files), read `platform.md`.
 
 **This file packages. It does not deploy. Deploying is `deploy-target.md`, which the user asks
 for separately.** While following this file, never run a deploy command, a registry push, or a

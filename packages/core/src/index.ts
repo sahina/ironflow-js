@@ -63,6 +63,7 @@ export type {
   SecretsClient,
 
   // Run types
+  CancellationEvent,
   RunInfo,
   Run,
   RunStatus,
@@ -577,14 +578,31 @@ export type {
 export { connectHTTPError, ERROR_REASON_HEADER, ERROR_REASON } from "./connect-errors.js";
 
 export { waitResultFromWire, type WaitWireResult } from "./wait-wire.js";
+export { timestampFromWire, optionalTimestampFromWire, timestampFilterToWire } from "./timestamp-wire.js";
 
 export { collectEntityHistory, ENTITY_HISTORY_PAGE_SIZE, type EntityHistoryPageWire } from "./entity-history-wire.js";
 
 export { schemaFromWire, type SchemaWire } from "./schema-wire.js";
+export { auditEventFromWire } from "./audit-wire.js";
 
 export * from "./admin-helpers.js";
 
 export { functionListFromWire } from "./function-list-wire.js";
+export { fileBucketInfoFromWire, fileBucketsFromWire, fileInfoFromWire, listFilesResultFromWire, signedUrlFromWire } from "./files-wire.js";
+export { kvBucketInfoFromWire, kvBucketsFromWire, kvEntryFromWire } from "./kv-wire.js";
+export { configResponseFromWire, configEntriesFromWire, configWatchEventFromWire } from "./config-wire.js";
+export {
+  apiKeyFromWire,
+  apiKeyWithSecretFromWire,
+  environmentFromWire,
+  organizationFromWire,
+  policySetFromWire,
+  policySetVersionsFromWire,
+  projectFromWire,
+  roleFromWire,
+  secretFromWire,
+  secretListEntryFromWire,
+} from "./tenancy-wire.js";
 
 export {
   runInspectionFromWire,

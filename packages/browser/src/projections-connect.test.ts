@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createConnectRouter, ConnectError, Code } from "@connectrpc/connect";
 import { createFetchHandler } from "@connectrpc/connect/protocol";
+import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ProjectionService } from "../../core/src/gen/ironflow/v1/projection_pb.js";
 import { IronflowClient } from "./client.js";
 afterEach(() => vi.unstubAllGlobals());
@@ -30,6 +31,7 @@ it("preserves projection state, registry metadata, waits and errors through gene
           lastEventSeq: 2147483649n,
           status: "active",
           errorMessage: "previous",
+          updatedAt: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
         },
       };
     },
@@ -42,6 +44,7 @@ it("preserves projection state, registry metadata, waits and errors through gene
             mode: "managed",
             lastEventSeq: 2147483649n,
             errorMessage: "previous",
+            updatedAt: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
           },
         ],
       };
@@ -53,6 +56,7 @@ it("preserves projection state, registry metadata, waits and errors through gene
         mode: "managed",
         lastEventSeq: 2147483649n,
         errorMessage: "previous",
+        updatedAt: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
       };
     },
     waitProjectionCatchup(req) {

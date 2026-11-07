@@ -48,6 +48,7 @@ import type {
  * Active subscription tracking
  */
 interface ActiveSubscription {
+  lookupKey?: string;
   pattern: string;
   options?: CoreSubscribeOptions;
   abortController: AbortController;
@@ -237,12 +238,12 @@ export class ConnectRPCTransport implements Transport {
       // Mark as connected
       this._connectionState = "connected";
       this.reconnectAttempt = 0;
-      this.callbacks?.onConnectionChange("connected");
 
       // Resubscribe all pending subscriptions
       for (const [id, sub] of this.activeSubscriptions) {
         this.startSubscriptionStream(id, sub);
       }
+      this.callbacks?.onConnectionChange("connected");
     } catch (error) {
       this._connectionState = "disconnected";
       this.callbacks?.onConnectionChange("disconnected");
@@ -266,7 +267,7 @@ export class ConnectRPCTransport implements Transport {
     this.callbacks?.onConnectionChange("disconnected");
   }
 
-  subscribe(pattern: string, options?: CoreSubscribeOptions): void {
+  subscribe(pattern: string, options?: CoreSubscribeOptions, lookupKey?: string): void {
     const subscriptionId = `crpc-sub-${++this.subscriptionIdCounter}`;
 
     // Create abort controller for this subscription
@@ -274,6 +275,7 @@ export class ConnectRPCTransport implements Transport {
 
     // Track the subscription
     const activeSub: ActiveSubscription = {
+      lookupKey,
       pattern,
       options: options ? { ...options } : undefined,
       abortController,
@@ -363,7 +365,7 @@ export class ConnectRPCTransport implements Transport {
 
       // Notify subscription started
       sub.subscriptionId = subscriptionId;
-      this.callbacks?.onSubscribed(sub.pattern, subscriptionId);
+      this.callbacks?.onSubscribed(sub.pattern, subscriptionId, undefined, sub.lookupKey);
 
       // Start server streaming
       const stream = this.client.subscribe(request, {
@@ -478,12 +480,12 @@ export class ConnectRPCTransport implements Transport {
    */
   private convertProtoEvent(event: ProtoSubscriptionEvent): SubscriptionEvent {
     // Convert timestamp - protobuf Timestamp has seconds and nanos fields
-    let timestamp = new Date().toISOString();
+    let timestamp: Date | undefined;
     if (event.metadata?.timestamp) {
       const ts = event.metadata.timestamp;
       // Timestamp has seconds (bigint) and nanos (number)
       const ms = Number(ts.seconds) * 1000 + Math.floor(ts.nanos / 1000000);
-      timestamp = new Date(ms).toISOString();
+      timestamp = new Date(ms);
     }
 
     return {

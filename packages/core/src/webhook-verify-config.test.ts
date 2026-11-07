@@ -167,11 +167,12 @@ describe("webhookSourceFromWire", () => {
       metadata: { team: "payments" },
       verifySecretSet: true,
       verifySecretPrevSet: true,
-      verifySecretPrevExpiresAt: "2026-03-29T00:00:00Z",
+      verifySecretPrevExpiresAt: new Date("2026-03-29T00:00:00Z"),
       ingestTokenPrefix: "ifwh_1a2b3c4d",
       ingestToken: "ifwh_raw",
-      createdAt: "2026-03-28T00:00:00Z",
-      updatedAt: "2026-03-28T01:00:00Z",
+      createdAt: new Date("2026-03-28T00:00:00Z"),
+      updatedAt: new Date("2026-03-28T01:00:00Z"),
+      updatedAtExact: "2026-03-28T01:00:00Z",
     });
     expect(s.verifyConfig?.signingTemplate).toBe("{ts}.{body}");
   });
@@ -226,7 +227,7 @@ describe("webhookDeliveryFromWire", () => {
       eventId: "evt-123",
       error: undefined,
       signatureKey: "prev",
-      createdAt: "2026-03-28T00:00:00Z",
+      createdAt: new Date("2026-03-28T00:00:00Z"),
     });
   });
 

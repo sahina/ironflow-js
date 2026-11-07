@@ -133,12 +133,12 @@ const unsubscribe = ironflow.onError((error) => {
 
 ### Basic Subscription
 
-A browser client allows one broadcast subscription per exact pattern. A second
-`subscribe()` with that same pattern throws `Already subscribed to pattern`.
-Share one callback and fan out locally, or use separate `IronflowClient`
-instances with separate connections. Consumer-group subscriptions permit duplicate
-patterns but distribute work according to group semantics; they are not broadcast
-fan-out. Overlapping distinct patterns are separate subscriptions.
+Each `subscribe()` call owns an independent server subscription, even for the
+same pattern. Each handle receives events with its own options, and
+`handle.unsubscribe()` closes only that handle across reconnects. Duplicate calls
+use additional server subscription slots and may create additional broker
+consumers. Applications can share one handle and fan out locally. Consumer groups
+still distribute work across members.
 
 
 ```typescript
@@ -262,6 +262,47 @@ patterns.secretAction('updated')      // 'system.secret.*.updated'
 // Developer pub/sub topic patterns
 patterns.topic('chat.room-1')         // 'topic:chat.room-1'
 patterns.allTopics()                  // 'topic:>'
+```
+
+### Run frames and createRunVersionFilter
+
+A subscription to `system.run.>` delivers frames for run transitions; one write can publish two (`.failed` and `.updated`). The payload of a `system.run.{runId}.{event}` frame is a `RunEvent`. Step frames (`system.run.{runId}.step.{stepId}.{event}`) have a different shape.
+
+```typescript
+interface RunEvent {
+  id: string;
+  functionId: string;
+  eventId: string;
+  executionMode: string;
+  status: string;
+  attempt: number;
+  maxAttempts: number;
+  version?: number;   // Rises with every write to the run; absent on `deleted` frames, when the committed version is unknown, and on older servers
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  output?: unknown;
+  error?: unknown;
+  timestamp: string;
+}
+
+type RunVersionFilter = (event: SubscriptionEvent) => boolean;
+
+function createRunVersionFilter(options?: { maxRuns?: number }): RunVersionFilter;
+```
+
+Frames for one run can arrive out of order, so a `completed` frame can land before the `running` one. `createRunVersionFilter()` returns a filter that drops older run and step frames and late frames for a deleted run. It passes frames outside `system.run.`, frames with no usable `version`, and frames whose version ties the highest seen. It remembers up to `maxRuns` run and step identities (default 10000), then forgets the least recent. Use one filter per subscription.
+
+```typescript
+import { ironflow, createRunVersionFilter, type RunEvent } from '@ironflow/browser';
+
+const keep = createRunVersionFilter();
+await ironflow.subscribe('system.run.>', {
+  onEvent: (event) => {
+    if (keep(event)) render(event.data as RunEvent);
+  },
+});
 ```
 
 ### Subscription Groups
@@ -1527,7 +1568,7 @@ console.log(health.status);     // 'healthy'
 console.log(health.timestamp);  // ISO 8601
 console.log(health.version);    // Server version
 
-// Readiness probe (GET /ready: database and NATS). health() is liveness only.
+// Readiness probe (GET /ready: database, NATS and engine streams). health() is liveness only.
 // Throws IronflowError with code NOT_READY and status 503 when the server is not ready.
 const { status, warnings } = await ironflow.ready(); // status is "ready"
 
@@ -1887,6 +1928,8 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Invoke/Trigger types:** `InvokeResult`, `EmitSyncResult`, `InvokeSyncOptions`, `InvokeSyncResult`
 
+**Run frame types:** `RunEvent`, `RunVersionFilter`
+
 **Subscription types:** `SubscribeOptions`, `Subscription`, `AckableSubscription`, `SubscriptionEvent`, `SubscriptionErrorInfo`, `SubscriptionCallbacks`, `ConnectionState`, `AckHandle`
 
 **Consumer group types:** `ConsumerGroup`, `ConsumerGroupConfig`, `ConsumerGroupStatus`, `AckMode`, `BackpressureMode`, `UpdateConsumerGroupInput`
@@ -1921,7 +1964,7 @@ The package re-exports the following types from `@ironflow/core` for convenience
 
 **Errors and error utilities** (see [Error Handling](#error-handling)): `IronflowError`, `ConnectionError`, `SubscriptionError`, `TimeoutError`, `ValidationError`, `NotConfiguredError`, `RunWaitTimeoutError`, `RunFailedError`, `RunCancelledError`, `AgentInvokeTimeoutError`, `QueueFullError`, `PreconditionFailedError`, `PreconditionRequiredError`, `PayloadTooLargeError`, `UnsupportedMediaTypeError`, `POLICY_SET_ERROR_CODES`, `isRetryable`, `isIronflowError`
 
-**Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`, `DEFAULT_CONFIG`, `mergeConfig`, `createWebSocketTransport`, `createConnectRPCTransport`, `queueDbName`
+**Utilities:** `patterns`, `DEFAULT_SERVER_URL`, `DEFAULT_WS_URL`, `DEFAULT_TIMEOUTS`, `getServerUrl`, `getWebSocketUrl`, `DEFAULT_CONFIG`, `mergeConfig`, `createWebSocketTransport`, `createConnectRPCTransport`, `createRunVersionFilter`, `queueDbName`
 
 **Classes:** `BrowserKVClient`, `BrowserKVBucketHandle`, `BrowserFilesClient`, `BrowserFileBucketHandle`, `BrowserConfigClient`, `SubscriptionManager`, `OfflineClient`, `createClient`
 

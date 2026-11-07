@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { SchemaValidationError } from "./errors.js";
 import {
+  capacityBucketFromWire,
+  capacityLaneFromWire,
+  capacityLeaseFromWire,
   capacityQuery,
+  capacityQueueEntryFromWire,
+  capacityWorkerCreditFromWire,
+  capacityWorkerSessionFromWire,
+  debounceEntryFromWire,
+  definitionHistoryEntryFromWire,
   definitionHistoryPageFromWire,
   definitionHistoryRequest,
   DEPLOYMENT_SNAPSHOT_SCHEMA_VERSION,
@@ -41,7 +50,7 @@ describe("definition history wire", () => {
   it("reads a cursor and a schema document", () => {
     const page = definitionHistoryPageFromWire(
       {
-        entries: [{ revision: "7", previousDefinition: { eventName: "e", version: 1, schemaJson: '{"description":"José"}' } }],
+        entries: [{ revision: "7", recordedAt: "2026-09-06T12:00:00Z", previousDefinition: { eventName: "e", version: 1, schemaJson: '{"description":"José"}' } }],
         hasMore: true,
         nextBeforeRevision: "7",
       },
@@ -49,6 +58,11 @@ describe("definition history wire", () => {
     );
     expect(page).toMatchObject({ hasMore: true, nextBeforeRevision: 7 });
     expect(page.entries[0]!.previousDefinition).toMatchObject({ version: 1, schemaJson: '{"description":"José"}' });
+    expect(page.entries[0]!.recordedAt).toEqual(new Date("2026-09-06T12:00:00Z"));
+  });
+
+  it("throws when recordedAt is absent", () => {
+    expect(() => definitionHistoryEntryFromWire({ revision: "7" }, schemaDefinitionFromWire)).toThrow(/definitionHistoryEntry\.recordedAt/);
   });
 
   it("sends the cursor as a string and omits unset options", () => {
@@ -82,7 +96,8 @@ describe("deployment wire", () => {
   });
 
   it("maps enums and defaults absent fields", () => {
-    expect(deploymentFromWire({ deploymentId: "v1", mode: "EXECUTION_MODE_PUSH", endpointUrl: "https://x" })).toMatchObject({
+    expect(deploymentFromWire({ deploymentId: "v1", mode: "EXECUTION_MODE_PUSH", endpointUrl: "https://x", createdAt: "2026-09-06T12:00:00Z" })).toMatchObject({
+      createdAt: new Date("2026-09-06T12:00:00Z"),
       deploymentId: "v1",
       mode: "push",
       endpointUrl: "https://x",
@@ -91,12 +106,24 @@ describe("deployment wire", () => {
     });
     expect(
       executionRoutingFromWire({ functionId: "f", mode: "FUNCTION_ROUTING_MODE_LEGACY", updatedAt: "2026-10-16T19:08:34Z" }),
-    ).toEqual({ functionId: "f", mode: "legacy", activeDeploymentId: "", routingRevision: 0, transitionId: "", updatedAt: "2026-10-16T19:08:34Z" });
-    expect(executionRoutingFromWire({ mode: "FUNCTION_ROUTING_MODE_ADOPTING", routingRevision: "3", transitionStartedAt: "t" })).toMatchObject({
+    ).toEqual({ functionId: "f", mode: "legacy", activeDeploymentId: "", routingRevision: 0, transitionId: "", updatedAt: new Date("2026-10-16T19:08:34Z") });
+    expect(executionRoutingFromWire({ mode: "FUNCTION_ROUTING_MODE_ADOPTING", routingRevision: "3", transitionStartedAt: "2026-09-06T12:00:00Z" })).toMatchObject({
       mode: "adopting",
       routingRevision: 3,
-      transitionStartedAt: "t",
+      transitionStartedAt: new Date("2026-09-06T12:00:00Z"),
     });
+  });
+
+  it("leaves routing timestamps the server omits absent", () => {
+    const routing = executionRoutingFromWire({ functionId: "f", mode: "FUNCTION_ROUTING_MODE_LEGACY" });
+    expect(routing.updatedAt).toBeUndefined();
+    expect(routing.transitionStartedAt).toBeUndefined();
+  });
+
+  it("throws on an unreadable deployment or routing timestamp", () => {
+    expect(() => deploymentFromWire({ deploymentId: "v1" })).toThrow(/deployment\.createdAt/);
+    expect(() => executionRoutingFromWire({ updatedAt: "soon" })).toThrow(/executionRouting\.updatedAt/);
+    expect(() => executionRoutingFromWire({ transitionStartedAt: "soon" })).toThrow(/executionRouting\.transitionStartedAt/);
   });
 });
 
@@ -115,5 +142,58 @@ describe("capacityQuery", () => {
   it("encodes only the set filters", () => {
     expect(capacityQuery()).toBe("");
     expect(capacityQuery({ env: "env_default", function: "fn a", limit: 5 })).toBe("?env_id=env_default&function=fn+a&limit=5");
+  });
+});
+
+describe("capacity and debounce rows", () => {
+  const at = "2026-09-06T12:00:00.123456Z";
+  const date = new Date(at);
+
+  it("decodes every timestamp and keeps the other fields", () => {
+    expect(capacityLaneFromWire({ lane_id: "l", limit: 1, created_at: at, last_used_at: at })).toEqual({
+      lane_id: "l",
+      limit: 1,
+      created_at: date,
+      last_used_at: date,
+    });
+    expect(capacityLeaseFromWire({ lease_id: "x", lane_id: null, activated_at: at, expires_at: at })).toEqual({
+      lease_id: "x",
+      lane_id: null,
+      activated_at: date,
+      expires_at: date,
+    });
+    expect(capacityWorkerSessionFromWire({ session_id: "s", heartbeat_expiry: at, created_at: at })).toEqual({
+      session_id: "s",
+      heartbeat_expiry: date,
+      created_at: date,
+    });
+    expect(capacityWorkerCreditFromWire({ credit_id: "c", expires_at: at, created_at: at })).toEqual({
+      credit_id: "c",
+      expires_at: date,
+      created_at: date,
+    });
+    expect(debounceEntryFromWire({ debounce_key: "k", armed_at: at, fires_at: at })).toEqual({
+      debounce_key: "k",
+      armed_at: date,
+      fires_at: date,
+    });
+  });
+
+  it("treats a null reservation or dispatch time as absent", () => {
+    const queued = { run_id: "r", first_enqueued_at: at, eligible_at: at, created_at: at };
+    const entry = capacityQueueEntryFromWire({ ...queued, reservation_owner: null, reservation_expires_at: null });
+    expect(entry.reservation_expires_at).toBeUndefined();
+    expect(entry.reservation_owner).toBeNull();
+    expect(entry.eligible_at).toEqual(date);
+    expect(capacityQueueEntryFromWire({ ...queued, reservation_expires_at: at }).reservation_expires_at).toEqual(date);
+
+    expect(capacityBucketFromWire({ last_dispatched_at: null, created_at: at }).last_dispatched_at).toBeUndefined();
+    expect(capacityBucketFromWire({ last_dispatched_at: at, created_at: at }).last_dispatched_at).toEqual(date);
+  });
+
+  it("throws on an absent required value and an unreadable optional one", () => {
+    expect(() => debounceEntryFromWire({ armed_at: at })).toThrow(SchemaValidationError);
+    expect(() => debounceEntryFromWire({ armed_at: at })).toThrow("DebounceEntry.fires_at");
+    expect(() => capacityBucketFromWire({ last_dispatched_at: "soon", created_at: at })).toThrow(SchemaValidationError);
   });
 });

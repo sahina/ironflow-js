@@ -80,7 +80,7 @@ describe("FunctionConfig recording", () => {
   });
 
   it("normalizes legacy recording responses to the all profile", () => {
-    const fn = registeredFunctionFromWire({ id: "fn-legacy", recording: true });
+    const fn = registeredFunctionFromWire({ id: "fn-legacy", createdAt: "2026-09-06T12:00:00Z", updatedAt: "2026-09-06T12:00:00Z", recording: true });
     expect(fn.recording).toBe(true);
     expect(fn.recordingProfile).toBe("all");
   });

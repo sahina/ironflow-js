@@ -288,6 +288,8 @@ describe("Branded ID Factories", () => {
 describe("consumerGroupFromWire", () => {
   it("passes through enum values a newer server added", () => {
     const group = consumerGroupFromWire({
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
       ackMode: "ACK_MODE_ZZ_FUTURE",
       backpressure: "BACKPRESSURE_MODE_ZZ_FUTURE",
       status: "CONSUMER_GROUP_STATUS_ZZ_FUTURE",
@@ -301,6 +303,8 @@ describe("consumerGroupFromWire", () => {
 
   it("reads UNSPECIFIED as the default, the way the Go SDK does", () => {
     const group = consumerGroupFromWire({
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
       ackMode: "ACK_MODE_UNSPECIFIED",
       backpressure: "BACKPRESSURE_MODE_UNSPECIFIED",
       status: "CONSUMER_GROUP_STATUS_UNSPECIFIED",

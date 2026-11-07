@@ -139,7 +139,6 @@ describe.skipIf(!INTEGRATION_ENABLED)("client.streams response shape (#600)", ()
     expect(info!.eventCount).toBeGreaterThanOrEqual(1);
     expect(typeof info!.entityId).toBe("string");
     expect(typeof info!.entityType).toBe("string");
-    expect(typeof info!.createdAt).toBe("string");
-    expect(info!.createdAt.length).toBeGreaterThan(0);
+    expect(info!.createdAt).toBeInstanceOf(Date);
   });
 });

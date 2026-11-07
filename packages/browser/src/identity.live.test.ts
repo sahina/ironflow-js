@@ -38,11 +38,12 @@ describe.skipIf(!PLATFORM_TOKEN)("identity — live server", () => {
   it("tenant-list", async () => {
     const row = (await operator.tenants.list()).find((t) => t.id === tenant.org.id);
     expect(row).toMatchObject({ name: orgName, envCount: 1, keyCount: 1 });
-    expect(row?.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(row?.createdAt.getUTCFullYear()).toBeGreaterThan(2000);
   });
 
   it("org-crud: create with a platform credential, the rest on the tenant's own org", async () => {
     const created = await client(PLATFORM_TOKEN!).orgs.create({ name: `Browser Plattform Ünïcode ${suffix}` });
+    expect(created.created_at.getUTCFullYear()).toBeGreaterThan(2000);
     expect(created.id).toMatch(/^org_/);
     expect(created.name).toBe(`Browser Plattform Ünïcode ${suffix}`);
     await expect(self().orgs.create({ name: "Escalate" })).rejects.toBeInstanceOf(UnauthorizedError);

@@ -37,6 +37,11 @@ curl -s http://localhost:9123/ready | jq
 
 If unhealthy → fix server connectivity first (see `platform.md`).
 
+If `/health` answers 200 and `/ready` answers 503 with `issues["stream:<name>"]`, a JetStream
+stream has a fault and the API still serves. Read
+https://docs.ironflow.run/how-to-guides/deployment/recover-a-stuck-stream.md first.
+`nats stream rm` is destructive: never suggest it as a first step.
+
 > **`/health` and `/ready` are the only unauthenticated endpoints you'll want here.**
 > Everything under `/api/` requires auth — always, with no config toggle — so a bare
 > `curl http://localhost:9123/api/v1/...` returns `{"error":"authentication required"}`
@@ -241,8 +246,12 @@ ironflow projection list --json                              # all projections
 ### What to check
 
 - **Caught up?** `lag > 0` = behind. Wait or check for errors.
-- **Processing error?** `error` field set = handler crashed. Fix handler, projection
-  resumes.
+- **Processing error?** `error` field set = usually a handler crashed: fix the handler
+  and the projection resumes. Read the message first: one that says `cannot be delivered`
+  will not resume by itself. A replaced PUBSUB stream needs `ironflow projection delete
+  <name>`, then a runner restart or `ironflow projection create` for a SQL projection. A
+  failed rebuild refuses reads until a rebuild succeeds: fix the cause, run the rebuild,
+  then restart the runner.
 - **Handler pure?** Managed projections must be pure reducers. Side effects → use
   `mode: "external"`.
 - **Event list correct?** `events` array determines which events processed. Missing event
@@ -271,14 +280,16 @@ ironflow projection list --json                              # all projections
   failure first, or the entry dead-letters again.
 
   **`--dry-run` works.** The guard sits above every mutation
-  (`internal/projection/rebuild.go:440`), so a dry run is a pure query: it reports the
+  (`internal/projection/rebuild.go`), so a dry run is a pure query: it reports the
   start cursor, the target and the event count, registers no job and deletes nothing.
-  It can still FAIL: with `IRONFLOW_EVENT_RETENTION_DAYS` set, a rebuild that would
-  replay from before the retention horizon is refused — by the dry run as well as the
-  real one — because replaying a pruned window produces a read model with a silently
-  missing prefix. Rebuild with `--from <event-id>`, naming an event created at or after
-  the horizon, to accept the shortened history. An environment younger than the window is
-  exempt — nothing in it can be old enough to have been pruned.
+  It can still FAIL: a rebuild whose replay range reaches an event
+  `IRONFLOW_EVENT_RETENTION_DAYS` has pruned is refused — by the dry run as well as the
+  real one, and after the window is raised or unset — because replaying a pruned window
+  produces a read model with a silently missing prefix. Rebuild with `--from <event-id>`,
+  naming the event the refusal names, to accept the shortened history. A SQL projection
+  cannot use `--from`, and with no event that new there is nothing to name: follow the
+  refusal's recovery, which deletes the projection and registers it again. A filter that
+  has lost no event is not refused, whatever its age.
   `ironflow_rebuild_projection` exposes `dry_run` too. Always preview first — a real
   rebuild IS destructive: it deletes the read model and the projection serves nothing
   until the replay finishes.

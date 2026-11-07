@@ -23,7 +23,8 @@ describe.skipIf(!SERVER)("file storage — live server", () => {
     const created = await files.createBucket(name, { emitEvents: true, allowSignedUrls: true });
     expect(created).toMatchObject({ name, emitEvents: true, allowSignedUrls: true, allowedContentTypes: [] });
     expect(created.maxObjectBytes).toBeGreaterThan(0);
-    expect(created.createdAt).toBeTruthy();
+    expect(created.createdAt.getUTCFullYear()).toBeGreaterThan(2000);
+    expect(created.updatedAt).toBeInstanceOf(Date);
     expect((await files.listBuckets()).map((b) => b.name)).toContain(name);
     expect(await files.getBucket(name)).toMatchObject({ name, allowSignedUrls: true });
     const updated = await files.updateBucket(name, { allowedContentTypes: ["text/*"] });
@@ -84,7 +85,8 @@ describe.skipIf(!SERVER)("file storage — live server", () => {
 
     // Signed URLs carry their own credential.
     const down = await b.signDownload("docs/a.txt", 60);
-    expect(Date.parse(down.expiresAt)).toBeGreaterThan(Date.now());
+    expect(down.expiresAt).toBeInstanceOf(Date);
+    expect(down.expiresAt.getTime()).toBeGreaterThan(Date.now());
     expect(await (await downloadFromSignedUrl(down.url)).text()).toBe(content);
     const up = await b.signUpload("in/signed.txt", { maxBytes: 1024, contentType: "text/plain" });
     expect(up.url.startsWith(`${SERVER}/api/v1/files/signed?token=`)).toBe(true);

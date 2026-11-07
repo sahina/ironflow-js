@@ -1,3 +1,4 @@
+import { optionalTimestampFromWire } from "./timestamp-wire.js";
 import type { EventSchema } from "./types.js";
 
 export interface SchemaWire {
@@ -20,6 +21,7 @@ export function schemaFromWire(wire: SchemaWire): EventSchema {
   } catch {
     // Old registries may contain documents written before validation existed.
   }
+  const createdAt = optionalTimestampFromWire("eventSchema.created_at", wire.createdAt);
   const result = {
     event_name: wire.eventName ?? "",
     version: wire.version ?? 0,
@@ -27,7 +29,8 @@ export function schemaFromWire(wire: SchemaWire): EventSchema {
     schema_json: wire.schemaJson ?? "",
     environment_id: wire.environmentId ?? "",
     ...(wire.description ? { description: wire.description } : {}),
-    created_at: wire.createdAt ?? "",
+    // SQLite reads swallow a created_at they cannot parse, and the server then sends Go's zero time.
+    ...(createdAt && createdAt.getUTCFullYear() > 1 ? { created_at: createdAt } : {}),
   };
   return result;
 }

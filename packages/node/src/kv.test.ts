@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { SchemaValidationError } from "@ironflow/core";
 import { KVClient, KVBucketHandle } from "./kv.js";
 import type { KVClientConfig } from "./kv.js";
 import { assertDefined } from "./internal/assert-defined.js";
@@ -58,7 +59,7 @@ describe("KVClient", () => {
       const client = new KVClient(defaultConfig());
       const result = await client.createBucket({ name: "my-bucket" });
 
-      expect(result).toEqual(bucketInfo);
+      expect(result).toEqual({ ...bucketInfo, created_at: new Date(bucketInfo.created_at) });
 
       const { url, init } = lastFetchCall();
       expect(url).toBe(`${BASE_URL}/api/v1/kv/buckets`);
@@ -126,7 +127,7 @@ describe("KVClient", () => {
       const client = new KVClient(defaultConfig());
       const result = await client.listBuckets();
 
-      expect(result).toEqual(buckets);
+      expect(result).toEqual(buckets.map((b) => ({ ...b, created_at: new Date(b.created_at) })));
       expect(result).toHaveLength(2);
 
       const { url, init } = lastFetchCall();
@@ -149,7 +150,7 @@ describe("KVClient", () => {
       const client = new KVClient(defaultConfig());
       const result = await client.getBucketInfo("my-bucket");
 
-      expect(result).toEqual(info);
+      expect(result).toEqual({ ...info, created_at: new Date(info.created_at) });
       const { url } = lastFetchCall();
       expect(url).toBe(`${BASE_URL}/api/v1/kv/buckets/my-bucket`);
     });
@@ -194,7 +195,7 @@ describe("KVBucketHandle", () => {
       const handle = new KVBucketHandle("my-bucket", config);
       const result = await handle.get("user:1");
 
-      expect(result).toEqual(entry);
+      expect(result).toEqual({ ...entry, created_at: new Date(entry.created_at) });
       const { url, init } = lastFetchCall();
       expect(url).toBe(`${BASE_URL}/api/v1/kv/buckets/my-bucket/keys/user:1`);
       expect(init.method).toBe("GET");
@@ -222,11 +223,11 @@ describe("KVBucketHandle", () => {
       vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, entry));
       const bucket = new KVBucketHandle("my-bucket", config);
 
-      expect(await bucket.getJSON("mykey")).toEqual({ ...entry, value: expected });
+      expect(await bucket.getJSON("mykey")).toEqual({ ...entry, created_at: new Date(entry.created_at), value: expected });
     });
 
     it.each(["aGVsbG8=", "%", "MQ==%", "Iv8i", 42])("rejects invalid JSON encoding %s", async (value) => {
-      const entry = { key: "mykey", value, revision: 1, created_at: "", operation: "put" };
+      const entry = { key: "mykey", value, revision: 1, created_at: "2026-01-01T00:00:00Z", operation: "put" };
       vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, entry));
       const bucket = new KVBucketHandle("my-bucket", config);
 
@@ -237,7 +238,7 @@ describe("KVBucketHandle", () => {
     });
 
     it("preserves the JSON decoding cause", async () => {
-      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { value: "aGVsbG8=" }));
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { value: "aGVsbG8=", created_at: "2026-01-01T00:00:00Z" }));
       const bucket = new KVBucketHandle("my-bucket", config);
       await expect(bucket.getJSON("mykey")).rejects.toMatchObject({
         code: "INVALID_KV_JSON",
@@ -247,7 +248,7 @@ describe("KVBucketHandle", () => {
 
     it("decodes a large JSON value without dropping bytes", async () => {
       const expected = { text: "x".repeat(1024 * 1024) };
-      const entry = { key: "mykey", value: btoa(JSON.stringify(expected)), revision: 1, created_at: "", operation: "put" };
+      const entry = { key: "mykey", value: btoa(JSON.stringify(expected)), revision: 1, created_at: "2026-01-01T00:00:00Z", operation: "put" };
       vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, entry));
       const bucket = new KVBucketHandle("my-bucket", config);
       expect((await bucket.getJSON("mykey")).value).toEqual(expected);
@@ -262,7 +263,7 @@ describe("KVBucketHandle", () => {
 
     it("reports decoding errors to onError", async () => {
       const onError = vi.fn();
-      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { value: "%" }));
+      vi.mocked(fetch).mockResolvedValueOnce(createMockResponse(200, { value: "%", created_at: "2026-01-01T00:00:00Z" }));
       const bucket = new KVBucketHandle("my-bucket", { ...config, onError });
 
       await expect(bucket.getJSON("mykey")).rejects.toMatchObject({ code: "INVALID_KV_JSON" });
@@ -299,7 +300,7 @@ describe("KVBucketHandle", () => {
           key: "counter",
           value: btoa(stored),
           revision,
-          created_at: "",
+          created_at: "2026-01-01T00:00:00Z",
           operation: "put",
         };
         return createMockResponse(200, entry);
@@ -643,5 +644,23 @@ describe("KV watch", () => {
     expect(onError).toHaveBeenCalledOnce();
     expect((assertDefined(onError.mock.calls[0])[0] as Error).message).toBe("bucket not found");
     expect(ws.close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("KV unreadable created_at", () => {
+  it("throws SchemaValidationError from every read that returns one", async () => {
+    const client = new KVClient({ serverUrl: BASE_URL, timeout: 1000 });
+    const bucket = { name: "b", values: 0, bytes: 0, history: 1, created_at: "not-a-time" };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => new Response(JSON.stringify(
+      url.endsWith("/keys/k") ? { key: "k", value: "", revision: 1, operation: "put" }
+        : url.endsWith("/buckets") ? { buckets: [bucket], count: 1 }
+          : bucket,
+    ), { status: 200 })));
+
+    await expect(client.bucket("b").get("k")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client.getBucketInfo("b")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client.listBuckets()).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client.createBucket({ name: "b" })).rejects.toBeInstanceOf(SchemaValidationError);
+    vi.unstubAllGlobals();
   });
 });

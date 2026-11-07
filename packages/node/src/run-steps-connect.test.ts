@@ -4,6 +4,8 @@ import { createFetchHandler } from "@connectrpc/connect/protocol";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { IronflowService } from "../../core/src/gen/ironflow/v1/ironflow_pb.js";
 import { createClient } from "./client.js";
+
+const stamp = timestampFromDate(new Date("2026-09-06T12:00:00Z"));
 afterEach(() => vi.unstubAllGlobals());
 it("retains step payloads, duration presence and typed errors through the generated handler", async () => {
   const router = createConnectRouter();
@@ -24,10 +26,12 @@ it("retains step payloads, duration presence and typed errors through the genera
             durationMsFull: 2147483648n,
             compensationFor: "charge",
             waitEventName: "wake",
-            createdAt: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
+            createdAt: stamp,
+            updatedAt: stamp,
+            waitTimeout: stamp,
           },
-          { id: "zero", durationMsFull: 0n },
-          { id: "absent" },
+          { id: "zero", durationMsFull: 0n, createdAt: stamp, updatedAt: stamp },
+          { id: "absent", createdAt: stamp, updatedAt: stamp },
         ],
       };
     },
@@ -60,7 +64,8 @@ it("retains step payloads, duration presence and typed errors through the genera
         durationMs: 2147483648,
         compensationFor: "charge",
         waitEventName: "wake",
-        createdAt: "2026-09-06T12:00:00Z",
+        createdAt: new Date("2026-09-06T12:00:00Z"),
+        waitTimeout: new Date("2026-09-06T12:00:00Z"),
       },
       { id: "zero", durationMs: 0 },
       { id: "absent" },

@@ -27,7 +27,7 @@ describe.skipIf(!process.env["IRONFLOW_READINESS_SEED"])("readiness cluster — 
     const caps = await ironflow.getCapabilities();
     const health = await ironflow.health();
     expect(health).toMatchObject({ status: "healthy", version: caps.version });
-    expect(Math.abs(Date.now() - Date.parse(health.timestamp))).toBeLessThan(60_000);
+    expect(Math.abs(Date.now() - health.timestamp.getTime())).toBeLessThan(60_000);
     expect(await ironflow.ready()).toMatchObject({ status: "ready" });
   });
 });

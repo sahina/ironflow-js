@@ -25,12 +25,14 @@ export interface TransportCallbacks {
     pattern: string,
     subscriptionId: string,
     previousSubscriptionId?: string,
+    lookupKey?: string,
   ) => void;
   /** Called when a subscription fails */
   onSubscribeFailed: (
     pattern: string,
     error: Error,
     previousSubscriptionId?: string,
+    lookupKey?: string,
   ) => void;
 }
 
@@ -47,8 +49,8 @@ export interface Transport {
   /** Disconnect from the server */
   disconnect(): void;
 
-  /** Subscribe to a pattern */
-  subscribe(pattern: string, options?: SubscribeOptions): void;
+  /** Subscribe to a pattern; echo lookupKey in confirmation and failure callbacks. */
+  subscribe(pattern: string, options?: SubscribeOptions, lookupKey?: string): void;
 
   /** Unsubscribe from a subscription */
   unsubscribe(subscriptionId: string): void;

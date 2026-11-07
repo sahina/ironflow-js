@@ -14,8 +14,8 @@ describe("projection and event reads (#3390)", () => {
   it.each(["apikey:k1", undefined])("exposes stored and stream emitter %s", async (emitter) => {
     const client = configured();
     vi.stubGlobal("fetch", vi.fn(async (url: string) => Response.json(url.includes("ReadStream")
-      ? { events: [{ id: "e", emittedBy: emitter }] }
-      : { id: "e", emitted_by: emitter })));
+      ? { events: [{ id: "e", emittedBy: emitter, timestamp: "2026-01-01T00:00:00Z" }] }
+      : { id: "e", emitted_by: emitter, timestamp: "2026-01-01T00:00:00Z", created_at: "2026-01-01T00:00:00Z" })));
     expect(await client.getEvent("e")).toHaveProperty("emittedBy", emitter);
     expect((await client.streams.read("seat-1")).events[0]).toHaveProperty("emittedBy", emitter);
     client._resetForTesting();
@@ -45,7 +45,7 @@ describe("projection and event reads (#3390)", () => {
 
   it("returns empty state before the worker has saved a projection", async () => {
     const client = configured();
-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ name: "board", lastEventSeq: "0" })));
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ name: "board", lastEventSeq: "0", registry: { name: "board", updatedAt: "2026-09-06T12:00:00Z" } })));
     expect(await client.getProjection("board", { partition: "room-1" })).toMatchObject({ state: {}, partition: "room-1" });
     client._resetForTesting();
   });
@@ -60,8 +60,8 @@ describe("projection and event reads (#3390)", () => {
     });
     let finishRead: ((response: Response) => void) | undefined;
     const fetchMock = vi.fn().mockImplementationOnce(() => new Promise<Response>(resolve => { finishRead = resolve; }))
-      .mockResolvedValueOnce(Response.json({ name: "board", state: { count: 2 } }))
-      .mockImplementation(async () => Response.json({ name: "board", state: { count: 3 } }));
+      .mockResolvedValueOnce(Response.json({ name: "board", state: { count: 2 }, registry: { name: "board", updatedAt: "2026-09-06T12:00:00Z" } }))
+      .mockImplementation(async () => Response.json({ name: "board", state: { count: 3 }, registry: { name: "board", updatedAt: "2026-09-06T12:00:00Z" } }));
     vi.stubGlobal("fetch", fetchMock);
     const rendered: unknown[] = [];
     let dirty = false;
@@ -87,7 +87,7 @@ describe("projection and event reads (#3390)", () => {
     const initial = refresh();
     onEvent?.({ data: { state: { count: 2 }, partition: "room-1", last_event_seq: 2 } } as never);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    finishRead?.(Response.json({ name: "board", state: { count: 1 } }));
+    finishRead?.(Response.json({ name: "board", state: { count: 1 }, registry: { name: "board", updatedAt: "2026-09-06T12:00:00Z" } }));
     await initial;
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(rendered).toEqual([{ count: 1 }, { count: 2 }]);

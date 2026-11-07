@@ -32,6 +32,7 @@ it("reads streams and arbitrary history data through generated handlers", async 
           {
             eventName: "order.created",
             entityVersion: 2n,
+            timestamp: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
             eventDataValue: { kind: { case: "stringValue", value: "created" } },
           },
         ],
@@ -62,11 +63,17 @@ it("reads streams and arbitrary history data through generated handlers", async 
       entityType: "order",
       version: 2,
       eventCount: 2,
-      lastEventAt: "2026-09-06T12:00:00Z",
+      lastEventAt: new Date("2026-09-06T12:00:00Z"),
     },
   ]);
   expect(await client.streams.getEntityHistory("order/1")).toEqual([
-    { eventName: "order.created", data: "created", version: 2, timestamp: "" },
+    {
+      eventName: "order.created",
+      data: "created",
+      version: 2,
+      timestamp: new Date("2026-09-06T12:00:00Z"),
+      timestampExact: "2026-09-06T12:00:00Z",
+    },
   ]);
   denied = true;
   await expect(client.streams.listStreams()).rejects.toMatchObject({
@@ -98,7 +105,11 @@ it("follows next_cursor and sends the time window on every page", async () => {
         from: req.fromTimestamp && timestampDate(req.fromTimestamp).toISOString(),
         to: req.toTimestamp && timestampDate(req.toTimestamp).toISOString(),
       });
-      const page = (v: bigint) => ({ eventName: "order.updated", entityVersion: v });
+      const page = (v: bigint) => ({
+        eventName: "order.updated",
+        entityVersion: v,
+        timestamp: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
+      });
       return req.fromVersion === 2n
         ? { entries: [page(2n), page(3n)], nextCursor: 4n }
         : { entries: [page(4n)] };

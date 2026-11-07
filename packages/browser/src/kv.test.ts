@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { IronflowError, HEADERS } from "@ironflow/core";
-import type { KVBucketInfo, KVEntry, KVWatchEvent } from "@ironflow/core";
+import { IronflowError, HEADERS, SchemaValidationError } from "@ironflow/core";
+import type { KVWatchEvent } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
 import { BrowserKVClient, BrowserKVBucketHandle } from "./kv.js";
 import { assertDefined } from "./internal/assert-defined.js";
@@ -90,7 +90,7 @@ describe("BrowserKVClient", () => {
 
   describe("createBucket", () => {
     it("sends POST and returns KVBucketInfo", async () => {
-      const bucketInfo: KVBucketInfo = {
+      const bucketInfo = {
         name: "my-bucket",
         values: 0,
         bytes: 0,
@@ -102,7 +102,7 @@ describe("BrowserKVClient", () => {
       const client = new BrowserKVClient(config);
       const result = await client.createBucket({ name: "my-bucket" });
 
-      expect(result).toEqual(bucketInfo);
+      expect(result).toEqual({ ...bucketInfo, created_at: new Date(bucketInfo.created_at) });
 
       const [url, options] = assertDefined(mockFetch.mock.calls[0]);
       expect(url).toBe("http://localhost:9123/api/v1/kv/buckets");
@@ -166,7 +166,7 @@ describe("BrowserKVClient", () => {
 
   describe("listBuckets", () => {
     it("returns array of KVBucketInfo", async () => {
-      const buckets: KVBucketInfo[] = [
+      const buckets = [
         {
           name: "a",
           values: 1,
@@ -189,7 +189,7 @@ describe("BrowserKVClient", () => {
       const client = new BrowserKVClient(config);
       const result = await client.listBuckets();
 
-      expect(result).toEqual(buckets);
+      expect(result).toEqual(buckets.map((b) => ({ ...b, created_at: new Date(b.created_at) })));
       const [url] = assertDefined(mockFetch.mock.calls[0]);
       expect(url).toBe("http://localhost:9123/api/v1/kv/buckets");
     });
@@ -199,7 +199,7 @@ describe("BrowserKVClient", () => {
 
   describe("getBucketInfo", () => {
     it("returns bucket info on 200", async () => {
-      const info: KVBucketInfo = {
+      const info = {
         name: "test",
         values: 5,
         bytes: 512,
@@ -211,7 +211,7 @@ describe("BrowserKVClient", () => {
       const client = new BrowserKVClient(config);
       const result = await client.getBucketInfo("test");
 
-      expect(result).toEqual(info);
+      expect(result).toEqual({ ...info, created_at: new Date(info.created_at) });
     });
 
     it("throws IronflowError with not_found on not found", async () => {
@@ -261,7 +261,7 @@ describe("BrowserKVBucketHandle", () => {
 
   describe("get", () => {
     it("sends GET and returns KVEntry", async () => {
-      const entry: KVEntry = {
+      const entry = {
         key: "mykey",
         value: "aGVsbG8=",
         revision: 1,
@@ -272,7 +272,7 @@ describe("BrowserKVBucketHandle", () => {
 
       const result = await handle.get("mykey");
 
-      expect(result).toEqual(entry);
+      expect(result).toEqual({ ...entry, created_at: new Date(entry.created_at) });
       const [url, options] = assertDefined(mockFetch.mock.calls[0]);
       expect(url).toBe(
         "http://localhost:9123/api/v1/kv/buckets/test-bucket/keys/mykey"
@@ -300,11 +300,11 @@ describe("BrowserKVBucketHandle", () => {
         operation: "put",
       };
       mockFetch.mockResolvedValueOnce(jsonResponse(entry));
-      expect(await handle.getJSON("mykey")).toEqual({ ...entry, value: expected });
+      expect(await handle.getJSON("mykey")).toEqual({ ...entry, created_at: new Date(entry.created_at), value: expected });
     });
 
     it.each(["aGVsbG8=", "%", "MQ==%", "Iv8i", 42])("rejects invalid JSON encoding %s", async (value) => {
-      const entry = { key: "mykey", value, revision: 1, created_at: "", operation: "put" };
+      const entry = { key: "mykey", value, revision: 1, created_at: "2026-01-01T00:00:00Z", operation: "put" };
       mockFetch.mockResolvedValueOnce(jsonResponse(entry));
       await expect(handle.getJSON("mykey")).rejects.toMatchObject({
         code: "INVALID_KV_JSON",
@@ -313,7 +313,7 @@ describe("BrowserKVBucketHandle", () => {
     });
 
     it("preserves the JSON decoding cause", async () => {
-      mockFetch.mockResolvedValueOnce(jsonResponse({ value: "aGVsbG8=" }));
+      mockFetch.mockResolvedValueOnce(jsonResponse({ value: "aGVsbG8=", created_at: "2026-01-01T00:00:00Z" }));
 
       await expect(handle.getJSON("mykey")).rejects.toMatchObject({
         code: "INVALID_KV_JSON",
@@ -323,7 +323,7 @@ describe("BrowserKVBucketHandle", () => {
 
     it("decodes a large JSON value without dropping bytes", async () => {
       const expected = { text: "x".repeat(1024 * 1024) };
-      const entry = { key: "mykey", value: btoa(JSON.stringify(expected)), revision: 1, created_at: "", operation: "put" };
+      const entry = { key: "mykey", value: btoa(JSON.stringify(expected)), revision: 1, created_at: "2026-01-01T00:00:00Z", operation: "put" };
       mockFetch.mockResolvedValueOnce(jsonResponse(entry));
 
       expect((await handle.getJSON("mykey")).value).toEqual(expected);
@@ -348,7 +348,7 @@ describe("BrowserKVBucketHandle", () => {
           key: "counter",
           value: btoa(stored),
           revision,
-          created_at: "",
+          created_at: "2026-01-01T00:00:00Z",
           operation: "put",
         };
         return jsonResponse(entry);
@@ -603,7 +603,7 @@ describe("environment header", () => {
 
   it("includes X-Ironflow-Environment-ID on bucket handle requests", async () => {
     mockFetch.mockResolvedValueOnce(
-      jsonResponse({ key: "k", value: "v", revision: 1, created_at: "", operation: "put" })
+      jsonResponse({ key: "k", value: "v", revision: 1, created_at: "2026-01-01T00:00:00Z", operation: "put" })
     );
 
     const handle = new BrowserKVBucketHandle(
@@ -829,5 +829,22 @@ describe("watch", () => {
 
     expect(onError).toHaveBeenCalledOnce();
     expect(assertDefined(onError.mock.calls[0])[0]).toBeInstanceOf(Error);
+  });
+});
+
+describe("KV unreadable created_at", () => {
+  it("throws SchemaValidationError from every read that returns one", async () => {
+    const client = new BrowserKVClient({ serverUrl: "http://localhost:9123" } as IronflowConfig);
+    const bucket = { name: "b", values: 0, bytes: 0, history: 1, created_at: "not-a-time" };
+    mockFetch.mockImplementation(async (url: string) => jsonResponse(
+      url.endsWith("/keys/k") ? { key: "k", value: "", revision: 1, operation: "put" }
+        : url.endsWith("/buckets") ? { buckets: [bucket], count: 1 }
+          : bucket,
+    ));
+
+    await expect(client.bucket("b").get("k")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client.getBucketInfo("b")).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client.listBuckets()).rejects.toBeInstanceOf(SchemaValidationError);
+    await expect(client.createBucket({ name: "b" })).rejects.toBeInstanceOf(SchemaValidationError);
   });
 });

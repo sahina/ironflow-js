@@ -1209,6 +1209,45 @@ describe("webhook routing", () => {
     expect(body.event.data).toEqual({ amount: 100 });
   });
 
+  it("hands transform a form-encoded body as an object, keeping every value of a repeated key", async () => {
+    const seen: unknown[] = [];
+    const formWebhook = createWebhook({
+      id: "form-provider",
+      verify: () => {},
+      transform: (payload) => {
+        seen.push(payload);
+        return { name: "webhook/form", data: {} };
+      },
+    });
+    const handler = realServe({ functions: [testFn], webhooks: [formWebhook], skipVerification: true, logger: false });
+
+    const response = await handler(
+      new Request("http://localhost/webhooks/form-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8" },
+        body: "MessageSid=SM1&MessageStatus=delivered&To=%2B15551234&Tag=a&Tag=b",
+      })
+    ) as Response;
+
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([{ MessageSid: "SM1", MessageStatus: "delivered", To: "+15551234", Tag: ["a", "b"] }]);
+  });
+
+  it("rejects a non-JSON body that does not claim to be form-encoded", async () => {
+    const handler = realServe({ functions: [testFn], webhooks: [testWebhook], skipVerification: true, logger: false });
+
+    const response = await handler(
+      new Request("http://localhost/webhooks/test-provider", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain", "x-test-sig": "valid" },
+        body: "MessageSid=SM1",
+      })
+    ) as Response;
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as Record<string, any>).error.code).toBe("TRANSFORM_FAILED");
+  });
+
   // /ironflow.v1.IronflowService/Emit is not a public route, so an unauthenticated emit 502s the
   // whole webhook outside dev mode (#1672 review).
   it("authenticates the emit to /ironflow.v1.IronflowService/Emit with IRONFLOW_API_KEY", async () => {

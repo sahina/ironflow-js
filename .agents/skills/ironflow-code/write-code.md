@@ -1,13 +1,13 @@
 # Write Code
 
-### Step 1: Detect language
+## Step 1: Detect language
 
 - Read `package.json` for TS/JS, `go.mod` for Go, `pyproject.toml` or `requirements.txt` for Python.
 - If more than one, ask which language.
 - Fetch the relevant SDK reference: `https://docs.ironflow.run/reference/js-sdk/node.md`,
   `https://docs.ironflow.run/reference/api/go-sdk.md` or `https://docs.ironflow.run/reference/api/python-sdk.md`.
 
-### Step 2: Clarify component (if ambiguous)
+## Step 2: Clarify component (if ambiguous)
 
 Ironflow has a small set of **primitives** and a larger set of **CQRS roles** realized on
 top of them. Ask which role the user wants — it drives testing, state handling, and
@@ -38,7 +38,7 @@ Full descriptions: fetch `https://docs.ironflow.run/explanation/patterns.md` (Fu
 section). If the user is writing a command-side workflow, also read the Commands vs
 Events and Aggregate Design sections — they drive the decider/evolver shape.
 
-### Step 3: Apply project conventions
+## Step 3: Apply project conventions
 
 - Event names live in `src/events/<domain>-events.ts` as `as const` objects
 - **Command names** in `src/commands/<domain>-commands.ts` as `as const` objects,
@@ -55,7 +55,7 @@ Events and Aggregate Design sections — they drive the decider/evolver shape.
 For CRUD-style work (no aggregate, no command), skip the `commands/` and `aggregates/`
 folders — plain events + functions + projections are the full set.
 
-### Step 4: Write the code
+## Step 4: Write the code
 
 Before implementing an entity lifecycle or a workflow with branches, waits, multiple
 functions, or saga compensation, read `~/.agents/skills/ironflow-docs/diagrams.md` using the cross-skill
@@ -77,8 +77,8 @@ Apply these non-negotiable rules (full list: fetch `https://docs.ironflow.run/ex
   that signal, so the run completes instead of waiting. A `waitForEvent` timeout is not catchable either: the scheduler fails
   the run out from under the handler. Model a deadline as its own event and wait
   on a single settled event. `match` names a key in `event.data` (the `data.` prefix is optional)
-- Push mode for <10s; pull mode for >10s (the engine's `PushTimeout` is 10s and
-  kills the request — it is not advisory)
+- Push mode for <10s; pull mode for >10s (the engine's `PushTimeout` defaults to 10s
+  and is a hard per-request limit, not advice)
 - Python pull workers use `from ironflow.worker import Worker, function`:
   `@function(id="job", triggers=[{"event": "job.started"}])` on an `async def`
   handler, then `Worker(functions=[handler]).run()`. Bare durations are seconds;
@@ -90,8 +90,8 @@ Apply these non-negotiable rules (full list: fetch `https://docs.ironflow.run/ex
   projections filter on (two outbox rows, one transaction). Emitting the same fact
   again makes the reducer run twice and silently double-count. `emit` is only for
   facts that have no entity stream
-- Entity IDs are a single path segment — no `/`, `?`, `#`, `%`, `&`, or
-  whitespace; use `entityType` for the namespace dimension
+- Entity IDs are a single path segment — letters, digits and `-._:~` only (no `/`,
+  `?`, `#`, `%`, `&` or whitespace); use `entityType` for the namespace dimension
 - Projections carry the `as IronflowProjection` cast — `createWorker({ projections })`
   takes `IronflowProjection[]`, and the cast erases the state/event generics to fit
 - KV `bucket.get()` wrapped in try/catch
@@ -115,7 +115,7 @@ Apply these non-negotiable rules (full list: fetch `https://docs.ironflow.run/ex
 - Cross-bounded-context communication is events only, via the owning context's
   **published language**
 
-### Step 5: Suggest next
+## Step 5: Suggest next
 
 > "Code written. Next:
 > - Tests for this? Read [generate-tests.md](generate-tests.md) before switching to test mode.
@@ -126,4 +126,3 @@ Verifying against a **running dev server**? Wait for it to reload your edit befo
 a test event. If operating via MCP, call `ironflow_await_reload` first so the test hits the
 reloaded version, not the code you just replaced — see `/ironflow-ops` → "Verifying a Fix
 Against a Live Dev Server".
-

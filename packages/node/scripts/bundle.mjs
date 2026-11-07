@@ -23,26 +23,26 @@ const entryPoints = [
   { in: join(distDir, "consumer-group-stream.js"), out: "consumer-group-stream" },
 ];
 
-// Bundle each entry point
-for (const entry of entryPoints) {
-  await esbuild.build({
-    entryPoints: [entry.in],
+// Shared chunks keep execution context identical across public entrypoints.
+await esbuild.build({
+    entryPoints,
+    splitting: true,
     bundle: true,
     format: "esm",
     platform: "node",
     target: "node20",
-    outfile: join(bundleDir, `${entry.out}.js`),
+    outdir: bundleDir,
     sourcemap: true,
     // Externalize node built-ins and optional deps
     external: [
+      "@opentelemetry/api",
       "@bufbuild/protobuf",
       "@connectrpc/connect",
       "@connectrpc/connect-node",
       "zod",
       "node:*",
     ],
-  });
-}
+});
 
 // Copy type definitions recursively
 function copyDtsFiles(srcDir, destDir) {
@@ -102,9 +102,11 @@ const bundlePkg = {
   },
   optionalDependencies: pkg.optionalDependencies,
   peerDependencies: {
+    ...pkg.peerDependencies,
     "@ironflow/core": pkg.version,
   },
   peerDependenciesMeta: {
+    ...pkg.peerDependenciesMeta,
     "@ironflow/core": {
       optional: true,
     },

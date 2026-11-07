@@ -3,6 +3,7 @@ import type { IronflowProjection } from "@ironflow/core";
 import { createWorker } from "./worker.js";
 import { createStreamingWorker } from "./worker-streaming.js";
 import { assertDefined } from "./internal/assert-defined.js";
+import { withPositionEcho } from "../tests/projection-position-fake.js";
 
 const LEASE = { granted: true, lease: { token: "sdk:1", epoch: "1" }, ttl: "30s" };
 
@@ -90,7 +91,7 @@ describe("worker projection reconnect (#2770)", () => {
       }
       throw new Error(`Unexpected request: ${url}`);
     });
-    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("fetch", withPositionEcho(fetchMock));
     const worker = createWorker({ serverUrl: "http://localhost:9123", functions: [{ config: { id: "fn", triggers: [] }, handler: async () => ({}) }], projections: [projection], reconnectDelay: 5, logger: false });
     const running = worker.start();
     try {
@@ -127,7 +128,7 @@ describe("worker projection reconnect (#2770)", () => {
 describe("worker drain with projections (#2770)", () => {
   it.each([createWorker, createStreamingWorker])("resolves projection-only drain() only after the pending save finishes", async (factory) => {
     let finishSave: (() => void) | undefined;
-    vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
+    vi.stubGlobal("fetch", withPositionEcho(vi.fn(async (url: string, opts: RequestInit) => {
       if (url.includes("/jobs?")) {
         return new Promise<Response>((_, reject) => {
           assertDefined(opts.signal).addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
@@ -147,7 +148,7 @@ describe("worker drain with projections (#2770)", () => {
       }
       if (url.endsWith("SaveProjectionState")) await new Promise<void>((resolve) => { finishSave = resolve; });
       return new Response("{}");
-    }));
+    })));
     const worker = factory({ serverUrl: "http://localhost:9123", functions: [], projections: [projection], reconnectDelay: 5, logger: false });
     const running = worker.start();
     try {
@@ -174,7 +175,7 @@ describe("streaming worker projection reconnect (#2770)", () => {
     let state = { count: 0 };
     const loadedStates: { count: number }[] = [];
     let streamCount = 0;
-    vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
+    vi.stubGlobal("fetch", withPositionEcho(vi.fn(async (url: string, opts: RequestInit) => {
       if (url.endsWith("ProjectionLease")) return Response.json(LEASE); // Acquire grants; Renew and Release succeed
       if (url.endsWith("GetProjection")) {
         loadedStates.push(state);
@@ -197,7 +198,7 @@ describe("streaming worker projection reconnect (#2770)", () => {
         state = { count: 1 };
       }
       return new Response("{}");
-    }));
+    })));
     jobStreams.length = 0;
     const worker = createStreamingWorker({
       serverUrl: "http://localhost:9123", functions: [{ config: { id: "fn", triggers: [] }, handler: async () => ({}) }], projections: [projection], reconnectDelay: 5, logger: false,
@@ -225,7 +226,7 @@ describe("projection-only workers (#3390)", () => {
   it.each([createWorker, createStreamingWorker])("runs projections without function registration, polling, job streams or job heartbeats", async (factory) => {
     const urls: string[] = [];
     jobStreams.length = 0;
-    vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
+    vi.stubGlobal("fetch", withPositionEcho(vi.fn(async (url: string, opts: RequestInit) => {
       urls.push(url);
       if (url.includes("/workers/")) return Response.json({ error: "function_ids is required" }, { status: 400 });
       if (url.endsWith("ProjectionLease")) return Response.json(LEASE);
@@ -237,7 +238,7 @@ describe("projection-only workers (#3390)", () => {
         },
       }));
       return Response.json({});
-    }));
+    })));
     const worker = factory({ serverUrl: "http://localhost:9123", functions: [], projections: [projection], heartbeatInterval: 5, reconnectDelay: 5, logger: false });
     const running = worker.start();
     try {

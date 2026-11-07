@@ -22,7 +22,9 @@ describe.skipIf(!SEED_PATH)("readiness schemas — live server", () => {
     // Everything but `status` is the client's echo of the input; `status` is the server's answer.
     const register = async (version: number, field: string) =>
       (await schemas.register({ name, version, schema: doc(field) })) as unknown as { status: string };
-    expect(await register(1, "orderId")).toMatchObject({ status: "created", event_name: name, version: 1, schema: doc("orderId") });
+    const first = await register(1, "orderId");
+    expect(first).toMatchObject({ status: "created", event_name: name, version: 1, schema: doc("orderId") });
+    expect(first).not.toHaveProperty("created_at");
     expect(await register(2, "orderRef")).toMatchObject({ status: "created", event_name: name, version: 2, schema: doc("orderRef") });
     // The same name and version again replaces the document.
     expect(await register(1, "orderId")).toMatchObject({ status: "updated" });
@@ -37,8 +39,9 @@ describe.skipIf(!SEED_PATH)("readiness schemas — live server", () => {
       event_name: name,
       version: 2,
       schema: doc("orderRef"),
-      created_at: expect.stringMatching(/^\d{4}-/),
+      created_at: expect.any(Date),
     });
+    expect((await schemas.get(name)).created_at?.getUTCFullYear()).toBeGreaterThan(2000);
     expect(await schemas.getVersion(name, 1)).toMatchObject({ version: 1, schema: doc("orderId") });
     const listed = (await schemas.list()).filter((s) => s.event_name === name);
     expect(listed.map((s) => s.version).sort()).toEqual([1, 2]);

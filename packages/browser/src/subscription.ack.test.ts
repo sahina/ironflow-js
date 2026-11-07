@@ -18,8 +18,8 @@ class RecordingTransport implements Transport {
     this.callbacks = callbacks;
   }
 
-  subscribe(pattern: string, _options?: SubscribeOptions): void {
-    queueMicrotask(() => this.callbacks?.onSubscribed(pattern, "sub-ack-1"));
+  subscribe(pattern: string, _options?: SubscribeOptions, lookupKey?: string): void {
+    queueMicrotask(() => this.callbacks?.onSubscribed(pattern, "sub-ack-1", undefined, lookupKey));
   }
 }
 

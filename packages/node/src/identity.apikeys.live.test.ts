@@ -29,7 +29,9 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("api keys — live
     expect(created.key.startsWith(created.key_prefix)).toBe(true);
     expect(created).toMatchObject({ name, role_ids: [viewer] });
     expect(created.id).toBeTruthy();
-    const days = (Date.parse(created.expires_at!) - Date.now()) / 86_400_000;
+    expect(created.created_at.getUTCFullYear()).toBeGreaterThan(2000);
+    expect(created.last_used_at).toBeUndefined();
+    const days = (created.expires_at!.getTime() - Date.now()) / 86_400_000;
     expect(days).toBeGreaterThan(29);
     expect(days).toBeLessThan(31);
 
@@ -49,8 +51,7 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("api keys — live
     expect(rotated.key).toMatch(/^ifkey_/);
     expect(rotated.key.startsWith(rotated.key_prefix)).toBe(true);
     expect(rotated).toMatchObject({ name, role_ids: [viewer] });
-    // Compare the instants, not the strings: the two backends format the stored stamp differently.
-    expect(Math.abs(Date.parse(rotated.expires_at!) - Date.parse(created.expires_at!))).toBeLessThan(1000);
+    expect(Math.abs(rotated.expires_at!.getTime() - created.expires_at!.getTime())).toBeLessThan(1000);
 
     await expect(admin.apiKeys.get(created.id)).rejects.toMatchObject({ status: 404 });
     await expect(as(created.key).orgs.get(tenant.org.id)).rejects.toBeInstanceOf(UnauthenticatedError);

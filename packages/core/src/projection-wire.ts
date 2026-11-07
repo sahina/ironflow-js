@@ -1,3 +1,4 @@
+import { optionalTimestampFromWire, timestampFromWire } from "./timestamp-wire.js";
 import { peelProjectionEnvelope } from "./projection-types.js";
 import type {
   ProjectionStateResult,
@@ -75,7 +76,7 @@ export function projectionStatusFromWire(p: Record<string, unknown>): Projection
     lastEventSeq: Number(p.lastEventSeq ?? 0),
     lag: Number(p.lag ?? 0),
     errorMessage: p.errorMessage ? String(p.errorMessage) : undefined,
-    updatedAt: p.updatedAt ? new Date(String(p.updatedAt ?? "")) : new Date(),
+    updatedAt: timestampFromWire("projectionStatus.updatedAt", p.updatedAt),
   };
 }
 
@@ -83,13 +84,13 @@ export function rebuildJobFromWire(p: Record<string, unknown>): {
   name: string;
   status: string;
   progress: number;
-  startedAt: string;
+  startedAt?: Date;
 } {
   const job = (p.job as Record<string, unknown> | undefined) ?? {};
   return {
     name: String(job.projectionName ?? ""),
     status: String(job.status ?? ""),
     progress: Number(job.progress ?? 0),
-    startedAt: String(job.startedAt ?? ""),
+    startedAt: optionalTimestampFromWire("rebuildJob.startedAt", job.startedAt),
   };
 }

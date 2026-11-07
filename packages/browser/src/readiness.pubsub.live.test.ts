@@ -55,7 +55,7 @@ describe.skipIf(!SEED_PATH)("readiness pubsub — live server", () => {
       for (const e of seen.slice(0, 3)) {
         expect(e.topic).toBe(`topic:${topic}`);
         // The delivery time, which is not the publish time: near now.
-        expect(Math.abs(Date.now() - Date.parse(e.meta!.timestamp))).toBeLessThan(60000);
+        expect(Math.abs(Date.now() - e.meta!.timestamp!.getTime())).toBeLessThan(60000);
       }
       expect(seen.slice(0, 3).map((e) => e.meta?.sequence)).toEqual(published.map((p) => p.sequence));
     }, 30000);

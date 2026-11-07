@@ -14,7 +14,7 @@ import type {
   Subscription,
   SubscriptionCallbacks,
 } from "@ironflow/core";
-import { IronflowError, DEFAULT_TIMEOUTS, restRetryable, connectCodeForStatus } from "@ironflow/core";
+import { IronflowError, DEFAULT_TIMEOUTS, configEntriesFromWire, configResponseFromWire, configWatchEventFromWire, restRetryable, connectCodeForStatus } from "@ironflow/core";
 import { environmentHeader, type IronflowConfig } from "./config.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
@@ -43,15 +43,14 @@ export class BrowserConfigClient {
    * Get a config by name.
    */
   async get(name: string): Promise<ConfigResponse> {
-    return this.restRequest<ConfigResponse>("GET", `/api/v1/config/${enc(name)}`);
+    return configResponseFromWire(await this.restRequest("GET", `/api/v1/config/${enc(name)}`));
   }
 
   /**
    * List all configs.
    */
   async list(): Promise<ConfigEntry[]> {
-    const result = await this.restRequest<{ configs: ConfigEntry[] }>("GET", "/api/v1/config");
-    return result.configs;
+    return configEntriesFromWire(await this.restRequest("GET", "/api/v1/config"));
   }
 
   /**
@@ -63,11 +62,17 @@ export class BrowserConfigClient {
     const pattern = `system.config.${name}.*`;
     return this.subscribeFn(pattern, {
       onEvent: (event) => {
-        const payload = event.data as unknown as ConfigResponse;
-        const watchEvent: ConfigWatchEvent = {
-          type: "config_update",
-          ...payload,
-        };
+        // A throw here has no caller to reach: the transport invokes this callback.
+        let watchEvent: ConfigWatchEvent;
+        try {
+          watchEvent = configWatchEventFromWire({
+            type: "config_update",
+            ...(event.data as unknown as Record<string, unknown>),
+          });
+        } catch (error) {
+          callbacks.onError?.(error as Error);
+          return;
+        }
         callbacks.onUpdate(watchEvent);
       },
       onError: callbacks.onError

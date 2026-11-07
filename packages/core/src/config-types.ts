@@ -21,8 +21,8 @@ export interface ConfigResponse {
   data: Record<string, unknown>;
   /** KV revision number for optimistic concurrency */
   revision: number;
-  /** When the config was last updated */
-  updatedAt: string;
+  /** When the config was last updated, to the second */
+  updatedAt: Date;
 }
 
 /**
@@ -34,8 +34,8 @@ export interface ConfigEntry {
   name: string;
   /** KV revision number */
   revision: number;
-  /** When the config was last updated */
-  updatedAt: string;
+  /** When the config was last updated, to the second */
+  updatedAt: Date;
 }
 
 /**
@@ -66,8 +66,8 @@ export interface ConfigWatchEvent {
   data: Record<string, unknown> | null;
   /** KV revision number after this update */
   revision: number;
-  /** ISO-8601 timestamp of the update, in UTC */
-  updatedAt: string;
+  /** When the update happened */
+  updatedAt: Date;
 }
 
 /**

@@ -197,6 +197,11 @@ describe("peelProjectionEnvelope — golden JSON wire contract", () => {
     );
   });
 
+  it("no updated_at on either level throws drift error instead of reporting the epoch", () => {
+    expect(() => peelProjectionEnvelope({ name: "p" })).toThrow(/missing updated_at/);
+    expect(() => peelProjectionEnvelope({ name: "p", state: { state: {} } })).toThrow(/missing updated_at/);
+  });
+
   it("non-object response throws drift error", () => {
     expect(() => peelProjectionEnvelope(null)).toThrow(IronflowError);
     expect(() => peelProjectionEnvelope("string")).toThrow(IronflowError);

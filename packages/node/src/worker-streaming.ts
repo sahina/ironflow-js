@@ -4,6 +4,7 @@
  * ConnectRPC bidirectional streaming worker for low-latency pull mode.
  */
 
+import { traceProcess, recordExecutionError } from "./internal/tracing.js";
 import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-node";
@@ -659,6 +660,13 @@ class StreamingWorker implements Worker {
     job: JobAssignment,
     signal: AbortSignal
   ): Promise<void> {
+    return traceProcess(job.context, () => this.executeTracedJob(job, signal), signal);
+  }
+
+  private async executeTracedJob(
+    job: JobAssignment,
+    signal: AbortSignal
+  ): Promise<void> {
     // Capture the execution fence from the assignment up front (#1206, ADR 0037).
     // Terminal messages echo it from here, NOT from a late activeJobs lookup — a
     // stream drop clears the map, and a handler that finishes afterward would
@@ -671,6 +679,7 @@ class StreamingWorker implements Worker {
     };
     const fn = this.functionMap.get(job.functionId);
     if (!fn) {
+      recordExecutionError(new Error("Function not found"));
       await this.sendJobFailed(
         job.jobId,
         {
@@ -725,8 +734,9 @@ class StreamingWorker implements Worker {
         event,
         steps: memoSteps(job.completedSteps),
         resume: undefined,
-      }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
+      }, this.config.userLogger, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
     } catch (error) {
+      recordExecutionError(error);
       this.logger.error("Event upcast failed", { jobId: job.jobId, error: String(error) });
       await this.sendJobFailed(
         job.jobId,
@@ -805,6 +815,7 @@ class StreamingWorker implements Worker {
         error = encodeErr;
       }
 
+      recordExecutionError(error);
       const retryable = isRetryable(error);
 
       // Compensate only when the run ends here: a non-retryable error, or a

@@ -113,7 +113,7 @@ describe("SubscriptionManager WebSocket reconnect", () => {
     expect(thirdSocket!.send).not.toHaveBeenCalled();
   });
 
-  it("restores every same-pattern consumer-group subscription", async () => {
+  it.each([undefined, "workers"])("restores same-pattern handles beside a new pending caller, group %s", async (consumerGroup) => {
     const transport = new WebSocketTransport("http://localhost:9123", {
       autoReconnect: true,
       reconnectDelay: 1,
@@ -125,11 +125,13 @@ describe("SubscriptionManager WebSocket reconnect", () => {
     const onEvent2 = vi.fn();
 
     const subPromise1 = manager.subscribe("orders.>", {
-      consumerGroup: "workers",
+      consumerGroup,
+      ackMode: "manual",
       onEvent: onEvent1,
     });
     const subPromise2 = manager.subscribe("orders.>", {
-      consumerGroup: "workers",
+      consumerGroup,
+      ackMode: "manual",
       onEvent: onEvent2,
     });
     const firstSocket = MockWebSocket.instances[0]!;
@@ -147,15 +149,19 @@ describe("SubscriptionManager WebSocket reconnect", () => {
     firstSocket.close(1006);
     await vi.advanceTimersByTimeAsync(1);
     const secondSocket = MockWebSocket.instances[1]!;
+    const pendingThird = manager.subscribe("orders.>", { consumerGroup, replay: 9 });
     secondSocket.open();
-    await vi.waitFor(() => expect(secondSocket.send).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(secondSocket.send).toHaveBeenCalledTimes(3));
     secondSocket.message({
       type: "subscription_result",
       results: [
         { pattern: "orders.>", status: "ok", subscriptionId: "sub-3" },
         { pattern: "orders.>", status: "ok", subscriptionId: "sub-4" },
+        { pattern: "orders.>", status: "ok", subscriptionId: "sub-5" },
       ],
     });
+    const third = await pendingThird;
+    expect(third.id).toBe("sub-5");
     secondSocket.message({
       type: "event",
       subscriptionId: "sub-3",
@@ -174,6 +180,11 @@ describe("SubscriptionManager WebSocket reconnect", () => {
     expect(sub1.id).toBe("sub-3");
     expect(sub2.id).toBe("sub-4");
 
+    if (!("ack" in sub1) || !("ack" in sub2)) throw new Error("expected ackable handles");
+    await sub1.ack("event-1");
+    await sub2.ack("event-2");
+    expect(secondSocket.send.mock.calls.slice(-2).map(([raw]) => JSON.parse(raw).subscriptionId)).toEqual(["sub-3", "sub-4"]);
+
     sub1.unsubscribe();
     sub2.unsubscribe();
     expect(
@@ -184,6 +195,8 @@ describe("SubscriptionManager WebSocket reconnect", () => {
       { type: "unsubscribe", subscriptionId: "sub-3" },
       { type: "unsubscribe", subscriptionId: "sub-4" },
     ]);
+    third.unsubscribe();
+    manager.disconnect();
   });
 
   it("unsubscribes a replacement acknowledged after the handle was canceled", async () => {

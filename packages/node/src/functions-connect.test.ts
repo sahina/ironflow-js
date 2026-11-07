@@ -26,6 +26,7 @@ it("retains function list fields and typed errors through a generated handler", 
             cancelOn: [{ event: "order.cancelled", match: "id" }],
             metadata: { camelKey: true },
             createdAt: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
+            updatedAt: timestampFromDate(new Date("2026-09-06T12:00:00Z")),
           },
         ],
       };
@@ -61,7 +62,7 @@ it("retains function list fields and typed errors through a generated handler", 
       debounce: { period_ms: 1000, max_wait_ms: 5000, key: "id" },
       cancel_on: [{ event: "order.cancelled", match: "id" }],
       metadata: { camelKey: true },
-      created_at: "2026-09-06T12:00:00Z",
+      created_at: new Date("2026-09-06T12:00:00Z"),
     },
   ]);
   denied = true;

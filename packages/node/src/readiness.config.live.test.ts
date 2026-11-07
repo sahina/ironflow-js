@@ -22,13 +22,14 @@ describe.skipIf(!SEED_PATH)("readiness config — live server", () => {
     try {
       const got = await config.get(name);
       expect(got).toMatchObject({ name, data, revision: set.revision });
-      expect(got.updatedAt).toBeTruthy();
+      expect(got.updatedAt).toBeInstanceOf(Date);
+      expect(got.updatedAt.getUTCFullYear()).toBeGreaterThan(2000);
 
       // List gives the name, revision and time, not the data.
       const find = async () => (await config.list()).find((e) => e.name === name);
       const entry = await find();
       expect(entry).toMatchObject({ name, revision: set.revision });
-      expect(entry?.updatedAt).toBeTruthy();
+      expect(entry?.updatedAt).toBeInstanceOf(Date);
       expect(entry).not.toHaveProperty("data");
 
       const patched = await config.patch(name, { b: true });

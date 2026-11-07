@@ -2,15 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createProjectionRunner, startProjectionRunners, stopProjectionRunners, type ProjectionRunner, type ProjectionRunnerConfig } from "./projection-runner.js";
 import { UnauthenticatedError, UnauthorizedError, type IronflowProjection, type Logger } from "@ironflow/core";
 import { assertDefined } from "./internal/assert-defined.js";
+import { withPositionEcho } from "../tests/projection-position-fake.js";
 
 // Mock fetch globally. The lease RPCs grant the lease and never fence it (ADR 0120);
 // projection-runner-lease.test.ts covers the lease.
 const mockFetch = vi.fn();
 const LEASE = { granted: true, lease: { token: "sdk:1", epoch: "1" }, ttl: "30s" };
-vi.stubGlobal("fetch", (url: string, opts: RequestInit) =>
+vi.stubGlobal("fetch", withPositionEcho((url: string, opts: RequestInit) =>
   String(url).endsWith("ProjectionLease")
     ? Promise.resolve(Response.json(LEASE))
-    : mockFetch(url, opts));
+    : mockFetch(url, opts)));
 
 function createMockLogger(): Logger {
   return {
@@ -113,6 +114,17 @@ describe("ProjectionRunner", () => {
       const runner = createProjectionRunner(createRunnerConfig());
 
       await expect(runner.register()).rejects.toThrow("Failed to register projection: 500");
+    });
+
+    it("names the server's reason when a rebuild refuses the registration", async () => {
+      const body = { code: "failed_precondition", message: "run `ironflow projection rebuild cancel orders`" };
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 400 }));
+
+      const runner = createProjectionRunner(createRunnerConfig());
+
+      await expect(runner.register()).rejects.toThrow(
+        "Failed to register projection: 400: failed_precondition: run `ironflow projection rebuild cancel orders`"
+      );
     });
 
     it("includes custom headers", async () => {
@@ -1829,14 +1841,14 @@ describe("ProjectionRunner", () => {
         await expect(runner.startStreaming()).rejects.toThrow(UnauthenticatedError);
       });
 
-      it("backs off and escalates to logger.error on failed_precondition instead of reconnecting every 1s", async () => {
+      it("backs off and escalates to logger.error on internal instead of reconnecting every 1s", async () => {
         vi.useFakeTimers();
         try {
           const attemptedAt: number[] = [];
           mockFetch.mockImplementation(async (url: string) => {
             if (String(url).includes("StreamProjectionEvents")) {
               attemptedAt.push(Date.now());
-              return { ok: true, status: 200, body: makeStream(errorTrailer("failed_precondition")) };
+              return { ok: true, status: 200, body: makeStream(errorTrailer("internal")) };
             }
             return { ok: true, status: 200, json: () => Promise.resolve({}) };
           });
@@ -1851,7 +1863,7 @@ describe("ProjectionRunner", () => {
 
           const gaps = attemptedAt.slice(1).map((at, i) => at - assertDefined(attemptedAt[i]));
           expect(gaps.slice(0, 4)).toEqual([2000, 4000, 8000, 16000]);
-          expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("failed_precondition message"));
+          expect(logger.error).toHaveBeenCalledWith(expect.stringContaining("internal message"));
         } finally {
           vi.useRealTimers();
         }

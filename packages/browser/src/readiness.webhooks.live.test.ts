@@ -59,7 +59,17 @@ describe.skipIf(!SEED_PATH)("readiness webhooks — live server", () => {
         verifySecretSet: true,
       });
       expect(updated.metadata).toEqual({ team: "billing" });
-      expect(updated.updatedAt).not.toBe(got.updatedAt);
+      expect(updated.updatedAtExact).not.toBe(got.updatedAtExact);
+      // The guard compares for equality, so only the exact string passes it.
+      await expect(
+        client.webhooks.updateSource({ id: created.id, name: "stale", expectedUpdatedAt: got.updatedAtExact }),
+      ).rejects.toMatchObject({ code: "aborted" });
+      const guarded = await client.webhooks.updateSource({
+        id: created.id,
+        name: `${name}-renamed`,
+        expectedUpdatedAt: updated.updatedAtExact,
+      });
+      expect(guarded.updatedAt).toBeInstanceOf(Date);
       expect((await client.webhooks.getSource(created.id)).name).toBe(`${name}-renamed`);
     } finally {
       await client.webhooks.deleteSource(created.id);

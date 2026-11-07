@@ -5,6 +5,7 @@ import {
   createProjectionRunner, runnerTimings, startProjectionRunners, StreamingUnsupportedError, type ProjectionRunner,
 } from "./projection-runner.js";
 import { ServerTooOldError } from "./index.js"; // the package root: the class a user of @ironflow/node imports
+import { withPositionEcho } from "../tests/projection-position-fake.js";
 
 const TRANSPORTS = ["poll", "stream"] as const;
 type Transport = (typeof TRANSPORTS)[number];
@@ -239,7 +240,7 @@ describe("projection runner lease (ADR 0120)", () => {
 
   function serve(fake: LeaseFake): LeaseFake {
     svc = fake;
-    vi.stubGlobal("fetch", fake.fetch);
+    vi.stubGlobal("fetch", withPositionEcho(fake.fetch));
     return fake;
   }
 

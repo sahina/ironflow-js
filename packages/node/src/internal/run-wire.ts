@@ -11,10 +11,18 @@
  * does omit it.
  */
 
-import { runStatusFromWire, type RunStatus } from "@ironflow/core";
+import {
+  optionalTimestampFromWire,
+  runStatusFromWire,
+  timestampFromWire,
+  type CancellationEvent,
+  type Run,
+} from "@ironflow/core";
 
 /** The wire shape: what protojson actually sends. */
 export interface RunWireResponse {
+  cancellationCause?: string;
+  cancellationEvent?: CancellationEvent;
   id?: string;
   functionId?: string;
   eventId?: string;
@@ -30,26 +38,16 @@ export interface RunWireResponse {
   updatedAt?: string;
 }
 
-/** The decoded shape, matching the public `Run` interface in client.ts. */
-export interface DecodedRun {
-  id: string;
-  functionId: string;
-  eventId: string;
-  status: RunStatus;
-  attempt: number;
-  maxAttempts: number;
-  input?: unknown;
-  output?: unknown;
-  error?: { message: string; code: string };
-  startedAt?: string;
-  endedAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export function mapRunResponse(response: RunWireResponse): DecodedRun {
+export function mapRunResponse(response: RunWireResponse): Run {
   return {
     id: response.id ?? "",
+    cancellationCause: response.cancellationCause,
+    cancellationEvent: response.cancellationEvent
+      ? {
+          ...response.cancellationEvent,
+          matchValue: response.cancellationEvent.matchValue ?? "",
+        }
+      : undefined,
     functionId: response.functionId ?? "",
     eventId: response.eventId ?? "",
     // Throws on an unknown or absent status rather than presenting the caller
@@ -65,9 +63,9 @@ export function mapRunResponse(response: RunWireResponse): DecodedRun {
           code: response.error.code ?? "",
         }
       : undefined,
-    startedAt: response.startedAt,
-    endedAt: response.endedAt,
-    createdAt: response.createdAt ?? "",
-    updatedAt: response.updatedAt ?? "",
+    startedAt: optionalTimestampFromWire("run.startedAt", response.startedAt),
+    endedAt: optionalTimestampFromWire("run.endedAt", response.endedAt),
+    createdAt: timestampFromWire("run.createdAt", response.createdAt),
+    updatedAt: timestampFromWire("run.updatedAt", response.updatedAt),
   };
 }

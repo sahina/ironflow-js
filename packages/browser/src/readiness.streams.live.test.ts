@@ -46,7 +46,7 @@ describe.skipIf(!SEED_PATH)("readiness streams — live server", () => {
       ["readiness.step.1", 1, data(1)],
       ["readiness.step.2", 2, data(2)],
     ]);
-    expect(all.events[0]).toMatchObject({ id: expect.any(String), timestamp: expect.stringMatching(/^\d{4}-/) });
+    expect(all.events[0]).toMatchObject({ id: expect.any(String), timestamp: expect.any(Date) });
     const last = await streams.read(id, { direction: "backward", limit: 1 });
     expect(last.events.map((e) => e.entityVersion)).toEqual([2]);
     const from = await streams.read(id, { fromVersion: 2 });
@@ -59,8 +59,8 @@ describe.skipIf(!SEED_PATH)("readiness streams — live server", () => {
       entityType,
       version: 2,
       eventCount: 2,
-      createdAt: expect.stringMatching(/^\d{4}-/),
-      updatedAt: expect.stringMatching(/^\d{4}-/),
+      createdAt: expect.any(Date),
+      updatedAt: expect.any(Date),
     });
     // A stream with no events reads as null, so a caller can pass expectedVersion 0.
     expect(await streams.getInfo(`${id}-unknown`)).toBeNull();
@@ -68,7 +68,7 @@ describe.skipIf(!SEED_PATH)("readiness streams — live server", () => {
 
   it("stream-list", async () => {
     const listed = (await streams.listStreams()).find((s) => s.entityId === id);
-    expect(listed).toMatchObject({ entityType, version: 2, eventCount: 2, lastEventAt: expect.stringMatching(/^\d{4}-/) });
+    expect(listed).toMatchObject({ entityType, version: 2, eventCount: 2, lastEventAt: expect.any(Date) });
   });
 
   it("stream-history", async () => {
@@ -77,11 +77,11 @@ describe.skipIf(!SEED_PATH)("readiness streams — live server", () => {
       ["readiness.step.1", 1, data(1)],
       ["readiness.step.2", 2, data(2)],
     ]);
-    expect(history[0]!.timestamp).toMatch(/^\d{4}-/);
+    expect(history[0]!.timestamp).toBeInstanceOf(Date);
     expect((await streams.getEntityHistory(id, { limit: 1 })).map((e) => e.version)).toEqual([1]);
     // `from` and `to` are inclusive and a string is sent unchanged, so each event's own time selects it.
-    expect((await streams.getEntityHistory(id, { to: history[0]!.timestamp })).map((e) => e.version)).toEqual([1]);
-    expect((await streams.getEntityHistory(id, { from: history[1]!.timestamp })).map((e) => e.version)).toEqual([2]);
+    expect((await streams.getEntityHistory(id, { to: history[0]!.timestampExact })).map((e) => e.version)).toEqual([1]);
+    expect((await streams.getEntityHistory(id, { from: history[1]!.timestampExact })).map((e) => e.version)).toEqual([2]);
   });
 
   it("snapshot-create and snapshot-get", async () => {
@@ -96,7 +96,7 @@ describe.skipIf(!SEED_PATH)("readiness streams — live server", () => {
       entityType,
       entityVersion: 2,
       state: state(2),
-      createdAt: expect.stringMatching(/^\d{4}-/),
+      createdAt: expect.any(Date),
     });
     // The latest snapshot at or before the version asked for.
     expect(await streams.getSnapshot(id, { beforeVersion: 1 })).toMatchObject({ entityVersion: 1, state: state(1) });

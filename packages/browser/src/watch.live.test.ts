@@ -118,12 +118,13 @@ describe.skipIf(!SERVER)("watch — live server", () => {
       const patch = (await configWrite("PATCH", name, { b: true }))!;
       const got = await q.next("patch");
       expect(got).toMatchObject({ data: { a: 2, s: "é", b: true }, revision: patch.revision });
-      expect(got.updatedAt).toMatch(/Z$/);
+      expect(got.updatedAt).toBeInstanceOf(Date);
       expect(await client.configManager().get(name)).toMatchObject({ data: { a: 2, s: "é", b: true }, revision: patch.revision });
       await configWrite("DELETE", name);
       const del = await q.next("delete");
       expect(del).toMatchObject({ type: "config_update", name, data: null });
       expect(del.revision).toBeGreaterThan(patch.revision);
+      expect(del.updatedAt.getUTCFullYear()).toBeGreaterThan(2000);
     } finally {
       sub.unsubscribe();
     }

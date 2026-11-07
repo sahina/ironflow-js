@@ -1,20 +1,21 @@
 ---
 name: ironflow-ops
-version: 0.54.0
+version: 0.55.0
 description: |
   Operate Ironflow — debug failed/stuck runs, migrate SDK versions with upcasters,
-  deploy/scale/troubleshoot clusters, package an app with the engine into one container.
+  run/scale/troubleshoot a self-hosted Docker Compose stack, package an app with the engine
+  into one container.
   Triggers on: "package my app", "containerize", "ship my app", "run failed", "stuck workflow",
   "debug ironflow", "wrong output", "missing event", "projection drift",
   "upgrade ironflow", "update SDK", "migrate to", "event versioning",
   "deploy ironflow", "deploy my app to fly", "deploy my app to railway",
-  "deploy my app to my vps", "scale cluster", "add tenant", "provision", "k3d", "hetzner",
-  "helm", "kubectl", "monitor", "backup", "restore".
+  "docker compose", "self-host", "scale cluster", "add tenant", "provision",
+  "monitor", "backup", "restore".
   NOT for writing application code (use ironflow-code).
   NOT for setup in a fresh project (use ironflow-start).
   NOT for SDK reference lookup (use ironflow-docs).
 user-invocable: true
-argument-hint: "[issue or operation] — e.g., 'run failed at payment step', 'scale to 5 replicas'"
+argument-hint: "[issue or operation] — e.g., 'run failed at payment step', 'move my stack to Cluster'"
 allowed-tools: Read, Glob, Grep, Bash, WebFetch
 ---
 
@@ -42,9 +43,9 @@ https://docs.ironflow.run/explanation/ai-pitfalls.md   # for diagnosing root cau
 ```
 debug.md           # diagnose failed/stuck/wrong runs
 migrate.md         # upgrade SDK + write upcasters
-platform.md        # deploy/scale/operate clusters
+platform.md        # run/scale/operate a self-hosted Docker Compose stack
 deploy.md          # package the user's app + engine into one container
-deploy-target.md   # deploy the packaged app to a VPS, Fly or Railway
+deploy-target.md   # deploy the packaged app to Fly or Railway
 ```
 
 ## Sub-Topic Routing
@@ -55,13 +56,13 @@ Match the user's request to one of five sub-topics, then read the corresponding 
 |---|---|
 | "run failed", "stuck", "wrong output", "missing event", "projection drift", "worker not processing", "KV broken", "entity stream weird" | `debug.md` |
 | "upgrade ironflow", "update SDK", "what changed", "migrate to v...", "upcaster", "event schema versioning" | `migrate.md` |
-| "deploy my app to Fly", "put my app on Railway", "deploy my app to my VPS", "ship the packaged app", "go live" (after packaging) | `deploy-target.md` |
+| "deploy my app to Fly", "put my app on Railway", "ship the packaged app", "go live" (after packaging) | `deploy-target.md` |
 | "package my app", "containerize my app", "ship my app", "deploy my app", "one container", "Dockerfile for my app" | `deploy.md` |
-| "deploy", "provision", "scale", "cluster", "tenant", "monitor", "backup", "restore", "docker compose", "self-host", "k3d", "hetzner", "helm", "kubectl" | `platform.md` |
+| "deploy", "provision", "scale", "cluster", "tenant", "monitor", "backup", "restore", "docker compose", "self-host", "vps", "kubernetes" | `platform.md` |
 
 Don't load all five. Load what's relevant. "Deploy" is two things: the user's **app**
 (with the engine in one container) is `deploy.md`; the **engine** as its own service
-(Compose, VPS, Kubernetes) is `platform.md`. After the app is packaged, putting it on a host is `deploy-target.md`. If you cannot tell, ask once.
+(the Docker Compose files, on any host) is `platform.md`. After the app is packaged, putting it on Fly or Railway is `deploy-target.md`. If you cannot tell, ask once.
 
 ## Packaging startup and verification
 

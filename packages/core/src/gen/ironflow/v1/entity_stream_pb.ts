@@ -131,6 +131,8 @@ export type ReadStreamRequest = Message<"ironflow.v1.ReadStreamRequest"> & {
   fromVersion: bigint;
 
   /**
+   * 0 or unset returns every event
+   *
    * @generated from field: int32 limit = 3;
    */
   limit: number;

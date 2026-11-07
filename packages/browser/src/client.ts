@@ -3,9 +3,17 @@ import {
   projectionStatusFromWire,
 } from "@ironflow/core";
 import { stepInspectionFromWire, tenantFromWire } from "@ironflow/core";
+import {
+  apiKeyFromWire,
+  apiKeyWithSecretFromWire,
+  organizationFromWire,
+  policySetFromWire,
+  policySetVersionsFromWire,
+  roleFromWire,
+} from "@ironflow/core";
 import { notReadyError, type ServerReadiness } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
-import { schemaFromWire, type SchemaWire } from "@ironflow/core";
+import { auditEventFromWire, schemaFromWire, type SchemaWire } from "@ironflow/core";
 import {
   definitionHistoryPageFromWire,
   definitionHistoryEntryFromWire,
@@ -104,7 +112,6 @@ import type {
   DisableWebhookSignatureVerificationInput,
   WebhookDelivery,
   ListWebhookDeliveriesOptions,
-  AuditEvent,
   AuditTrailResult,
   GetAuditTrailOptions,
   ListAuditEventsOptions,
@@ -154,7 +161,10 @@ import {
   registeredFunctionFromWire,
   functionHistoryEntryFromWire,
   storedEventFromWire,
+  optionalTimestampFromWire,
   runStepFromWire,
+  timestampFilterToWire,
+  timestampFromWire,
   consumerGroupFromWire,
 } from "@ironflow/core";
 import type {
@@ -203,19 +213,6 @@ function encodeProtoBytes(value: unknown): string {
   let binary = "";
   for (const byte of new TextEncoder().encode(JSON.stringify(value))) binary += String.fromCharCode(byte);
   return btoa(binary);
-}
-
-function auditEventFromWire(raw: Record<string, unknown>): AuditEvent {
-  return {
-    id: String(raw.id ?? ""),
-    runId: String(raw.run_id ?? raw.runId ?? ""),
-    functionId: String(raw.function_id ?? raw.functionId ?? ""),
-    stepId: (raw.step_id ?? raw.stepId) as string | undefined,
-    eventType: String(raw.event_type ?? raw.eventType ?? ""),
-    payload: (raw.payload as Record<string, unknown>) ?? {},
-    metadata: raw.metadata as Record<string, string> | undefined,
-    createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
-  };
 }
 
 /**
@@ -795,7 +792,7 @@ class IronflowClient {
       name: string;
       output: unknown;
       injected: boolean;
-      completedAt: string;
+      completedAt?: Date;
       stepType: string;
       status: string;
       error: unknown;
@@ -856,7 +853,7 @@ class IronflowClient {
           name: s.name,
           output: protoBytesJSON(s.output),
           injected: s.injected ?? false,
-          completedAt: s.completedAt ?? "",
+          completedAt: optionalTimestampFromWire("pausedStep.completedAt", s.completedAt),
           stepType: s.stepType ?? "",
           status: s.status ?? "",
           error: protoBytesJSON(s.error),
@@ -1012,14 +1009,14 @@ class IronflowClient {
           output: protoBytesJSON(step.output),
           error: protoBytesJSON(step.error),
           originalOutput: protoBytesJSON(step.originalOutput),
-          startedAt: step.startedAt ? new Date(step.startedAt) : null,
-          completedAt: step.completedAt ? new Date(step.completedAt) : null,
+          startedAt: optionalTimestampFromWire("step.startedAt", step.startedAt) ?? null,
+          completedAt: optionalTimestampFromWire("step.completedAt", step.completedAt) ?? null,
           durationMs: step.durationMs ?? null,
           injected: step.injected,
           patched: step.patched,
         })),
-        timestamp: new Date(s.timestamp),
-        createdAt: s.createdAt ? new Date(s.createdAt) : null,
+        timestamp: timestampFromWire("snapshot.timestamp", s.timestamp),
+        createdAt: optionalTimestampFromWire("snapshot.createdAt", s.createdAt) ?? null,
       };
     } finally {
       clearTimeout(timeoutId);
@@ -1080,7 +1077,7 @@ class IronflowClient {
         stepName: e.stepName || "",
         summary: e.summary,
         significant: e.significant,
-        timestamp: new Date(e.timestamp),
+        timestamp: timestampFromWire("timeline.timestamp", e.timestamp),
       }));
     } finally {
       clearTimeout(timeoutId);
@@ -1292,7 +1289,7 @@ class IronflowClient {
    */
   async health(): Promise<{
     status: string;
-    timestamp: string;
+    timestamp: Date;
     version: string;
   }> {
     this.ensureConfigured();
@@ -1315,15 +1312,16 @@ class IronflowClient {
         );
       }
 
-      return response.json();
+      const body = (await response.json()) as { status: string; timestamp?: string; version: string };
+      return { ...body, timestamp: timestampFromWire("health.timestamp", body.timestamp) };
     } finally {
       clearTimeout(timeoutId);
     }
   }
 
   /**
-   * Readiness probe, GET /ready: the server's database and NATS answer.
-   * `health()` reports liveness only. A server that is not ready makes the
+   * Readiness probe, GET /ready: the server's database and NATS answer and its
+   * JetStream streams have leaders. `health()` reports liveness only. A server that is not ready makes the
    * call throw an IronflowError with code `NOT_READY`, `status` 503 and the
    * failing dependencies in `details.issues`. It makes one attempt.
    */
@@ -1495,8 +1493,8 @@ class IronflowClient {
     if (options.names?.length) query.set("names", options.names.join(","));
     if (options.sources?.length) query.set("source", options.sources.join(","));
     if (options.search) query.set("search", options.search);
-    if (options.since) query.set("since", options.since);
-    if (options.until) query.set("until", options.until);
+    if (options.since) query.set("since", timestampFilterToWire(options.since));
+    if (options.until) query.set("until", timestampFilterToWire(options.until));
     if (options.limit !== undefined) query.set("limit", String(options.limit));
     if (options.cursor) query.set("cursor", options.cursor);
     if (options.before) query.set("before", options.before);
@@ -1542,8 +1540,8 @@ class IronflowClient {
     this.ensureConfigured();
     const query = new URLSearchParams();
     if (options.sources?.length) query.set("source", options.sources.join(","));
-    if (options.since) query.set("since", options.since);
-    if (options.until) query.set("until", options.until);
+    if (options.since) query.set("since", timestampFilterToWire(options.since));
+    if (options.until) query.set("until", timestampFilterToWire(options.until));
     const suffix = query.size ? `?${query}` : "";
     const response = await this.restRequest<{
       names?: Array<{ name: string; count: number }>;
@@ -1846,7 +1844,7 @@ class IronflowClient {
           data: e.data ?? {},
           entityVersion: Number(e.entityVersion ?? 0),
           version: e.version,
-          timestamp: e.timestamp,
+          timestamp: timestampFromWire("streamEvent.timestamp", e.timestamp),
           source: e.source,
           emittedBy: e.emittedBy || undefined,
           metadata: e.metadata,
@@ -1888,8 +1886,8 @@ class IronflowClient {
           entityType: response.entityType ?? "",
           version: Number(response.version ?? 0),
           eventCount: Number(response.eventCount ?? 0),
-          createdAt: response.createdAt ?? "",
-          updatedAt: response.updatedAt ?? "",
+          createdAt: timestampFromWire("stream.createdAt", response.createdAt),
+          updatedAt: timestampFromWire("stream.updatedAt", response.updatedAt),
         };
       } catch (err) {
         if (err instanceof IronflowError && err.message === "stream not found") {
@@ -1949,7 +1947,7 @@ class IronflowClient {
         entityType: response.entityType ?? "",
         entityVersion: Number(response.entityVersion ?? 0),
         state: response.state ?? {},
-        createdAt: response.createdAt ?? "",
+        createdAt: timestampFromWire("snapshot.createdAt", response.createdAt),
       };
     },
 
@@ -1964,7 +1962,7 @@ class IronflowClient {
         entityType: String(stream.entityType ?? ""),
         version: Number(stream.version ?? 0),
         eventCount: Number(stream.eventCount ?? 0),
-        lastEventAt: String(stream.updatedAt ?? ""),
+        lastEventAt: timestampFromWire("stream.updatedAt", stream.updatedAt),
       }));
     },
 
@@ -2019,13 +2017,21 @@ class IronflowClient {
       const sub = await this.subscribe<StreamEvent>(pattern, {
         onEvent: (event) => {
           const data = event.data as unknown as Record<string, unknown>;
+          let timestamp: Date;
+          try {
+            timestamp = timestampFromWire("streamEvent.timestamp", data.timestamp);
+          } catch (err) {
+            // Delivered from a socket callback, where a throw has no caller to reach.
+            options.onError?.(err as Error);
+            return;
+          }
           const streamEvent: StreamEvent = {
             id: (data.id as string) ?? "",
             name: (data.name as string) ?? "",
             data: (data.data as Record<string, unknown>) ?? {},
             entityVersion: (data.entityVersion as number) ?? 0,
             version: (data.version as number) ?? 0,
-            timestamp: (data.timestamp as string) ?? "",
+            timestamp,
             source: data.source as string | undefined,
             metadata: data.metadata as Record<string, unknown> | undefined,
           };
@@ -2433,7 +2439,7 @@ class IronflowClient {
      */
     create: async (input: CreateAPIKeyInput): Promise<APIKeyWithSecret> => {
       this.ensureConfigured();
-      return this.restRequest<APIKeyWithSecret>("POST", "/api/v1/apikeys", input);
+      return apiKeyWithSecretFromWire(await this.restRequest<WireRow>("POST", "/api/v1/apikeys", input));
     },
 
     /**
@@ -2441,7 +2447,8 @@ class IronflowClient {
      */
     list: async (): Promise<APIKey[]> => {
       this.ensureConfigured();
-      return this.restRequest<APIKey[]>("GET", "/api/v1/apikeys");
+      const rows = await this.restRequest<WireRows>("GET", "/api/v1/apikeys");
+      return (rows ?? []).map(apiKeyFromWire);
     },
 
     /**
@@ -2449,7 +2456,7 @@ class IronflowClient {
      */
     get: async (id: string): Promise<APIKey> => {
       this.ensureConfigured();
-      return this.restRequest<APIKey>("GET", `/api/v1/apikeys/${encodeURIComponent(id)}`);
+      return apiKeyFromWire(await this.restRequest<WireRow>("GET", `/api/v1/apikeys/${encodeURIComponent(id)}`));
     },
 
     /**
@@ -2465,10 +2472,10 @@ class IronflowClient {
      */
     rotate: async (id: string): Promise<APIKeyWithSecret> => {
       this.ensureConfigured();
-      return this.restRequest<APIKeyWithSecret>(
+      return apiKeyWithSecretFromWire(await this.restRequest<WireRow>(
         "POST",
         `/api/v1/apikeys/${encodeURIComponent(id)}/rotate`
-      );
+      ));
     },
   };
 
@@ -2495,7 +2502,7 @@ class IronflowClient {
       this.ensureConfigured();
       // POST /api/v1/orgs always answers 403: tenants cannot create orgs, and a
       // platform credential on a tenant route needs an X-Ironflow-Org header (#2945).
-      return this.restRequest<Organization>("POST", "/api/v1/platform/orgs", input);
+      return organizationFromWire(await this.restRequest<WireRow>("POST", "/api/v1/platform/orgs", input));
     },
 
     /**
@@ -2503,7 +2510,8 @@ class IronflowClient {
      */
     list: async (): Promise<Organization[]> => {
       this.ensureConfigured();
-      return this.restRequest<Organization[]>("GET", "/api/v1/orgs");
+      const rows = await this.restRequest<WireRows>("GET", "/api/v1/orgs");
+      return (rows ?? []).map(organizationFromWire);
     },
 
     /**
@@ -2511,7 +2519,7 @@ class IronflowClient {
      */
     get: async (id: string): Promise<Organization> => {
       this.ensureConfigured();
-      return this.restRequest<Organization>("GET", `/api/v1/orgs/${encodeURIComponent(id)}`);
+      return organizationFromWire(await this.restRequest<WireRow>("GET", `/api/v1/orgs/${encodeURIComponent(id)}`));
     },
 
     /**
@@ -2519,11 +2527,11 @@ class IronflowClient {
      */
     update: async (id: string, input: UpdateOrgInput): Promise<Organization> => {
       this.ensureConfigured();
-      return this.restRequest<Organization>(
+      return organizationFromWire(await this.restRequest<WireRow>(
         "PATCH",
         `/api/v1/orgs/${encodeURIComponent(id)}`,
         input
-      );
+      ));
     },
 
     /**
@@ -2553,7 +2561,7 @@ class IronflowClient {
      */
     create: async (input: CreateRoleInput): Promise<Role> => {
       this.ensureConfigured();
-      return this.restRequest<Role>("POST", "/api/v1/roles", input);
+      return roleFromWire(await this.restRequest<WireRow>("POST", "/api/v1/roles", input));
     },
 
     /**
@@ -2562,7 +2570,8 @@ class IronflowClient {
     list: async (orgId?: string): Promise<Role[]> => {
       this.ensureConfigured();
       const query = orgId ? `?org_id=${encodeURIComponent(orgId)}` : "";
-      return this.restRequest<Role[]>("GET", `/api/v1/roles${query}`);
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/roles${query}`);
+      return (rows ?? []).map(roleFromWire);
     },
 
     /**
@@ -2570,7 +2579,7 @@ class IronflowClient {
      */
     get: async (id: string): Promise<Role> => {
       this.ensureConfigured();
-      return this.restRequest<Role>("GET", `/api/v1/roles/${encodeURIComponent(id)}`);
+      return roleFromWire(await this.restRequest<WireRow>("GET", `/api/v1/roles/${encodeURIComponent(id)}`));
     },
 
     /**
@@ -2578,11 +2587,11 @@ class IronflowClient {
      */
     update: async (id: string, input: UpdateRoleInput): Promise<Role> => {
       this.ensureConfigured();
-      return this.restRequest<Role>(
+      return roleFromWire(await this.restRequest<WireRow>(
         "PATCH",
         `/api/v1/roles/${encodeURIComponent(id)}`,
         input
-      );
+      ));
     },
 
     /**
@@ -2607,7 +2616,7 @@ class IronflowClient {
     /** The org's Rego policy set (version 0 when there is none). */
     get: async (): Promise<PolicySet> => {
       this.ensureConfigured();
-      return this.restRequest<PolicySet>("GET", "/api/v1/policy-set");
+      return policySetFromWire(await this.restRequest<WireRow>("GET", "/api/v1/policy-set"));
     },
 
     /**
@@ -2618,7 +2627,7 @@ class IronflowClient {
      */
     put: async (input: PolicySetInput, ifVersion: number): Promise<PolicySet> => {
       this.ensureConfigured();
-      return this.restRequest<PolicySet>("PUT", "/api/v1/policy-set", input, { "If-Match": String(ifVersion) });
+      return policySetFromWire(await this.restRequest<WireRow>("PUT", "/api/v1/policy-set", input, { "If-Match": String(ifVersion) }));
     },
 
     /** Compile the set without storing it. Rejects with the per-file errors when it is invalid. */
@@ -2635,13 +2644,13 @@ class IronflowClient {
 
     versions: async (): Promise<PolicySetVersion[]> => {
       this.ensureConfigured();
-      return (await this.restRequest<{ versions: PolicySetVersion[] }>("GET", "/api/v1/policy-set/versions")).versions;
+      return policySetVersionsFromWire(await this.restRequest<{ versions: WireRow[] }>("GET", "/api/v1/policy-set/versions"));
     },
 
     /** One stored version, modules included. */
     version: async (version: number): Promise<PolicySet> => {
       this.ensureConfigured();
-      return this.restRequest<PolicySet>("GET", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}`);
+      return policySetFromWire(await this.restRequest<WireRow>("GET", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}`));
     },
 
     /**
@@ -2651,12 +2660,12 @@ class IronflowClient {
      */
     rollback: async (version: number, ifVersion: number): Promise<PolicySet> => {
       this.ensureConfigured();
-      return this.restRequest<PolicySet>(
+      return policySetFromWire(await this.restRequest<WireRow>(
         "POST",
         `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}/rollback`,
         undefined,
         { "If-Match": String(ifVersion) }
-      );
+      ));
     },
   };
 
@@ -2692,7 +2701,7 @@ class IronflowClient {
     register: async (input: RegisterSchemaInput): Promise<EventSchema> => {
       this.ensureConfigured();
       const status = await this.streamRequest<{ status?: string }>("/ironflow.v1.EventSchemaService/RegisterSchema", { eventName: input.name, version: input.version, schemaJson: JSON.stringify(input.schema) }, undefined, true);
-      return { ...status, event_name: input.name, version: input.version, schema: input.schema, created_at: "" };
+      return { ...status, event_name: input.name, version: input.version, schema: input.schema };
     },
     /** List registered schemas, including their documents. */
     list: async (): Promise<EventSchema[]> => {
@@ -2845,8 +2854,8 @@ class IronflowClient {
     }>("/ironflow.v1.AuditService/GetAuditTrail", {
       run_id: runId,
       event_type: options?.eventType ?? "",
-      from_timestamp: options?.fromTimestamp ?? "",
-      to_timestamp: options?.toTimestamp ?? "",
+      from_timestamp: options?.fromTimestamp ? timestampFilterToWire(options.fromTimestamp) : "",
+      to_timestamp: options?.toTimestamp ? timestampFilterToWire(options.toTimestamp) : "",
       limit: options?.limit ?? 0,
       cursor: options?.cursor ?? "",
     });
@@ -2867,8 +2876,8 @@ class IronflowClient {
     if (options.runId) query.set("run_id", options.runId);
     if (options.functionId) query.set("function_id", options.functionId);
     if (options.eventType) query.set("event_type", options.eventType);
-    if (options.fromTimestamp) query.set("from", options.fromTimestamp);
-    if (options.toTimestamp) query.set("to", options.toTimestamp);
+    if (options.fromTimestamp) query.set("from", timestampFilterToWire(options.fromTimestamp));
+    if (options.toTimestamp) query.set("to", timestampFilterToWire(options.toTimestamp));
     if (options.limit !== undefined) query.set("limit", String(options.limit));
     if (options.cursor) query.set("cursor", options.cursor);
     const suffix = query.size ? `?${query}` : "";
@@ -3543,6 +3552,8 @@ class IronflowClient {
 
     return {
       id: response.id,
+      cancellationCause: response.cancellationCause,
+      cancellationEvent: response.cancellationEvent,
       functionId: response.functionId,
       eventId: response.eventId,
       status,
@@ -3551,10 +3562,10 @@ class IronflowClient {
       input: response.input,
       output: response.output,
       error: response.error,
-      startedAt: response.startedAt ? new Date(response.startedAt) : undefined,
-      endedAt: response.endedAt ? new Date(response.endedAt) : undefined,
-      createdAt: new Date(response.createdAt),
-      updatedAt: new Date(response.updatedAt),
+      startedAt: optionalTimestampFromWire("run.startedAt", response.startedAt),
+      endedAt: optionalTimestampFromWire("run.endedAt", response.endedAt),
+      createdAt: timestampFromWire("run.createdAt", response.createdAt),
+      updatedAt: timestampFromWire("run.updatedAt", response.updatedAt),
     };
   }
 }

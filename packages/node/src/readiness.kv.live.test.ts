@@ -19,13 +19,14 @@ describe.skipIf(!SEED_PATH)("readiness kv — live server", () => {
     const created = await kv.createBucket({ name, description: "readiness", ttlSeconds: 3600, history: 3 });
     try {
       expect(created).toMatchObject({ name, description: "readiness", ttl_seconds: 3600, history: 3, values: 0 });
-      expect(created.created_at).toBeTruthy();
+      expect(created.created_at).toBeInstanceOf(Date);
+      expect(created.created_at.getUTCFullYear()).toBeGreaterThan(2000);
 
       await kv.bucket(name).put("k", { v: 1 });
       const info = await kv.getBucketInfo(name);
       expect(info).toMatchObject({ name, description: "readiness", ttl_seconds: 3600, history: 3, values: 1 });
       expect(info.bytes).toBeGreaterThan(0);
-      expect(info.created_at).toBe(created.created_at);
+      expect(info.created_at.getTime()).toBe(created.created_at.getTime());
 
       expect((await kv.listBuckets()).find((b) => b.name === name)).toMatchObject({ name, values: 1 });
     } finally {
@@ -43,12 +44,15 @@ describe.skipIf(!SEED_PATH)("readiness kv — live server", () => {
       // The non-ASCII value proves the bytes survive the base64 round trip.
       const { revision } = await bucket.put("user.a", { who: "José" });
       expect(revision).toBeGreaterThan(0);
-      expect(await bucket.getJSON("user.a")).toMatchObject({
+      const entry = await bucket.getJSON("user.a");
+      expect(entry).toMatchObject({
         key: "user.a",
         value: { who: "José" },
         revision,
         operation: "put",
       });
+      expect(entry.created_at).toBeInstanceOf(Date);
+      expect(entry.created_at.getUTCFullYear()).toBeGreaterThan(2000);
 
       // Create refuses an existing key; update is a compare-and-swap on the revision.
       await expect(bucket.create("user.a", 1)).rejects.toMatchObject({ status: 412 });

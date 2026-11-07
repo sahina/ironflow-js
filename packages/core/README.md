@@ -200,8 +200,10 @@ interface RetryConfig {
   /** Maximum delay between retries in ms (server default: 300000) */
   maxDelayMs?: number;
   /** What happens when a retryable failure has used every attempt (server default: "pause") */
-  onExhausted?: "pause" | "fail";
+  onExhausted?: OnExhausted;
 }
+
+type OnExhausted = "pause" | "fail";
 ```
 
 Only the fields you set are sent; the server applies its defaults to the rest when each run is created. `"pause"` holds the run, with its completed steps, until it is resumed. `"fail"` ends the run and runs its compensations. A non-retryable error always fails at once.
@@ -369,8 +371,8 @@ interface RegisteredFunction {
   actorKey: string;
   status: FunctionStatus;
   version: number;
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt: Date;
+  updatedAt: Date;
   recording: boolean;
   recordingProfile?: RecordingProfile;
   metadata?: Record<string, unknown>;
@@ -398,7 +400,7 @@ interface FunctionHistoryEntry {
   actorId: string;
   changeReason: string;
   changeType: FunctionChangeType;
-  recordedAt?: string;
+  recordedAt: Date;
 }
 
 interface ListFunctionHistoryOptions {
@@ -529,13 +531,13 @@ interface EmitSyncResult {
 interface StoredEvent {
   id: string;
   name: string;
-  timestamp: string;
+  timestamp: Date;
   data: unknown;
   source: string;
   metadata?: unknown;
   idempotencyKey?: string;
   processed: boolean;
-  createdAt: string;
+  createdAt: Date;
   entityId?: string;
   entityType?: string;
   runId?: string;
@@ -774,6 +776,8 @@ Full run details returned by API queries.
 
 ```typescript
 interface Run {
+  cancellationCause?: string;
+  cancellationEvent?: CancellationEvent;  // The matched rule and event, retained for a cancelled run
   id: string;
   functionId: string;
   eventId: string;
@@ -787,6 +791,13 @@ interface Run {
   endedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
+}
+
+interface CancellationEvent {
+  eventId: string;
+  eventName: string;
+  matchPath: string;
+  matchValue: string;
 }
 ```
 
@@ -849,16 +860,16 @@ interface RunStep {
   inputHash?: string;
   attempt: number;
   durationMs?: number;
-  startedAt?: string;
-  endedAt?: string;
+  startedAt?: Date;
+  endedAt?: Date;
   sleepUntil?: string;
   waitEventName?: string;
   waitTimeout?: string;
   patchedAt?: string;
   patchedBy?: string;
   compensationFor?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface RunStepsResult {
@@ -870,6 +881,45 @@ interface RunStepsResult {
 interface RunStreamsResult {
   entityIds: string[];
 }
+```
+
+### Run frames and createRunVersionFilter
+
+A subscription to `system.run.>` delivers frames for run transitions; one write can publish two (`.failed` and `.updated`). The payload of a `system.run.{runId}.{event}` frame is a `RunEvent`. Step frames (`system.run.{runId}.step.{stepId}.{event}`) have a different shape.
+
+```typescript
+interface RunEvent {
+  id: string;
+  functionId: string;
+  eventId: string;
+  executionMode: string;
+  status: string;
+  attempt: number;
+  maxAttempts: number;
+  version?: number;   // Rises with every write to the run; absent on `deleted` frames, when the committed version is unknown, and on older servers
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string;
+  completedAt?: string;
+  output?: unknown;
+  error?: unknown;
+  timestamp: string;
+}
+
+type RunVersionFilter = (event: SubscriptionEvent) => boolean;
+
+function createRunVersionFilter(options?: { maxRuns?: number }): RunVersionFilter;
+```
+
+Frames for one run can arrive out of order, so a `completed` frame can land before the `running` one. `createRunVersionFilter()` returns a filter that drops older run and step frames and late frames for a deleted run. It passes frames outside `system.run.`, frames with no usable `version`, and frames whose version ties the highest seen. It remembers up to `maxRuns` run and step identities (default 10000), then forgets the least recent. Use one filter per subscription.
+
+```typescript
+const keep = createRunVersionFilter();
+await client.subscribe('system.run.>', {
+  onEvent: (event) => {
+    if (keep(event)) render(event.data as RunEvent);
+  },
+});
 ```
 
 ---
@@ -934,7 +984,7 @@ interface SubscriptionEvent<T = unknown> {
 
 ```typescript
 interface EventMetadata {
-  timestamp: string;       // ISO 8601
+  timestamp?: Date;        // Absent when the server sent none it could read
   sequence?: number;       // Stream sequence number
   sequenceExact?: string;  // Same sequence as a decimal string; survives past Number.MAX_SAFE_INTEGER
 }
@@ -1137,7 +1187,7 @@ interface StreamEvent {
   data: Record<string, unknown>;
   entityVersion: number;
   version: number;          // Schema version
-  timestamp: string;        // ISO 8601
+  timestamp: Date;
   source?: string;
   metadata?: Record<string, unknown>;
 }
@@ -1151,8 +1201,8 @@ interface StreamInfo {
   entityType: string;
   version: number;
   eventCount: number;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 ```
 
@@ -1199,8 +1249,8 @@ interface TopicInfo {
   name: string;
   messageCount: number;
   consumerCount: number;
-  firstMessageAt?: string;
-  lastMessageAt?: string;
+  firstMessageAt?: Date;
+  lastMessageAt?: Date;
 }
 ```
 
@@ -1246,7 +1296,7 @@ interface KVBucketInfo {
   values: number;
   bytes: number;
   history: number;
-  created_at: string;
+  created_at: Date;
 }
 ```
 
@@ -1257,7 +1307,7 @@ interface KVEntry {
   key: string;
   value: unknown;        // stored bytes as base64 from get(), or parsed JSON from getJSON()
   revision: number;
-  created_at: string;
+  created_at: Date;
   operation: string;     // "put" or "delete"
 }
 ```
@@ -1341,7 +1391,7 @@ interface ConfigResponse {
   name: string;
   data: Record<string, unknown>;
   revision: number;
-  updatedAt: string;
+  updatedAt: Date;
 }
 ```
 
@@ -1353,7 +1403,7 @@ Summary (without full data), used in list responses.
 interface ConfigEntry {
   name: string;
   revision: number;
-  updatedAt: string;
+  updatedAt: Date;
 }
 ```
 
@@ -1384,7 +1434,7 @@ interface ConfigWatchEvent {
   name: string;
   data: Record<string, unknown> | null; // null after the config is deleted
   revision: number;
-  updatedAt: string; // ISO-8601
+  updatedAt: Date;
 }
 
 interface ConfigWatcher {
@@ -1408,9 +1458,9 @@ interface APIKey {
   role_ids?: string[];
   environment_id?: string;  // the environment the key is bound to
   tool_scopes?: string[];   // the agent tools the key may call
-  created_at: string;
-  expires_at?: string;
-  last_used_at?: string;
+  created_at: Date;
+  expires_at?: Date;
+  last_used_at?: Date;
 }
 
 interface APIKeyWithSecret extends APIKey {
@@ -1434,8 +1484,8 @@ interface CreateAPIKeyInput {
 interface Organization {
   id: string;
   name: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface CreateOrgInput {
@@ -1455,7 +1505,7 @@ interface Role {
   org_id: string;
   name: string;
   is_default: boolean;
-  created_at: string;
+  created_at: Date;
 }
 
 interface CreateRoleInput {
@@ -1479,7 +1529,7 @@ interface PolicySet {
   modules: Record<string, string>;
   decision?: string;
   mode: PolicySetMode | "";
-  updated_at?: string;
+  updated_at?: Date;
   updated_by?: string;
   /** False when the server stores the set but does not enforce it. */
   enforcement_active?: boolean;
@@ -1496,7 +1546,7 @@ interface PolicySetVersion {
   version: number;
   mode: PolicySetMode;
   decision?: string;
-  created_at: string;
+  created_at: Date;
   created_by?: string;
 }
 
@@ -1538,13 +1588,13 @@ interface AuditEvent {
   eventType: string;
   payload: Record<string, unknown>;
   metadata?: Record<string, string>;
-  createdAt: string;
+  createdAt: Date;
 }
 
 interface GetAuditTrailOptions {
   eventType?: string;
-  fromTimestamp?: string;
-  toTimestamp?: string;
+  fromTimestamp?: Date | string;
+  toTimestamp?: Date | string;
   limit?: number;
   cursor?: string;
 }
@@ -1799,7 +1849,7 @@ interface RebuildJob {
   name: string;
   status: string;
   progress: number;
-  startedAt: string;
+  startedAt: Date;
 }
 
 interface ListProjectionPartitionsOptions {
@@ -2255,6 +2305,7 @@ import {
   projectionStatusFromWire,
   rebuildJobFromWire,
   schemaFromWire,
+  auditEventFromWire,                // reads camelCase and snake_case
   waitResultFromWire,
   runStatusFromWire,                // protobuf JSON status -> public status; a status a newer
                                     // server added passes through, UNSPECIFIED and PENDING throw
@@ -2282,7 +2333,7 @@ import {
   //   INVOKE_FUNCTION_SYNC: 30_000, SYNC_TRANSPORT_HEADROOM: 5_000 }
 
   DEFAULT_RETRY,
-  // { MAX_ATTEMPTS: 3, INITIAL_DELAY_MS: 1000, BACKOFF_FACTOR: 2.0, MAX_DELAY_MS: 300_000 }
+  // { MAX_ATTEMPTS: 25, INITIAL_DELAY_MS: 1000, BACKOFF_FACTOR: 2.0, MAX_DELAY_MS: 300_000 }
 
   DEFAULT_CLIENT_RETRY,
   // { MAX_ATTEMPTS: 3, INITIAL_DELAY_MS: 100, BACKOFF_MULTIPLIER: 2.0,
@@ -2658,7 +2709,7 @@ interface PausedStepInfo {
   /** Whether this step's output was injected via the inject API */
   injected: boolean;
   /** When the step completed (ISO 8601) */
-  completedAt: string;
+  completedAt: Date;
 }
 
 interface PausedState {
@@ -2779,14 +2830,14 @@ Distinct from `SecretsClient` (which is the read-only handler API). These are th
 interface Secret {
   name: string;
   value: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface SecretListEntry {
   name: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 /** Metadata-only update — the stored value is left untouched. */
@@ -2806,14 +2857,14 @@ interface StreamListEntry {
   entityType: string;
   version: number;
   eventCount: number;
-  lastEventAt: string;
+  lastEventAt: Date;
 }
 
 interface EntityHistoryEntry {
   eventName: string;
   data: unknown;
   version: number;
-  timestamp: string;
+  timestamp: Date;
 }
 
 interface EntityHistoryOptions {
@@ -2829,7 +2880,7 @@ interface StreamSnapshot {
   entityType: string;
   entityVersion: number;
   state: Record<string, unknown>;
-  createdAt: string;
+  createdAt: Date;
 }
 ```
 
@@ -2858,16 +2909,16 @@ interface Project {
   name: string;
   description: string;
   org_id: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 interface Environment {
   id: string;
   name: string;
   project_id: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 ```
 
@@ -2882,7 +2933,7 @@ interface EventSchema {
   event_name: string;
   version: number;
   schema: Record<string, unknown>;
-  created_at: string;
+  created_at?: Date; // absent on the schemas.register result
 }
 
 interface RegisterSchemaInput {
@@ -2929,8 +2980,8 @@ interface WebhookSource {
   ingestTokenPrefix?: string;       // display fragment (ifwh_ + 8 chars)
   ingestToken?: string;             // raw token — returned ONLY on create/rotate (ADR 0048); without it the source cannot receive deliveries
   verifyConfig?: WebhookVerifyConfig; // signature descriptor (ADR 0049); absent means legacy verification
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 interface CreateWebhookSourceInput {
@@ -2977,7 +3028,7 @@ interface WebhookDelivery {
   eventId?: string;
   error?: string;
   signatureKey?: string;            // current | prev | none | invalid
-  createdAt?: string;
+  createdAt?: Date;
 }
 
 interface ListWebhookDeliveriesOptions {
@@ -2999,8 +3050,8 @@ interface User {
   email: string;
   name?: string;
   roles?: string[];
-  createdAt?: string;
-  updatedAt?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 interface CreateUserInput {
@@ -3026,7 +3077,7 @@ interface Tenant {
   name: string;
   envCount: number;
   keyCount: number;
-  createdAt?: string;
+  createdAt?: Date;
 }
 
 interface ProvisionTenantInput {
@@ -3061,8 +3112,8 @@ interface FileBucketInfo {
   allowedContentTypes: string[];
   emitEvents: boolean;
   allowSignedUrls: boolean;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface FileInfo {
@@ -3073,8 +3124,8 @@ interface FileInfo {
   sha256: string;
   etag: string;
   metadata: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface ListFilesOptions {
@@ -3130,7 +3181,7 @@ interface SignUploadOptions {
 
 interface SignedUrl {
   url: string;
-  expiresAt: string;
+  expiresAt: Date;
 }
 ```
 
@@ -3188,7 +3239,7 @@ interface DefinitionHistoryEntry<TDefinition> {
   actorId: string;
   changeReason: string;
   changeType: string;
-  recordedAt: string;       // RFC 3339
+  recordedAt: Date;
 }
 
 interface DefinitionHistoryPage<TDefinition> {
@@ -3234,7 +3285,7 @@ interface Deployment {
   mode: "push" | "pull" | "unspecified";
   endpointUrl: string;
   createdBy: string;
-  createdAt: string;        // RFC 3339
+  createdAt: Date;
 }
 
 interface RegisterDeploymentResult {
@@ -3253,8 +3304,8 @@ interface FunctionExecutionRouting {
   activeDeploymentId: string; // empty unless mode is "versioned"
   routingRevision: number;
   transitionId: string;     // non-empty only while mode is "adopting"
-  transitionStartedAt?: string;
-  updatedAt: string;
+  transitionStartedAt?: Date;
+  updatedAt?: Date;         // absent while the function has no routing row
 }
 
 registerDeploymentRequest(input: RegisterDeploymentInput): Record<string, unknown>
@@ -3305,8 +3356,8 @@ interface CapacityLane {
   limit: number;
   active_reserved: number;
   config_version: number;
-  created_at: string;
-  last_used_at: string;
+  created_at: Date;
+  last_used_at: Date;
 }
 
 interface CapacityQueueEntry {
@@ -3319,12 +3370,13 @@ interface CapacityQueueEntry {
   lane_id: string | null;
   timeout_ms: number | null;
   environment_id: string;
-  first_enqueued_at: string;
-  eligible_at: string;
+  first_enqueued_at: Date;
+  eligible_at: Date;
   blocking_reason: string;
   reservation_owner: string | null;
-  reservation_expires_at: string | null;
-  created_at: string;
+  /** Absent until the entry holds a reservation. */
+  reservation_expires_at?: Date;
+  created_at: Date;
 }
 
 /** function_id is always "" on this view; match a lease by run_id. */
@@ -3334,8 +3386,8 @@ interface CapacityLease {
   execution_seq: number;
   lane_id: string | null;
   lease_token_hash: string;
-  activated_at: string;
-  expires_at: string;
+  activated_at: Date;
+  expires_at: Date;
   engine_node_id: string | null;
   environment_id: string;
   function_id: string;
@@ -3345,8 +3397,9 @@ interface CapacityBucket {
   environment_id: string;
   function_id: string;
   lane_id: string | null;
-  last_dispatched_at: string | null;
-  created_at: string;
+  /** Absent until the bucket first dispatches. */
+  last_dispatched_at?: Date;
+  created_at: Date;
 }
 
 interface CapacityWorkerSession {
@@ -3357,8 +3410,8 @@ interface CapacityWorkerSession {
   labels?: Record<string, string>;
   protocol_caps?: Record<string, unknown>;
   draining: boolean;
-  heartbeat_expiry: string;
-  created_at: string;
+  heartbeat_expiry: Date;
+  created_at: Date;
 }
 
 interface CapacityWorkerCredit {
@@ -3368,11 +3421,11 @@ interface CapacityWorkerCredit {
   session_id: string;
   engine_node_id: string;
   slot_ordinal: number;
-  expires_at: string;
+  expires_at: Date;
   claimed: boolean;
   claimed_run_id: string;
   claimed_execution_seq: number;
-  created_at: string;
+  created_at: Date;
 }
 
 interface CapacityStat {
@@ -3392,8 +3445,8 @@ interface DebounceEntry {
   event_id: string;
   function_version: number;
   period_ms: number;
-  armed_at: string;
-  fires_at: string;
+  armed_at: Date;
+  fires_at: Date;
 }
 ```
 

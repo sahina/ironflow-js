@@ -38,7 +38,7 @@ describe.skipIf(!SEED_PATH)("readiness helpers — live server", () => {
     expect(first.nextBeforeRevision).toBe(newest.revision);
     expect(newest.previousDefinition.events).toEqual(seed.projectionEvents[1]);
     expect(newest).toMatchObject({ changeType: "updated", changeReason: "change 2" });
-    expect(newest.recordedAt).toMatch(/^\d{4}-/);
+    expect(newest.recordedAt).toBeInstanceOf(Date);
 
     const second = await client.listProjectionHistory(seed.projection, { limit: 1, beforeRevision: first.nextBeforeRevision });
     expect(second.entries).toHaveLength(1);

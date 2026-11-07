@@ -29,7 +29,7 @@ export interface BrowserSubscribeOptions extends SubscribeOptions {
 interface SubscriptionState<T = unknown> {
   id: string;
   pattern: string;
-  /** Unique key for map lookups (pattern for broadcast, pattern + ID for consumer groups) */
+  /** Unique identity for this subscribe call, retained across reconnects */
   lookupKey: string;
   options?: BrowserSubscribeOptions;
   callbacks: SubscriptionCallbacks<T>;
@@ -66,10 +66,8 @@ export class SubscriptionManager {
   // Logger is stored for future use (debugging, diagnostics)
   private _logger: Logger;
   private subscriptions: Map<string, SubscriptionState> = new Map();
-  private patternToId: Map<string, string> = new Map();
+  private lookupKeyToId: Map<string, string> = new Map();
   private pendingPatterns: Map<string, SubscriptionState> = new Map();
-  /** Maps pattern to array of pending lookupKeys for O(1) lookup */
-  private patternToPendingKeys: Map<string, string[]> = new Map();
   private connectionChangeCallbacks: Set<(state: ConnectionState) => void> =
     new Set();
   private errorCallbacks: Set<(error: SubscriptionErrorInfo) => void> =
@@ -203,14 +201,7 @@ export class SubscriptionManager {
       trackState,
     };
 
-    // Generate lookup key: for consumer groups, allow multiple subscriptions to same pattern
-    // by appending a unique ID; for broadcast, use pattern directly to prevent duplicates
-    const lookupKey = consumerGroup ? `${pattern}:cg:${generateId()}` : pattern;
-
-    // Check if already subscribed (only for broadcast subscriptions)
-    if (!consumerGroup && this.patternToId.has(lookupKey)) {
-      throw new Error(`Already subscribed to pattern: ${pattern}`);
-    }
+    const lookupKey = generateId();
 
     return new Promise<Subscription | AckableSubscription>(
       (resolve, reject) => {
@@ -229,11 +220,6 @@ export class SubscriptionManager {
 
         this.pendingPatterns.set(lookupKey, pending as SubscriptionState);
 
-        // Track lookupKey by pattern for efficient lookup when server responds
-        const pendingKeys = this.patternToPendingKeys.get(pattern) ?? [];
-        pendingKeys.push(lookupKey);
-        this.patternToPendingKeys.set(pattern, pendingKeys);
-
         // Auto-connect: callers shouldn't need to call connect() before
         // subscribe(). When already connected, we call transport.subscribe
         // synchronously (fast path — matches pre-#536 behavior). Otherwise we
@@ -241,7 +227,7 @@ export class SubscriptionManager {
         // fails or times out. Fixes #536 Defect A, where watch()/subscribe()
         // would hang forever waiting on a connect nobody kicked off.
         if (this.transport.connectionState === "connected") {
-          this.transport.subscribe(pattern, options);
+          this.transport.subscribe(pattern, options, lookupKey);
           return;
         }
 
@@ -259,10 +245,10 @@ export class SubscriptionManager {
               );
               return;
             }
-            this.transport.subscribe(pattern, options);
+            this.transport.subscribe(pattern, options, lookupKey);
           },
           (err) => {
-            this.removePending(pattern, lookupKey);
+            this.pendingPatterns.delete(lookupKey);
             reject(err instanceof Error ? err : new Error(String(err)));
           },
         );
@@ -270,28 +256,13 @@ export class SubscriptionManager {
     );
   }
 
-  /** Remove a pending subscription entry from both tracking maps. */
-  private removePending(pattern: string, lookupKey: string): void {
-    this.pendingPatterns.delete(lookupKey);
-    const keys = this.patternToPendingKeys.get(pattern);
-    if (!keys) return;
-    const idx = keys.indexOf(lookupKey);
-    if (idx >= 0) keys.splice(idx, 1);
-    if (keys.length === 0) this.patternToPendingKeys.delete(pattern);
-  }
-
   /**
-   * Unsubscribe by pattern
+   * Close all active handles matching a pattern
    */
   unsubscribeByPattern(pattern: string): void {
-    const subscriptionId = this.patternToId.get(pattern);
-    if (!subscriptionId) {
-      return;
+    for (const [id, state] of this.subscriptions) {
+      if (state.pattern === pattern) this.unsubscribeById(id);
     }
-
-    this.transport.unsubscribe(subscriptionId);
-    this.subscriptions.delete(subscriptionId);
-    this.patternToId.delete(pattern);
   }
 
   /**
@@ -305,11 +276,11 @@ export class SubscriptionManager {
 
     this.transport.unsubscribe(subscriptionId);
     this.subscriptions.delete(subscriptionId);
-    this.patternToId.delete(state.lookupKey);
+    this.lookupKeyToId.delete(state.lookupKey);
   }
 
   private unsubscribeByLookupKey(lookupKey: string): void {
-    const subscriptionId = this.patternToId.get(lookupKey);
+    const subscriptionId = this.lookupKeyToId.get(lookupKey);
     if (subscriptionId) {
       this.unsubscribeById(subscriptionId);
     }
@@ -460,9 +431,11 @@ export class SubscriptionManager {
   disconnect(): void {
     this.transport.disconnect();
     this.subscriptions.clear();
-    this.patternToId.clear();
+    this.lookupKeyToId.clear();
+    for (const pending of this.pendingPatterns.values()) {
+      pending.reject?.(new Error("ironflow: subscription canceled by disconnect"));
+    }
     this.pendingPatterns.clear();
-    this.patternToPendingKeys.clear();
     this.connectPromise = null;
 
     if (this.visibilityListener && typeof document !== "undefined") {
@@ -509,7 +482,7 @@ export class SubscriptionManager {
     if (state && error.retrying === false) {
       this.transport.unsubscribe(subscriptionId);
       this.subscriptions.delete(subscriptionId);
-      this.patternToId.delete(state.lookupKey);
+      this.lookupKeyToId.delete(state.lookupKey);
     }
 
     // Call global error handlers
@@ -540,62 +513,38 @@ export class SubscriptionManager {
     pattern: string,
     subscriptionId: string,
     previousSubscriptionId?: string,
+    lookupKey?: string,
   ): void {
-    // Find pending subscription using pattern-to-keys map for O(1) lookup
-    const pendingKeys = this.patternToPendingKeys.get(pattern);
-    if (!pendingKeys || pendingKeys.length === 0) {
-      if (previousSubscriptionId) {
-        const active = this.subscriptions.get(previousSubscriptionId);
-        if (!active) {
-          return;
-        }
-        this.subscriptions.delete(previousSubscriptionId);
-        active.id = subscriptionId;
-        this.subscriptions.set(subscriptionId, active);
-        this.patternToId.set(active.lookupKey, subscriptionId);
-        return;
-      }
-
-      if (this.subscriptions.has(subscriptionId)) {
-        return;
-      }
-      const matches = [...this.subscriptions.entries()].filter(
-        ([, state]) => state.pattern === pattern,
-      );
-      if (matches.length !== 1) {
-        return;
-      }
-
-      const [previousId, active] = matches[0]!;
-      this.subscriptions.delete(previousId);
+    if (previousSubscriptionId) {
+      const active = this.subscriptions.get(previousSubscriptionId);
+      if (!active) return;
+      this.subscriptions.delete(previousSubscriptionId);
       active.id = subscriptionId;
       this.subscriptions.set(subscriptionId, active);
-      this.patternToId.set(active.lookupKey, subscriptionId);
+      this.lookupKeyToId.set(active.lookupKey, subscriptionId);
       return;
     }
+    if (this.subscriptions.has(subscriptionId)) return;
 
-    // Get the first pending key (FIFO order)
-    const pendingKey = pendingKeys.shift()!;
-    if (pendingKeys.length === 0) {
-      this.patternToPendingKeys.delete(pattern);
+    if (!lookupKey) {
+      this.rejectUncorrelated(pattern);
+      this.transport.unsubscribe(subscriptionId);
+      return;
     }
-
+    const pendingKey = lookupKey;
     const pending = this.pendingPatterns.get(pendingKey);
-    if (!pending) {
-      return;
-    }
-
+    if (!pending) return;
     this.pendingPatterns.delete(pendingKey);
 
     // Update state with real subscription ID
     pending.id = subscriptionId;
     this.subscriptions.set(subscriptionId, pending);
-    this.patternToId.set(pending.lookupKey, subscriptionId);
+    this.lookupKeyToId.set(pending.lookupKey, subscriptionId);
 
     // Create subscription object
     const isManualAck = pending.options?.ackMode === "manual";
     const currentSubscriptionId = () =>
-      this.patternToId.get(pending.lookupKey) ?? subscriptionId;
+      this.lookupKeyToId.get(pending.lookupKey) ?? subscriptionId;
 
     if (isManualAck) {
       const ackableSub: AckableSubscription = {
@@ -628,10 +577,22 @@ export class SubscriptionManager {
     }
   }
 
+  private rejectUncorrelated(pattern: string): void {
+    const error = new Error(
+      "ironflow: transport must echo the subscribe lookupKey in confirmation and failure callbacks",
+    );
+    for (const [key, pending] of this.pendingPatterns) {
+      if (pending.pattern !== pattern) continue;
+      this.pendingPatterns.delete(key);
+      pending.reject?.(error);
+    }
+  }
+
   private handleSubscribeFailed(
     pattern: string,
     error: Error,
     previousSubscriptionId?: string,
+    lookupKey?: string,
   ): void {
     if (previousSubscriptionId) {
       this.handleError(previousSubscriptionId, {
@@ -643,23 +604,13 @@ export class SubscriptionManager {
       return;
     }
 
-    // Find pending subscription using pattern-to-keys map for O(1) lookup
-    const pendingKeys = this.patternToPendingKeys.get(pattern);
-    if (!pendingKeys || pendingKeys.length === 0) {
+    if (!lookupKey) {
+      this.rejectUncorrelated(pattern);
       return;
     }
-
-    // Get the first pending key (FIFO order)
-    const pendingKey = pendingKeys.shift()!;
-    if (pendingKeys.length === 0) {
-      this.patternToPendingKeys.delete(pattern);
-    }
-
+    const pendingKey = lookupKey;
     const pending = this.pendingPatterns.get(pendingKey);
-    if (!pending) {
-      return;
-    }
-
+    if (!pending) return;
     this.pendingPatterns.delete(pendingKey);
     pending.reject?.(error);
   }

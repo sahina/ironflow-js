@@ -4,6 +4,8 @@
  * Implements durable step primitives: run, sleep, sleepUntil, waitForEvent, parallel, map
  */
 
+import { withLogStep } from "./internal/logging.js";
+import { traceStep } from "./internal/tracing.js";
 import type {
   Duration,
   EventFilter,
@@ -185,87 +187,89 @@ async function executeStep<T>(
   // A cancelled job must not start another side effect (#2479).
   ctx.signal?.throwIfAborted();
 
-  // Execute the step
-  const startedAt = new Date();
-  ctx.logger.debug(`Step starting: ${name}`, { stepId });
+  return withLogStep(ctx.logger, stepId, ctx.signal, () => traceStep(name, ctx.signal, async () => {
+    // Execute the step
+    const startedAt = new Date();
+    ctx.logger.debug(`Step starting: ${name}`, { stepId });
 
-  try {
-    const timeoutStr = options?.timeout ?? ctx.stepTimeout;
-    const output = timeoutStr
-      ? await withStepTimeout(() => fn(stepId), name, timeoutStr)
-      : await fn(stepId);
-    ctx.yieldGuard.assertReturned();
-    const endedAt = new Date();
-    const durationMs = endedAt.getTime() - startedAt.getTime();
+    try {
+      const timeoutStr = options?.timeout ?? ctx.stepTimeout;
+      const output = timeoutStr
+        ? await withStepTimeout(() => fn(stepId), name, timeoutStr)
+        : await fn(stepId);
+      ctx.yieldGuard.assertReturned();
+      const endedAt = new Date();
+      const durationMs = endedAt.getTime() - startedAt.getTime();
 
-    // Record successful step
-    const result: StepResult = {
-      id: stepId,
-      name,
-      type: "invoke",
-      status: "completed",
-      started_at: startedAt.toISOString(),
-      ended_at: endedAt.toISOString(),
-      duration_ms: durationMs,
-      output,
-    };
-    ctx.recordStep(result);
+      // Record successful step
+      const result: StepResult = {
+        id: stepId,
+        name,
+        type: "invoke",
+        status: "completed",
+        started_at: startedAt.toISOString(),
+        ended_at: endedAt.toISOString(),
+        duration_ms: durationMs,
+        output,
+      };
+      ctx.recordStep(result);
 
-    ctx.logger.debug(`Step completed: ${name}`, { stepId, durationMs });
-    return output;
-  } catch (error) {
-    const endedAt = new Date();
-    const durationMs = endedAt.getTime() - startedAt.getTime();
+      ctx.logger.debug(`Step completed: ${name}`, { stepId, durationMs });
+      return output;
+    } catch (error) {
+      const endedAt = new Date();
+      const durationMs = endedAt.getTime() - startedAt.getTime();
 
-    // Re-throw YieldSignal (it's not a real error)
-    if (error instanceof YieldSignal) {
-      throw error;
-    }
+      // Re-throw YieldSignal (it's not a real error)
+      if (error instanceof YieldSignal) {
+        throw error;
+      }
 
-    // Record failed step
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    const errorStack = error instanceof Error ? error.stack : undefined;
+      // Record failed step
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
 
-    const result: StepResult = {
-      id: stepId,
-      name,
-      type: "invoke",
-      status: "failed",
-      started_at: startedAt.toISOString(),
-      ended_at: endedAt.toISOString(),
-      duration_ms: durationMs,
-      error: {
-        message: errorMessage,
-        retryable: isRetryable(error),
-        stack: errorStack,
-      },
-    };
-    ctx.recordStep(result);
+      const result: StepResult = {
+        id: stepId,
+        name,
+        type: "invoke",
+        status: "failed",
+        started_at: startedAt.toISOString(),
+        ended_at: endedAt.toISOString(),
+        duration_ms: durationMs,
+        error: {
+          message: errorMessage,
+          retryable: isRetryable(error),
+          stack: errorStack,
+        },
+      };
+      ctx.recordStep(result);
 
-    // Re-throw StepTimeoutError as-is (already has step context)
-    if (error instanceof StepTimeoutError) {
-      ctx.logger.error(`Step timed out: ${name}`, {
+      // Re-throw StepTimeoutError as-is (already has step context)
+      if (error instanceof StepTimeoutError) {
+        ctx.logger.error(`Step timed out: ${name}`, {
+          stepId,
+          error: errorMessage,
+          durationMs,
+        });
+        throw error;
+      }
+
+      ctx.logger.error(`Step failed: ${name}`, {
         stepId,
         error: errorMessage,
         durationMs,
       });
-      throw error;
+
+      // Wrap in StepError for better context
+      throw new StepError(errorMessage, {
+        stepId,
+        stepName: name,
+        retryable: isRetryable(error),
+        cause: error instanceof Error ? error : undefined,
+      });
     }
-
-    ctx.logger.error(`Step failed: ${name}`, {
-      stepId,
-      error: errorMessage,
-      durationMs,
-    });
-
-    // Wrap in StepError for better context
-    throw new StepError(errorMessage, {
-      stepId,
-      stepName: name,
-      retryable: isRetryable(error),
-      cause: error instanceof Error ? error : undefined,
-    });
-  }
+  }));
 }
 
 /**
@@ -682,7 +686,7 @@ export async function executeCompensations(ctx: ExecutionContext): Promise<void>
     const startedAt = new Date();
 
     try {
-      await fn();
+      await withLogStep(ctx.logger, stepId, undefined, fn);
       const endedAt = new Date();
       const durationMs = endedAt.getTime() - startedAt.getTime();
 

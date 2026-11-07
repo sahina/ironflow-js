@@ -27,7 +27,7 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("secrets — live 
 
     const name = `NODE_KEY_${suffix}`;
     const created = await client.secrets.set(name, "v1-sensitive");
-    expect(created).toMatchObject({ name, created_at: expect.any(String), updated_at: expect.any(String) });
+    expect(created).toMatchObject({ name, created_at: expect.any(Date), updated_at: expect.any(Date) });
     expect(created.value).toBeUndefined();
     const got = await client.secrets.get(name);
     expect(got.name).toBe(name);

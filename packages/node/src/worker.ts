@@ -4,6 +4,7 @@
  * Pull mode worker that polls the Ironflow server for jobs.
  */
 
+import { traceProcess, recordExecutionError } from "./internal/tracing.js";
 import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { dropUnencodable, encodableSteps, serializationError } from "./internal/encode-guard.js";
 import type {
@@ -593,6 +594,15 @@ class IronflowWorker implements Worker {
     abortController: AbortController
   ): Promise<void> {
     const signal = abortController.signal;
+    return traceProcess(job.context, () => this.executeTracedJob(baseUrl, job, abortController), signal);
+  }
+
+  private async executeTracedJob(
+    baseUrl: string,
+    job: ValidatedJobAssignment,
+    abortController: AbortController
+  ): Promise<void> {
+    const signal = abortController.signal;
     // Capture the fence up front (#1206, T9): every update echoes it directly,
     // never via an activeJobs lookup that a cancel-race could blank. Empty for
     // legacy (non-capacity) assignments.
@@ -600,6 +610,7 @@ class IronflowWorker implements Worker {
 
     const fn = this.functionMap.get(job.function_id);
     if (!fn) {
+      recordExecutionError(new Error("Function not found"));
       await this.sendJobFailed(baseUrl, job.job_id, {
         message: `Function not found: ${job.function_id}`,
         code: "FUNCTION_NOT_FOUND",
@@ -642,8 +653,9 @@ class IronflowWorker implements Worker {
         error: s.error === undefined ? undefined : JSON.stringify(s.error),
       })),
       resume: undefined,
-    }, undefined, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
+    }, this.config.userLogger, this.config.eventDefinitions, fn.config.stepTimeout, this.config.serverUrl, this.apiKey, this.environment);
     } catch (error) {
+      recordExecutionError(error);
       this.logger.error(`Event upcast failed for job ${job.job_id}`, { error: String(error) });
       await this.sendJobFailed(baseUrl, job.job_id, {
         message: error instanceof Error ? error.message : String(error),
@@ -715,6 +727,7 @@ class IronflowWorker implements Worker {
         error = encodeErr;
       }
 
+      recordExecutionError(error);
       const retryable = isRetryable(error);
 
       // Compensate only when the run ends here: a non-retryable error, or a

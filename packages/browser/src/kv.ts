@@ -11,13 +11,12 @@ import type {
   KVEntry,
   KVPutResult,
   KVListKeysResult,
-  KVListBucketsResult,
   KVWatchEvent,
   KVWatchCallbacks,
   KVWatchOptions,
   KVWatcher,
 } from "@ironflow/core";
-import { IronflowError, DEFAULT_TIMEOUTS, restRetryable, connectCodeForStatus } from "@ironflow/core";
+import { IronflowError, DEFAULT_TIMEOUTS, kvBucketInfoFromWire, kvBucketsFromWire, kvEntryFromWire, restRetryable, connectCodeForStatus } from "@ironflow/core";
 import { environmentHeader, type IronflowConfig } from "./config.js";
 import { webSocketProtocols } from "./websocket-auth.js";
 import { sdkFetch } from "./sdk-fetch.js";
@@ -35,10 +34,10 @@ export class BrowserKVBucketHandle {
    * Get an entry whose value is the stored bytes encoded as base64.
    */
   async get(key: string): Promise<KVEntry> {
-    return this.restRequest<KVEntry>(
+    return kvEntryFromWire(await this.restRequest(
       "GET",
       `/api/v1/kv/buckets/${enc(this.bucketName)}/keys/${key}`
-    );
+    ));
   }
 
   /**
@@ -301,11 +300,11 @@ export class BrowserKVClient {
     if (config.maxBytes) body.max_bytes = config.maxBytes;
     if (config.history) body.history = config.history;
 
-    return this.restRequest<KVBucketInfo>(
+    return kvBucketInfoFromWire(await this.restRequest(
       "POST",
       "/api/v1/kv/buckets",
       body
-    );
+    ));
   }
 
   /**
@@ -322,21 +321,20 @@ export class BrowserKVClient {
    * List all buckets.
    */
   async listBuckets(): Promise<KVBucketInfo[]> {
-    const result = await this.restRequest<KVListBucketsResult>(
+    return kvBucketsFromWire(await this.restRequest(
       "GET",
       "/api/v1/kv/buckets"
-    );
-    return result.buckets;
+    ));
   }
 
   /**
    * Get bucket info.
    */
   async getBucketInfo(name: string): Promise<KVBucketInfo> {
-    return this.restRequest<KVBucketInfo>(
+    return kvBucketInfoFromWire(await this.restRequest(
       "GET",
       `/api/v1/kv/buckets/${enc(name)}`
-    );
+    ));
   }
 
   /**

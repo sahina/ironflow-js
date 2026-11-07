@@ -16,7 +16,7 @@ import type {
   SignUploadOptions,
   SignedUrl,
 } from "@ironflow/core";
-import { DEFAULT_CLIENT_RETRY, DEFAULT_TIMEOUTS, HEADERS, IronflowError, UnauthorizedError, encodeBucketName, encodeFilePath, fileErrorFor, throwIfAuthError } from "@ironflow/core";
+import { DEFAULT_CLIENT_RETRY, DEFAULT_TIMEOUTS, HEADERS, IronflowError, UnauthorizedError, encodeBucketName, encodeFilePath, fileBucketInfoFromWire, fileBucketsFromWire, fileErrorFor, fileInfoFromWire, listFilesResultFromWire, signedUrlFromWire, throwIfAuthError } from "@ironflow/core";
 import type { IronflowConfig } from "./config.js";
 import { sdkFetch } from "./sdk-fetch.js";
 
@@ -120,17 +120,17 @@ export class BrowserFilesClient {
     return (res.status === 204 ? undefined : await res.json()) as T;
   }
 
-  createBucket(name: string, config: FileBucketConfig = {}): Promise<FileBucketInfo> {
-    return this.request("POST", "/api/v1/files/buckets", { name, ...config });
+  async createBucket(name: string, config: FileBucketConfig = {}): Promise<FileBucketInfo> {
+    return fileBucketInfoFromWire(await this.request("POST", "/api/v1/files/buckets", { name, ...config }));
   }
   async listBuckets(): Promise<FileBucketInfo[]> {
-    return (await this.request<{ buckets: FileBucketInfo[] }>("GET", "/api/v1/files/buckets")).buckets;
+    return fileBucketsFromWire(await this.request("GET", "/api/v1/files/buckets"));
   }
   async getBucket(name: string): Promise<FileBucketInfo> {
-    return this.request("GET", `/api/v1/files/buckets/${encodeBucketName(name)}`);
+    return fileBucketInfoFromWire(await this.request("GET", `/api/v1/files/buckets/${encodeBucketName(name)}`));
   }
   async updateBucket(name: string, config: FileBucketConfig): Promise<FileBucketInfo> {
-    return this.request("PATCH", `/api/v1/files/buckets/${encodeBucketName(name)}`, config);
+    return fileBucketInfoFromWire(await this.request("PATCH", `/api/v1/files/buckets/${encodeBucketName(name)}`, config));
   }
   async deleteBucket(name: string): Promise<void> {
     await this.request("DELETE", `/api/v1/files/buckets/${encodeBucketName(name)}`);
@@ -159,7 +159,7 @@ export class BrowserFileBucketHandle {
     // the verb below.
     const url = `/api/v1/files/buckets/${this.bucket}/objects/${encodeFilePath(path)}`;
     const res = await this.client.send(url, { method: "PUT", headers, body: body as BodyInit }, true);
-    return (await res.json()) as FileInfo;
+    return fileInfoFromWire(await res.json());
   }
 
   async get(path: string, opts: GetFileOptions = {}): Promise<FileObject> {
@@ -180,10 +180,10 @@ export class BrowserFileBucketHandle {
   }
 
   async info(path: string): Promise<FileInfo> {
-    return this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/info/${encodeFilePath(path)}`);
+    return fileInfoFromWire(await this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/info/${encodeFilePath(path)}`));
   }
 
-  list(opts: ListFilesOptions = {}): Promise<ListFilesResult> {
+  async list(opts: ListFilesOptions = {}): Promise<ListFilesResult> {
     const q = new URLSearchParams();
     if (opts.prefix) q.set("prefix", opts.prefix);
     if (opts.delimiter) q.set("delimiter", opts.delimiter);
@@ -191,19 +191,19 @@ export class BrowserFileBucketHandle {
     if (opts.limit) q.set("limit", String(opts.limit));
     // A nested template literal would hide the path from scripts/sdkcoverage.
     const qs = q.size > 0 ? `?${q}` : "";
-    return this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/objects${qs}`);
+    return listFilesResultFromWire(await this.client.request("GET", `/api/v1/files/buckets/${this.bucket}/objects${qs}`));
   }
 
   async delete(path: string): Promise<void> {
     await this.client.request("DELETE", `/api/v1/files/buckets/${this.bucket}/objects/${encodeFilePath(path)}`);
   }
 
-  move(from: string, to: string, opts: MoveFileOptions = {}): Promise<FileInfo> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/move`, { from, to, ...opts });
+  async move(from: string, to: string, opts: MoveFileOptions = {}): Promise<FileInfo> {
+    return fileInfoFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/move`, { from, to, ...opts }));
   }
 
-  copy(from: string, to: string, opts: CopyFileOptions = {}): Promise<FileInfo> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/copy`, { from, to, ...opts });
+  async copy(from: string, to: string, opts: CopyFileOptions = {}): Promise<FileInfo> {
+    return fileInfoFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/copy`, { from, to, ...opts }));
   }
 
   async movePrefix(from: string, to: string): Promise<number> {
@@ -211,12 +211,12 @@ export class BrowserFileBucketHandle {
     return res.count;
   }
 
-  signUpload(path: string, opts: SignUploadOptions = {}): Promise<SignedUrl> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/upload`, { path, ...opts }, true);
+  async signUpload(path: string, opts: SignUploadOptions = {}): Promise<SignedUrl> {
+    return signedUrlFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/upload`, { path, ...opts }, true));
   }
 
-  signDownload(path: string, ttlSeconds?: number): Promise<SignedUrl> {
-    return this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/download`, { path, ttlSeconds }, true);
+  async signDownload(path: string, ttlSeconds?: number): Promise<SignedUrl> {
+    return signedUrlFromWire(await this.client.request("POST", `/api/v1/files/buckets/${this.bucket}/signed-urls/download`, { path, ttlSeconds }, true));
   }
 }
 
@@ -238,7 +238,7 @@ export async function uploadToSignedUrl(
     credentials: "omit",
   });
   if (!res.ok) throw await errorFrom(res, true);
-  return (await res.json()) as FileInfo;
+  return fileInfoFromWire(await res.json());
 }
 
 /** Download with a URL from bucket.signDownload(); the caller reads the Response. */

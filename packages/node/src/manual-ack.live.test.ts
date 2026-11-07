@@ -4,6 +4,7 @@
  * Skips unless IRONFLOW_TEST_SERVER is set; `make test-sdk-manual-ack-live` sets it.
  */
 import { describe, expect, it } from "vitest";
+import type { EventMetadata } from "@ironflow/core";
 import { IronflowClient } from "./client.js";
 import { createSubscriptionClient } from "./subscribe.js";
 import { joinConsumerGroupStream } from "./consumer-group-stream.js";
@@ -39,9 +40,12 @@ describe.skipIf(!SERVER)("manual ack — live server", () => {
     const subClient = createSubscriptionClient({ serverUrl: SERVER!, apiKey: API_KEY });
     await subClient.connect();
     const seen: string[] = [];
+    const metas: Array<EventMetadata | undefined> = [];
     const sub = await subClient.joinConsumerGroup(group, `topic:${topic}`, {
+      includeMetadata: true,
       onEvent: (event) => {
         seen.push(event.eventId!);
+        metas.push(event.meta);
       },
     });
 
@@ -54,6 +58,9 @@ describe.skipIf(!SERVER)("manual ack — live server", () => {
     } finally {
       clearInterval(timer);
     }
+
+    expect(metas[0]?.timestamp).toBeInstanceOf(Date);
+    expect(metas[0]?.sequence).toBeGreaterThan(0);
 
     const target = seen[0]!;
     const nakedAt = Date.now();

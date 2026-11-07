@@ -35,7 +35,7 @@ it("registers, reads and deletes a schema through generated handlers", async () 
  const input = { name: "order/placed", version: 2, schema: { type: "object" } };
  expect(await client.schemas.register(input)).toMatchObject({ status: "created", event_name: input.name, version: 2, schema: input.schema });
  const latest = await client.schemas.get(input.name);
- expect(latest).toMatchObject({ event_name: input.name, version: 2, schema: input.schema, schema_json: '{"type":"object"}', created_at: "2026-09-06T12:00:00Z" });
+ expect(latest).toMatchObject({ event_name: input.name, version: 2, schema: input.schema, schema_json: '{"type":"object"}', created_at: new Date("2026-09-06T12:00:00Z") });
  expect(await client.schemas.getVersion(input.name, 2)).toEqual(latest);
  for (const version of [0, NaN, Infinity, 1.5, 4294967296]) {
   await expect(client.schemas.getVersion(input.name, version)).rejects.toMatchObject({ code: "invalid_argument", retryable: false });

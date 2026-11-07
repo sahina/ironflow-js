@@ -34,7 +34,8 @@ describe.skipIf(!SEED_PATH)("readiness operational controls — live server", ()
     for (const e of byRun.events) {
       expect(e).toMatchObject({ runId: seed.runId, functionId: seed.functionId });
       expect(e.id).toBeTruthy();
-      expect(e.createdAt).toBeTruthy();
+      expect(e.createdAt).toBeInstanceOf(Date);
+      expect(e.createdAt.getUTCFullYear()).toBeGreaterThan(2000);
     }
 
     const only = await client.listAuditEvents({ functionId: seed.functionId, eventType: "step.completed" });
@@ -54,5 +55,7 @@ describe.skipIf(!SEED_PATH)("readiness operational controls — live server", ()
     // The seed took beforeRun before it triggered the run, so the window decides.
     expect((await client.listAuditEvents({ runId: seed.runId, fromTimestamp: seed.beforeRun })).totalCount).toBe(4);
     expect((await client.listAuditEvents({ runId: seed.runId, toTimestamp: seed.beforeRun })).events).toEqual([]);
+    expect((await client.listAuditEvents({ runId: seed.runId, fromTimestamp: new Date(seed.beforeRun) })).totalCount).toBe(4);
+    expect((await client.listAuditEvents({ runId: seed.runId, toTimestamp: new Date(seed.beforeRun) })).events).toEqual([]);
   });
 });

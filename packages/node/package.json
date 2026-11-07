@@ -1,6 +1,6 @@
 {
   "name": "@ironflow/node",
-  "version": "0.54.0",
+  "version": "0.55.0",
   "description": "Node.js SDK for Ironflow event-driven backend platform - workers, serve handlers, and step execution",
   "type": "module",
   "main": "./dist/index.js",
@@ -54,13 +54,15 @@
     "predev": "node scripts/sync-version.mjs",
     "dev": "tsc --build tsconfig.build.json --watch",
     "pretest": "node scripts/sync-version.mjs",
-    "test": "pnpm typecheck && vitest run",
+    "test": "pnpm typecheck && vitest run && pnpm test:logging-package",
     "test:watch": "vitest",
     "lint": "eslint --max-warnings 0 src/",
     "clean": "rm -rf dist dist-bundle tsconfig.tsbuildinfo tsconfig.build.tsbuildinfo",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.json --noEmit",
-    "pack:local": "pnpm build:bundle && cd dist-bundle && pnpm pack --pack-destination /tmp/ironflow-packs"
+    "pack:local": "pnpm build:bundle && cd dist-bundle && pnpm pack --pack-destination /tmp/ironflow-packs",
+    "test:without-otel": "pnpm build:bundle && node scripts/test-without-otel.mjs",
+    "test:logging-package": "pnpm build:bundle && node scripts/test-without-otel.mjs && node scripts/test-logging-package.mjs"
   },
   "dependencies": {
     "@ironflow/core": "workspace:^",
@@ -68,23 +70,32 @@
   },
   "optionalDependencies": {
     "@bufbuild/protobuf": "^2.15.0",
-    "@connectrpc/connect": "^2.2.0",
-    "@connectrpc/connect-node": "^2.2.0"
+    "@connectrpc/connect": "^2.3.0",
+    "@connectrpc/connect-node": "^2.3.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/api-logs": "0.220.0",
+    "@opentelemetry/context-async-hooks": "^2.2.0",
+    "@opentelemetry/sdk-logs": "0.220.0",
+    "@opentelemetry/sdk-trace-base": "^2.2.0",
     "@types/node": "^22.20.1",
     "esbuild": "^0.28.2",
-    "eslint": "^10.12.0",
+    "eslint": "^10.13.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.1",
-    "vitest": "^4.1.12"
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.5"
   },
   "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "typescript": ">=5.0.0"
   },
   "peerDependenciesMeta": {
     "typescript": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
       "optional": true
     }
   },

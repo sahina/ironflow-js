@@ -23,7 +23,7 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("projects and envi
     project = await client.projects.create({ name, description: "created" });
     expect(project).toMatchObject({ name, description: "created", org_id: tenant.org.id });
     expect(project.id).toBeTruthy();
-    expect(project.created_at).toBeTruthy();
+    expect(project.created_at.getUTCFullYear()).toBeGreaterThan(2000);
     expect((await client.projects.list()).map((p) => p.name).sort()).toEqual(["default", name].sort());
     expect((await client.projects.list()).find((p) => p.id === project.id)?.description).toBe("created");
 
@@ -45,6 +45,7 @@ describe.skipIf(!process.env["IRONFLOW_TEST_PLATFORM_TOKEN"])("projects and envi
   it("env-crud", async () => {
     const env = await client.environments.create({ name: "staging", project_id: project.id });
     expect(env).toMatchObject({ name: "staging", project_id: project.id });
+    expect(env.created_at.getUTCFullYear()).toBeGreaterThan(2000);
     expect(env.id).toBeTruthy();
     await expect(client.environments.create({ name: "Not Valid!", project_id: project.id })).rejects.toMatchObject({
       status: 400,

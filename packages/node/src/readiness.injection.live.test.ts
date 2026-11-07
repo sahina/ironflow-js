@@ -37,14 +37,14 @@ describe.skipIf(!SEED_PATH)("readiness injection — live server", () => {
     expect(await step(runs().doneRunId, runs().doneStepId)).toMatchObject({
       output: patched,
       originalOutput: seed.stepOutput,
-      patchedAt: expect.stringMatching(/^\d{4}-/),
+      patchedAt: expect.any(Date),
     });
 
     // A failed step becomes completed and loses its error.
     expect(await step(runs().holdRunId, runs().patchStepId)).toMatchObject({ status: "failed", error: expect.anything() });
     await client.patchStep(runs().patchStepId, patched, "readiness recover");
     const recovered = await step(runs().holdRunId, runs().patchStepId);
-    expect(recovered).toMatchObject({ status: "completed", output: patched, patchedAt: expect.stringMatching(/^\d{4}-/) });
+    expect(recovered).toMatchObject({ status: "completed", output: patched, patchedAt: expect.any(Date) });
     expect(recovered.error ?? null).toBeNull();
 
     // Only completed and failed steps can be patched.

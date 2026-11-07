@@ -25,7 +25,8 @@ pull mode and durable-step memoization. Python's client surface is generated.
 The three are peers: the SDK comparison lists each step primitive per language.
 Check it before promising a specific operation.
 
-**Tier 2 — Rust, C#, Java later.** Generated client, no worker runtime.
+**Tier 2 — Rust, C#, Java later.** (A first-party C# SDK is not planned; see
+below.) Generated client, no worker runtime.
 Functions can still execute via **push mode**: the server POSTs to an HTTP
 endpoint you own, which needs no SDK runtime.
 

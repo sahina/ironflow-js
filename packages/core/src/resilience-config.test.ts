@@ -7,6 +7,7 @@ describe("registeredFunctionFromWire resilience settings", () => {
   it("reads retry.onExhausted, circuitBreaker and throttle", () => {
     const fn = registeredFunctionFromWire({
       id: "fn",
+      createdAt: "2026-09-06T12:00:00Z", updatedAt: "2026-09-06T12:00:00Z",
       retry: { maxAttempts: 25, onExhausted: "pause" },
       circuitBreaker: { failureThreshold: 3, openDurationMs: "1000", maxOpenDurationMs: 8000 },
       throttle: { limit: 10, periodMs: 60000, key: "customerId" },
@@ -17,7 +18,7 @@ describe("registeredFunctionFromWire resilience settings", () => {
   });
 
   it("leaves them unset when the server sent none", () => {
-    const fn = registeredFunctionFromWire({ id: "fn", retry: { maxAttempts: 3 } });
+    const fn = registeredFunctionFromWire({ id: "fn", createdAt: "2026-09-06T12:00:00Z", updatedAt: "2026-09-06T12:00:00Z", retry: { maxAttempts: 3 } });
     expect(fn.retry?.onExhausted).toBeUndefined();
     expect(fn.circuitBreaker).toBeUndefined();
     expect(fn.throttle).toBeUndefined();

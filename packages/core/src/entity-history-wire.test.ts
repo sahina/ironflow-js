@@ -10,7 +10,7 @@ function server(total: number) {
     const from = Math.max(Number(body.fromVersion), 1);
     const last = Math.min(from + Number(body.limit) - 1, total);
     const entries = [];
-    for (let v = from; v <= last; v++) entries.push({ eventName: "e", entityVersion: String(v) });
+    for (let v = from; v <= last; v++) entries.push({ eventName: "e", entityVersion: String(v), timestamp: "2026-10-06T12:00:00.123456789Z" });
     return { entries, nextCursor: last < total ? String(last + 1) : undefined };
   };
   return { seen, fetchPage };
@@ -62,5 +62,18 @@ describe("collectEntityHistory", () => {
   it("throws when the cursor does not advance", async () => {
     const fetchPage = async (body: Record<string, unknown>) => ({ entries: [], nextCursor: String(body.fromVersion) });
     await expect(collectEntityHistory(fetchPage, "order/1", { fromVersion: 4 })).rejects.toThrow(IronflowError);
+  });
+
+  it("decodes the timestamp and keeps the exact value for a later bound", async () => {
+    const { fetchPage } = server(1);
+    const [entry] = await collectEntityHistory(fetchPage, "order/1");
+    expect(entry?.timestamp).toEqual(new Date("2026-10-06T12:00:00.123Z"));
+    expect(entry?.timestampExact).toBe("2026-10-06T12:00:00.123456789Z");
+  });
+
+  it("throws on an entry with no timestamp", async () => {
+    await expect(
+      collectEntityHistory(async () => ({ entries: [{ eventName: "e", entityVersion: "1" }] }), "order/1"),
+    ).rejects.toThrow(/entityHistory\.timestamp/);
   });
 });

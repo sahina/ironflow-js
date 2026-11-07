@@ -17,9 +17,11 @@ export interface APIKey {
   environment_id?: string;
   /** The agent tools the key may call. */
   tool_scopes?: string[];
-  created_at: string;
-  expires_at?: string;
-  last_used_at?: string;
+  created_at: Date;
+  /** Absent when the key never expires. */
+  expires_at?: Date;
+  /** Absent until the key is first used. */
+  last_used_at?: Date;
 }
 
 export interface APIKeyWithSecret extends APIKey {
@@ -42,8 +44,8 @@ export interface CreateAPIKeyInput {
 export interface Organization {
   id: string;
   name: string;
-  created_at: string;
-  updated_at: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface CreateOrgInput {
@@ -63,7 +65,7 @@ export interface Role {
   org_id: string;
   name: string;
   is_default: boolean;
-  created_at: string;
+  created_at: Date;
 }
 
 export interface CreateRoleInput {
@@ -87,7 +89,8 @@ export interface PolicySet {
   modules: Record<string, string>;
   decision?: string;
   mode: PolicySetMode | "";
-  updated_at?: string;
+  /** Absent when the org has no set (version 0). */
+  updated_at?: Date;
   updated_by?: string;
   /**
    * False when the server runs with policy enforcement off, so an "enforce"
@@ -108,7 +111,7 @@ export interface PolicySetVersion {
   version: number;
   mode: PolicySetMode;
   decision?: string;
-  created_at: string;
+  created_at: Date;
   created_by?: string;
 }
 

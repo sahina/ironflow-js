@@ -62,19 +62,12 @@ export type {
   IronflowClientConfig,
   RegisterFunctionRequest,
   RegisterFunctionResult,
-  // The shapes IronflowClient returns (string timestamps), not core's Date-based ones (#3043).
-  ListRunsOptions,
-  ListRunsResult,
-  Run,
 } from "./client.js";
 // IronflowClient's own request and result shapes. Core exports EmitOptions and EmitResult
 // under the same names with different fields, so these carry a Client prefix.
 export type {
   EmitOptions as ClientEmitOptions,
   EmitResult as ClientEmitResult,
-  ListRunsOptions as ClientListRunsOptions,
-  ListRunsResult as ClientListRunsResult,
-  Run as ClientRun,
 } from "./client.js";
 export { KVClient, KVBucketHandle } from "./kv.js";
 export type { KVClientConfig } from "./kv.js";
@@ -138,6 +131,9 @@ export type {
   ParallelOptions,
 
   // Run types
+  ListRunsOptions,
+  ListRunsResult,
+  Run,
   RunInfo,
   RunStatus,
   RunStep,
@@ -410,3 +406,5 @@ export { withRunContext, getCurrentRunId } from "./internal/run-context.js";
 
 // Default export
 export default { ironflow };
+
+export { createOTelLogger, type OTelLogContext, type OTelLogSink, type OTelLogValue } from "./logging.js";

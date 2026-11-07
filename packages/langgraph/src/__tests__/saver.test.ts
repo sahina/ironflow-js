@@ -24,7 +24,7 @@ class FakeStream {
       data: input.data,
       entityVersion: this.nextVersion++,
       version: options?.version ?? 1,
-      timestamp: new Date().toISOString(),
+      timestamp: new Date(),
     };
     this.events.push(event);
     return { entityVersion: event.entityVersion, eventId: event.id };

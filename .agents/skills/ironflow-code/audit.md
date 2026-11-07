@@ -1,6 +1,6 @@
 # Audit
 
-### Step 1: Run the scanner
+## Step 1: Run the scanner
 
 ```bash
 scripts/audit-scan.sh <directory>
@@ -17,7 +17,7 @@ as files on disk — read `scripts/audit-scan.sh` as a skill resource and apply 
 search tools instead. Keep the rule names it uses so the report matches scanner output;
 classify each hit against `https://docs.ironflow.run/explanation/ai-pitfalls.md` by topic (the sections are numbered, not keyed by rule ID).
 
-### Step 2: For each finding, classify
+## Step 2: For each finding, classify
 
 Fetch `https://docs.ironflow.run/explanation/ai-pitfalls.md` and read the relevant section for the
 detailed why and fix.
@@ -41,7 +41,7 @@ call, put it above the line the scanner actually reports — that is the line th
 
 Fix real findings; reserve the pragma for false positives, and always write the why.
 
-### Step 3: Generate report
+## Step 3: Generate report
 
 ```markdown
 ## Ironflow Audit Report
@@ -67,7 +67,7 @@ Fix real findings; reserve the pragma for false positives, and always write the 
    `http://localhost:9123` hardcoded — use `process.env.IRONFLOW_SERVER_URL`
 ```
 
-### Step 4: Offer fixes
+## Step 4: Offer fixes
 
 > "Want me to fix these? I can:
 > - Apply all fixes in one pass
@@ -106,4 +106,3 @@ issues require **reading** the code — during Mode 3 audit, after the scanner r
 look for these five by hand: grep for event-name constants and check tense; grep for
 `streams.read` or `streams.getInfo` in rendering/API code; check whether business rule
 violations throw from deciders or from reactors.
-

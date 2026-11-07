@@ -53,3 +53,25 @@ describe("attempt history on the wire (ADR 0139)", () => {
     expect(stepInspectionFromWire({ id: "s2" }).attempts).toEqual([]);
   });
 });
+
+it("maps stored cancellation evidence and preserves an empty match value", () => {
+  expect(
+    runInspectionFromWire({
+      cancellationEvent: {
+        eventId: "cancel-1",
+        eventName: "cancel",
+        matchPath: "key",
+      },
+    }).cancellation_event,
+  ).toEqual({
+    event_id: "cancel-1",
+    event_name: "cancel",
+    match_path: "key",
+    match_value: "",
+  });
+  expect(runInspectionFromWire({}).cancellation_event).toBeUndefined();
+  expect(
+    runInspectionFromWire({ cancellationEvent: { eventId: 4 } })
+      .cancellation_event,
+  ).toBeUndefined();
+});

@@ -3,10 +3,29 @@ import { hydrateEnvFromDiscovery } from "./internal/discovery.js";
 import { stepInspectionFromWire } from "@ironflow/core";
 import { functionListFromWire } from "@ironflow/core";
 import { collectEntityHistory, type EntityHistoryPageWire } from "@ironflow/core";
-import { schemaFromWire, type SchemaWire } from "@ironflow/core";
+import { auditEventFromWire, schemaFromWire, type SchemaWire } from "@ironflow/core";
 import { tenantFromWire, userFromWire } from "@ironflow/core";
 import {
+  apiKeyFromWire,
+  apiKeyWithSecretFromWire,
+  environmentFromWire,
+  organizationFromWire,
+  policySetFromWire,
+  policySetVersionsFromWire,
+  projectFromWire,
+  roleFromWire,
+  secretFromWire,
+  secretListEntryFromWire,
+} from "@ironflow/core";
+import {
+  capacityBucketFromWire,
+  capacityLaneFromWire,
+  capacityLeaseFromWire,
   capacityQuery,
+  capacityQueueEntryFromWire,
+  capacityWorkerCreditFromWire,
+  capacityWorkerSessionFromWire,
+  debounceEntryFromWire,
   definitionHistoryPageFromWire,
   definitionHistoryEntryFromWire,
   definitionHistoryRequest,
@@ -88,6 +107,9 @@ import {
   type ConsumerGroup,
   type ConsumerGroupConfig,
   type UpdateConsumerGroupInput,
+  type ListRunsOptions,
+  type ListRunsResult,
+  type Run,
   type RunStatus,
   type Trigger,
   type ExecutionMode,
@@ -178,7 +200,10 @@ import {
   registeredFunctionFromWire,
   functionHistoryEntryFromWire,
   storedEventFromWire,
+  optionalTimestampFromWire,
   runStepFromWire,
+  timestampFilterToWire,
+  timestampFromWire,
   consumerGroupFromWire,
   runStatusToWire,
   DEFAULT_CLIENT_RETRY,
@@ -199,19 +224,6 @@ type WireRows = WireRow[] | null;
 /** Time-travel payloads are proto bytes, which protojson base64-encodes. */
 function protoBytesJSON(b64?: string): unknown {
   return b64 ? JSON.parse(Buffer.from(b64, "base64").toString("utf8")) : null;
-}
-
-function auditEventFromWire(raw: Record<string, unknown>): AuditEvent {
-  return {
-    id: String(raw.id ?? ""),
-    runId: String(raw.run_id ?? raw.runId ?? ""),
-    functionId: String(raw.function_id ?? raw.functionId ?? ""),
-    stepId: (raw.step_id ?? raw.stepId) as string | undefined,
-    eventType: String(raw.event_type ?? raw.eventType ?? ""),
-    payload: (raw.payload as Record<string, unknown>) ?? {},
-    metadata: raw.metadata as Record<string, string> | undefined,
-    createdAt: String(raw.created_at ?? raw.createdAt ?? ""),
-  };
 }
 
 function visibleAgentToolFromWire(raw: Record<string, unknown>) {
@@ -351,64 +363,6 @@ export interface EmitOptions {
   idempotencyKey?: string;
   /** Additional metadata */
   metadata?: Record<string, unknown>;
-}
-
-/**
- * Run information
- */
-export interface Run {
-  /** Run ID */
-  id: string;
-  /** Function ID */
-  functionId: string;
-  /** Event ID that triggered this run */
-  eventId: string;
-  /** Current status */
-  status: RunStatus;
-  /** Current attempt number */
-  attempt: number;
-  /** Maximum attempts allowed */
-  maxAttempts: number;
-  /** Input data */
-  input?: unknown;
-  /** Output data (if completed) */
-  output?: unknown;
-  /** Error information (if failed) */
-  error?: { message: string; code: string };
-  /** When the run started */
-  startedAt?: string;
-  /** When the run ended */
-  endedAt?: string;
-  /** When the run was created */
-  createdAt: string;
-  /** When the run was last updated */
-  updatedAt: string;
-}
-
-/**
- * Options for listing runs
- */
-export interface ListRunsOptions {
-  /** Filter by function ID */
-  functionId?: string;
-  /** Filter by status. */
-  status?: RunStatus;
-  /** Maximum number of results */
-  limit?: number;
-  /** Pagination cursor */
-  cursor?: string;
-}
-
-/**
- * Result from listing runs
- */
-export interface ListRunsResult {
-  /** List of runs */
-  runs: Run[];
-  /** Cursor for next page */
-  nextCursor?: string;
-  /** Total count of matching runs */
-  totalCount: number;
 }
 
 // ============================================================================
@@ -692,8 +646,8 @@ export class IronflowClient {
     if (options.names?.length) query.set("names", options.names.join(","));
     if (options.sources?.length) query.set("source", options.sources.join(","));
     if (options.search) query.set("search", options.search);
-    if (options.since) query.set("since", options.since);
-    if (options.until) query.set("until", options.until);
+    if (options.since) query.set("since", timestampFilterToWire(options.since));
+    if (options.until) query.set("until", timestampFilterToWire(options.until));
     if (options.limit !== undefined) query.set("limit", String(options.limit));
     if (options.cursor) query.set("cursor", options.cursor);
     if (options.before) query.set("before", options.before);
@@ -739,8 +693,8 @@ export class IronflowClient {
   ): Promise<ListEventNamesResult> {
     const query = new URLSearchParams();
     if (options.sources?.length) query.set("source", options.sources.join(","));
-    if (options.since) query.set("since", options.since);
-    if (options.until) query.set("until", options.until);
+    if (options.since) query.set("since", timestampFilterToWire(options.since));
+    if (options.until) query.set("until", timestampFilterToWire(options.until));
     const suffix = query.size ? `?${query}` : "";
     const response = await this.restRequest<{
       names?: Array<{ name: string; count: number }>;
@@ -968,8 +922,8 @@ export class IronflowClient {
       name: String(t.name ?? ""),
       messageCount: Number(t.messageCount ?? 0),
       consumerCount: Number(t.consumerCount ?? 0),
-      firstMessageAt: t.firstMessageAt ? String(t.firstMessageAt) : undefined,
-      lastMessageAt: t.lastMessageAt ? String(t.lastMessageAt) : undefined,
+      firstMessageAt: optionalTimestampFromWire("topic.firstMessageAt", t.firstMessageAt),
+      lastMessageAt: optionalTimestampFromWire("topic.lastMessageAt", t.lastMessageAt),
     }));
   }
 
@@ -1001,7 +955,7 @@ export class IronflowClient {
 
   /**
    * Read the readiness probe, GET /ready: the server's database and NATS
-   * answer. `health()` reports liveness only. A server that is not ready makes
+   * answer and its JetStream streams have leaders. `health()` reports liveness only. A server that is not ready makes
    * the call throw an IronflowError with code `NOT_READY`, `status` 503 and the
    * failing dependencies in `details.issues`. It makes one attempt: a probe
    * must answer at once, so a 503 is not retried.
@@ -1419,7 +1373,7 @@ export class IronflowClient {
           data: e.data ?? {},
           entityVersion: Number(e.entityVersion ?? 0),
           version: e.version,
-          timestamp: e.timestamp,
+          timestamp: timestampFromWire("streamEvent.timestamp", e.timestamp),
           source: e.source,
           emittedBy: e.emittedBy || undefined,
           metadata: e.metadata,
@@ -1459,8 +1413,8 @@ export class IronflowClient {
           entityType: response.entityType,
           version: Number(response.version ?? 0),
           eventCount: Number(response.eventCount ?? 0),
-          createdAt: response.createdAt,
-          updatedAt: response.updatedAt,
+          createdAt: timestampFromWire("stream.createdAt", response.createdAt),
+          updatedAt: timestampFromWire("stream.updatedAt", response.updatedAt),
         };
       } catch (err) {
         if (err instanceof IronflowError && err.message === "stream not found") {
@@ -1518,7 +1472,7 @@ export class IronflowClient {
         entityType: response.entityType,
         entityVersion: Number(response.entityVersion ?? 0),
         state: response.state,
-        createdAt: response.createdAt,
+        createdAt: timestampFromWire("snapshot.createdAt", response.createdAt),
       };
     },
 
@@ -1540,7 +1494,7 @@ export class IronflowClient {
         entityType: String(stream.entityType ?? ""),
         version: Number(stream.version ?? 0),
         eventCount: Number(stream.eventCount ?? 0),
-        lastEventAt: String(stream.updatedAt ?? ""),
+        lastEventAt: timestampFromWire("stream.updatedAt", stream.updatedAt),
       }));
     },
 
@@ -1679,15 +1633,16 @@ export class IronflowClient {
   readonly apiKeys = {
     /** Create a new API key */
     create: async (input: CreateAPIKeyInput): Promise<APIKeyWithSecret> => {
-      return this.restRequest<APIKeyWithSecret>("POST", "/api/v1/apikeys", input, "apiKeys.create");
+      return apiKeyWithSecretFromWire(await this.restRequest<WireRow>("POST", "/api/v1/apikeys", input, "apiKeys.create"));
     },
     /** List all API keys */
     list: async (): Promise<APIKey[]> => {
-      return this.restRequest<APIKey[]>("GET", "/api/v1/apikeys", undefined, "apiKeys.list");
+      const rows = await this.restRequest<WireRows>("GET", "/api/v1/apikeys", undefined, "apiKeys.list");
+      return (rows ?? []).map(apiKeyFromWire);
     },
     /** Get an API key by ID */
     get: async (id: string): Promise<APIKey> => {
-      return this.restRequest<APIKey>("GET", `/api/v1/apikeys/${id}`, undefined, "apiKeys.get");
+      return apiKeyFromWire(await this.restRequest<WireRow>("GET", `/api/v1/apikeys/${id}`, undefined, "apiKeys.get"));
     },
     /** Delete an API key */
     delete: async (id: string): Promise<void> => {
@@ -1695,7 +1650,7 @@ export class IronflowClient {
     },
     /** Rotate an API key (generates a new secret) */
     rotate: async (id: string): Promise<APIKeyWithSecret> => {
-      return this.restRequest<APIKeyWithSecret>("POST", `/api/v1/apikeys/${id}/rotate`, undefined, "apiKeys.rotate");
+      return apiKeyWithSecretFromWire(await this.restRequest<WireRow>("POST", `/api/v1/apikeys/${id}/rotate`, undefined, "apiKeys.rotate"));
     },
   };
 
@@ -1714,19 +1669,20 @@ export class IronflowClient {
     create: async (input: CreateOrgInput): Promise<Organization> => {
       // POST /api/v1/orgs always answers 403: tenants cannot create orgs, and a
       // platform credential on a tenant route needs an X-Ironflow-Org header (#2945).
-      return this.restRequest<Organization>("POST", "/api/v1/platform/orgs", input, "orgs.create");
+      return organizationFromWire(await this.restRequest<WireRow>("POST", "/api/v1/platform/orgs", input, "orgs.create"));
     },
     /** List all organizations */
     list: async (): Promise<Organization[]> => {
-      return this.restRequest<Organization[]>("GET", "/api/v1/orgs", undefined, "orgs.list");
+      const rows = await this.restRequest<WireRows>("GET", "/api/v1/orgs", undefined, "orgs.list");
+      return (rows ?? []).map(organizationFromWire);
     },
     /** Get an organization by ID */
     get: async (id: string): Promise<Organization> => {
-      return this.restRequest<Organization>("GET", `/api/v1/orgs/${id}`, undefined, "orgs.get");
+      return organizationFromWire(await this.restRequest<WireRow>("GET", `/api/v1/orgs/${id}`, undefined, "orgs.get"));
     },
     /** Update an organization */
     update: async (id: string, input: UpdateOrgInput): Promise<Organization> => {
-      return this.restRequest<Organization>("PATCH", `/api/v1/orgs/${id}`, input, "orgs.update");
+      return organizationFromWire(await this.restRequest<WireRow>("PATCH", `/api/v1/orgs/${id}`, input, "orgs.update"));
     },
     /** Delete an organization */
     delete: async (id: string): Promise<void> => {
@@ -1746,20 +1702,21 @@ export class IronflowClient {
   readonly roles = {
     /** Create a new role */
     create: async (input: CreateRoleInput): Promise<Role> => {
-      return this.restRequest<Role>("POST", "/api/v1/roles", input, "roles.create");
+      return roleFromWire(await this.restRequest<WireRow>("POST", "/api/v1/roles", input, "roles.create"));
     },
     /** List roles, optionally filtered by organization */
     list: async (orgId?: string): Promise<Role[]> => {
       const query = orgId ? `?org_id=${encodeURIComponent(orgId)}` : "";
-      return this.restRequest<Role[]>("GET", `/api/v1/roles${query}`, undefined, "roles.list");
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/roles${query}`, undefined, "roles.list");
+      return (rows ?? []).map(roleFromWire);
     },
     /** Get a role by ID */
     get: async (id: string): Promise<Role> => {
-      return this.restRequest<Role>("GET", `/api/v1/roles/${id}`, undefined, "roles.get");
+      return roleFromWire(await this.restRequest<WireRow>("GET", `/api/v1/roles/${id}`, undefined, "roles.get"));
     },
     /** Update a role */
     update: async (id: string, input: UpdateRoleInput): Promise<Role> => {
-      return this.restRequest<Role>("PATCH", `/api/v1/roles/${id}`, input, "roles.update");
+      return roleFromWire(await this.restRequest<WireRow>("PATCH", `/api/v1/roles/${id}`, input, "roles.update"));
     },
     /** Delete a role */
     delete: async (id: string): Promise<void> => {
@@ -1779,7 +1736,7 @@ export class IronflowClient {
   readonly policySet = {
     /** The org's Rego policy set (version 0 when there is none). */
     get: async (): Promise<PolicySet> =>
-      this.restRequest<PolicySet>("GET", "/api/v1/policy-set", undefined, "policySet.get"),
+      policySetFromWire(await this.restRequest<WireRow>("GET", "/api/v1/policy-set", undefined, "policySet.get")),
     /**
      * Replace the set if its version is ifVersion (0 when none). A 412 throws
      * PreconditionFailedError. A 503 `policy_set_not_propagated` is not retryable: the write
@@ -1787,7 +1744,7 @@ export class IronflowClient {
      * request again with ifVersion = that version (a no-op); never re-send with the old version.
      */
     put: async (input: PolicySetInput, ifVersion: number): Promise<PolicySet> =>
-      this.restRequest<PolicySet>("PUT", "/api/v1/policy-set", input, "policySet.put", { "If-Match": String(ifVersion) }),
+      policySetFromWire(await this.restRequest<WireRow>("PUT", "/api/v1/policy-set", input, "policySet.put", { "If-Match": String(ifVersion) })),
     /** Compile the set without storing it. Rejects with the per-file errors when it is invalid. */
     validate: async (input: PolicySetInput): Promise<void> => {
       await this.restRequest<unknown>("POST", "/api/v1/policy-set/validate", input, "policySet.validate");
@@ -1796,17 +1753,17 @@ export class IronflowClient {
     dryRun: async (input: PolicySetDryRunInput): Promise<PolicySetDryRunResult> =>
       this.restRequest<PolicySetDryRunResult>("POST", "/api/v1/policy-set/dry-run", input, "policySet.dryRun"),
     versions: async (): Promise<PolicySetVersion[]> =>
-      (await this.restRequest<{ versions: PolicySetVersion[] }>("GET", "/api/v1/policy-set/versions", undefined, "policySet.versions")).versions,
+      policySetVersionsFromWire(await this.restRequest<{ versions: WireRow[] }>("GET", "/api/v1/policy-set/versions", undefined, "policySet.versions")),
     /** One stored version, modules included. */
     version: async (version: number): Promise<PolicySet> =>
-      this.restRequest<PolicySet>("GET", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}`, undefined, "policySet.version"),
+      policySetFromWire(await this.restRequest<WireRow>("GET", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}`, undefined, "policySet.version")),
     /**
      * Store an earlier version's modules as a new version. The active mode is kept, not restored.
      * A 503 `policy_set_not_propagated` means the rollback committed: send it again with
      * ifVersion = the saved version (a no-op that finishes propagation).
      */
     rollback: async (version: number, ifVersion: number): Promise<PolicySet> =>
-      this.restRequest<PolicySet>("POST", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}/rollback`, undefined, "policySet.rollback", { "If-Match": String(ifVersion) }),
+      policySetFromWire(await this.restRequest<WireRow>("POST", `/api/v1/policy-set/versions/${encodeURIComponent(String(version))}/rollback`, undefined, "policySet.rollback", { "If-Match": String(ifVersion) })),
   };
 
   /**
@@ -1888,7 +1845,7 @@ export class IronflowClient {
         undefined,
         true,
       );
-      const result = {...projectionStatusFromWire(p), last_event_seq:Number(p.lastEventSeq ?? 0), error_message:String(p.errorMessage ?? ""), updated_at:String(p.updatedAt ?? "")};
+      const result = {...projectionStatusFromWire(p), last_event_seq:Number(p.lastEventSeq ?? 0), error_message:String(p.errorMessage ?? "")};
       return result;
     },
     /** Trigger a full rebuild of a projection */
@@ -1975,7 +1932,7 @@ export class IronflowClient {
      * Errors: 400 (partition rejected — external projection, or a managed
      * projection that declares no partition key and has no state row under
      * the requested partition), 404 (projection not found), 409
-     * (paused/rebuilding), 429 (wait capacity exceeded, or more than 64
+     * (paused/rebuilding/its last rebuild failed), 429 (wait capacity exceeded, or more than 64
      * distinct partitions of this projection already have a live wait), 503
      * (the shared poller stopped before this wait attached — retryable, a
      * retry spawns a fresh one).
@@ -2149,23 +2106,35 @@ export class IronflowClient {
    */
   readonly capacity = {
     /** Concurrency lanes. */
-    listLanes: (options?: CapacityListOptions): Promise<CapacityLane[]> =>
-      this.restRequest("GET", `/api/v1/capacity/lanes${capacityQuery(options)}`, undefined, "capacity.listLanes"),
+    listLanes: async (options?: CapacityListOptions): Promise<CapacityLane[]> => {
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/capacity/lanes${capacityQuery(options)}`, undefined, "capacity.listLanes");
+      return (rows ?? []).map(capacityLaneFromWire);
+    },
     /** Executions waiting for capacity. */
-    listQueue: (options?: CapacityListOptions): Promise<CapacityQueueEntry[]> =>
-      this.restRequest("GET", `/api/v1/capacity/queue${capacityQuery(options)}`, undefined, "capacity.listQueue"),
+    listQueue: async (options?: CapacityListOptions): Promise<CapacityQueueEntry[]> => {
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/capacity/queue${capacityQuery(options)}`, undefined, "capacity.listQueue");
+      return (rows ?? []).map(capacityQueueEntryFromWire);
+    },
     /** Active concurrency leases. `function` is ignored; match a lease by `run_id`. */
-    listLeases: (options?: CapacityListOptions): Promise<CapacityLease[]> =>
-      this.restRequest("GET", `/api/v1/capacity/leases${capacityQuery(options)}`, undefined, "capacity.listLeases"),
+    listLeases: async (options?: CapacityListOptions): Promise<CapacityLease[]> => {
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/capacity/leases${capacityQuery(options)}`, undefined, "capacity.listLeases");
+      return (rows ?? []).map(capacityLeaseFromWire);
+    },
     /** Fairness-ledger buckets. */
-    listBuckets: (options?: CapacityListOptions): Promise<CapacityBucket[]> =>
-      this.restRequest("GET", `/api/v1/capacity/buckets${capacityQuery(options)}`, undefined, "capacity.listBuckets"),
+    listBuckets: async (options?: CapacityListOptions): Promise<CapacityBucket[]> => {
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/capacity/buckets${capacityQuery(options)}`, undefined, "capacity.listBuckets");
+      return (rows ?? []).map(capacityBucketFromWire);
+    },
     /** Connected streaming-worker sessions. */
-    listSessions: (options?: CapacityListOptions): Promise<CapacityWorkerSession[]> =>
-      this.restRequest("GET", `/api/v1/capacity/sessions${capacityQuery(options)}`, undefined, "capacity.listSessions"),
+    listSessions: async (options?: CapacityListOptions): Promise<CapacityWorkerSession[]> => {
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/capacity/sessions${capacityQuery(options)}`, undefined, "capacity.listSessions");
+      return (rows ?? []).map(capacityWorkerSessionFromWire);
+    },
     /** Worker execution slots. `function` is ignored. */
-    listCredits: (options?: CapacityListOptions): Promise<CapacityWorkerCredit[]> =>
-      this.restRequest("GET", `/api/v1/capacity/credits${capacityQuery(options)}`, undefined, "capacity.listCredits"),
+    listCredits: async (options?: CapacityListOptions): Promise<CapacityWorkerCredit[]> => {
+      const rows = await this.restRequest<WireRows>("GET", `/api/v1/capacity/credits${capacityQuery(options)}`, undefined, "capacity.listCredits");
+      return (rows ?? []).map(capacityWorkerCreditFromWire);
+    },
     /** Per-function capacity totals across all environments. */
     stats: (): Promise<CapacityStat[]> =>
       this.restRequest("GET", "/api/v1/capacity/stats", undefined, "capacity.stats"),
@@ -2174,8 +2143,10 @@ export class IronflowClient {
   /** Armed debounce timers in this client's environment. */
   readonly debounce = {
     /** List the armed debounce timers. */
-    list: (): Promise<DebounceEntry[]> =>
-      this.restRequest("GET", "/api/v1/debounce/entries", undefined, "debounce.list"),
+    list: async (): Promise<DebounceEntry[]> => {
+      const rows = await this.restRequest<WireRows>("GET", "/api/v1/debounce/entries", undefined, "debounce.list");
+      return (rows ?? []).map(debounceEntryFromWire);
+    },
     /**
      * Disarm one timer so its pending invocation never fires. Pass the raw
      * debounce key; it is base64url-encoded for the path. Cancelling an entry
@@ -2206,31 +2177,32 @@ export class IronflowClient {
   readonly secrets = {
     /** Get a secret's metadata by name. The server never returns the value, so `value` is undefined. */
     get: async (name: string): Promise<Secret> => {
-      return this.restRequest<Secret>("GET", `/api/v1/secrets/${encodeURIComponent(name)}`, undefined, "secrets.get");
+      return secretFromWire(await this.restRequest<WireRow>("GET", `/api/v1/secrets/${encodeURIComponent(name)}`, undefined, "secrets.get"));
     },
     /** Create a new secret */
     set: async (name: string, value: string): Promise<Secret> => {
-      return this.restRequest<Secret>("POST", "/api/v1/secrets", { name, value }, "secrets.set");
+      return secretFromWire(await this.restRequest<WireRow>("POST", "/api/v1/secrets", { name, value }, "secrets.set"));
     },
     /** Update an existing secret's value */
     update: async (name: string, value: string): Promise<Secret> => {
-      return this.restRequest<Secret>("PUT", `/api/v1/secrets/${encodeURIComponent(name)}`, { value }, "secrets.update");
+      return secretFromWire(await this.restRequest<WireRow>("PUT", `/api/v1/secrets/${encodeURIComponent(name)}`, { value }, "secrets.update"));
     },
     /** Rename a secret and/or update its description without changing its value. */
     patch: async (name: string, input: PatchSecretInput): Promise<Secret> => {
       if (input.name === undefined && input.description === undefined) {
         throw new ValidationError("Secret patch requires name or description");
       }
-      return this.restRequest<Secret>(
+      return secretFromWire(await this.restRequest<WireRow>(
         "PATCH",
         `/api/v1/secrets/${encodeURIComponent(name)}`,
         input,
         "secrets.patch"
-      );
+      ));
     },
     /** List all secrets (names only, no values) */
     list: async (): Promise<SecretListEntry[]> => {
-      return this.restRequest<SecretListEntry[]>("GET", "/api/v1/secrets", undefined, "secrets.list");
+      const rows = await this.restRequest<WireRows>("GET", "/api/v1/secrets", undefined, "secrets.list");
+      return (rows ?? []).map(secretListEntryFromWire);
     },
     /** Delete a secret */
     delete: async (name: string): Promise<void> => {
@@ -2252,36 +2224,37 @@ export class IronflowClient {
   readonly projects = {
     /** List all projects */
     list: async (): Promise<Project[]> => {
-      return this.restRequest<Project[]>(
+      const rows = await this.restRequest<WireRows>(
         "GET",
         "/api/v1/projects",
         undefined,
         "projects.list",
       );
+      return (rows ?? []).map(projectFromWire);
     },
     /** Create a new project */
     create: async (input: {
       name: string;
       description?: string;
     }): Promise<Project> => {
-      return this.restRequest<Project>(
+      return projectFromWire(await this.restRequest<WireRow>(
         "POST",
         "/api/v1/projects",
         input,
         "projects.create",
-      );
+      ));
     },
     /** Update a project */
     update: async (
       id: string,
       input: { name?: string; description?: string },
     ): Promise<Project> => {
-      return this.restRequest<Project>(
+      return projectFromWire(await this.restRequest<WireRow>(
         "PUT",
         `/api/v1/projects/${encodeURIComponent(id)}`,
         input,
         "projects.update",
-      );
+      ));
     },
     /** Delete a project */
     delete: async (id: string): Promise<void> => {
@@ -2303,36 +2276,37 @@ export class IronflowClient {
   readonly environments = {
     /** List all environments */
     list: async (): Promise<Environment[]> => {
-      return this.restRequest<Environment[]>(
+      const rows = await this.restRequest<WireRows>(
         "GET",
         "/api/v1/environments",
         undefined,
         "environments.list",
       );
+      return (rows ?? []).map(environmentFromWire);
     },
     /** Create a new environment */
     create: async (input: {
       name: string;
       project_id: string;
     }): Promise<Environment> => {
-      return this.restRequest<Environment>(
+      return environmentFromWire(await this.restRequest<WireRow>(
         "POST",
         "/api/v1/environments",
         input,
         "environments.create",
-      );
+      ));
     },
     /** Update an environment */
     update: async (
       id: string,
       input: { name?: string },
     ): Promise<Environment> => {
-      return this.restRequest<Environment>(
+      return environmentFromWire(await this.restRequest<WireRow>(
         "PUT",
         `/api/v1/environments/${encodeURIComponent(id)}`,
         input,
         "environments.update",
-      );
+      ));
     },
     /** Delete an environment */
     delete: async (id: string): Promise<void> => {
@@ -2375,7 +2349,7 @@ export class IronflowClient {
     register: async (input: RegisterSchemaInput): Promise<EventSchema> => {
 
       const status = await this.request<{ status?: string }>("/ironflow.v1.EventSchemaService/RegisterSchema", { eventName: input.name, version: input.version, schemaJson: JSON.stringify(input.schema) }, "schemas.register", undefined, true);
-      return { ...status, event_name: input.name, version: input.version, schema: input.schema, created_at: "" };
+      return { ...status, event_name: input.name, version: input.version, schema: input.schema };
     },
     /** List registered schemas, including their documents. */
     list: async (): Promise<EventSchema[]> => {
@@ -2498,14 +2472,14 @@ export class IronflowClient {
         output: protoBytesJSON(step.output),
         error: protoBytesJSON(step.error),
         originalOutput: protoBytesJSON(step.originalOutput),
-        startedAt: step.startedAt ? new Date(step.startedAt) : null,
-        completedAt: step.completedAt ? new Date(step.completedAt) : null,
+        startedAt: optionalTimestampFromWire("step.startedAt", step.startedAt) ?? null,
+        completedAt: optionalTimestampFromWire("step.completedAt", step.completedAt) ?? null,
         durationMs: step.durationMs ?? null,
         injected: step.injected ?? false,
         patched: step.patched ?? false,
       })),
-      timestamp: new Date(s.timestamp),
-      createdAt: s.createdAt ? new Date(s.createdAt) : null,
+      timestamp: timestampFromWire("snapshot.timestamp", s.timestamp),
+      createdAt: optionalTimestampFromWire("snapshot.createdAt", s.createdAt) ?? null,
     };
   }
 
@@ -2525,7 +2499,7 @@ export class IronflowClient {
       stepName: e.stepName || "",
       summary: e.summary,
       significant: e.significant ?? false,
-      timestamp: new Date(e.timestamp),
+      timestamp: timestampFromWire("timeline.timestamp", e.timestamp),
     }));
   }
 
@@ -2583,8 +2557,8 @@ export class IronflowClient {
       {
         run_id: runId,
         event_type: options.eventType ?? "",
-        from_timestamp: options.fromTimestamp ?? "",
-        to_timestamp: options.toTimestamp ?? "",
+        from_timestamp: options.fromTimestamp ? timestampFilterToWire(options.fromTimestamp) : "",
+        to_timestamp: options.toTimestamp ? timestampFilterToWire(options.toTimestamp) : "",
         limit: options.limit ?? 0,
         cursor: options.cursor ?? "",
       },
@@ -2605,8 +2579,8 @@ export class IronflowClient {
     if (options.runId) query.set("run_id", options.runId);
     if (options.functionId) query.set("function_id", options.functionId);
     if (options.eventType) query.set("event_type", options.eventType);
-    if (options.fromTimestamp) query.set("from", options.fromTimestamp);
-    if (options.toTimestamp) query.set("to", options.toTimestamp);
+    if (options.fromTimestamp) query.set("from", timestampFilterToWire(options.fromTimestamp));
+    if (options.toTimestamp) query.set("to", timestampFilterToWire(options.toTimestamp));
     if (options.limit !== undefined) query.set("limit", String(options.limit));
     if (options.cursor) query.set("cursor", options.cursor);
     const suffix = query.size > 0 ? `?${query.toString()}` : "";
@@ -3093,7 +3067,7 @@ export class IronflowClient {
       name: string;
       output: unknown;
       injected: boolean;
-      completedAt: string;
+      completedAt?: Date;
       /** Step kind: invoke, sleep, wait_for_event, compensate, invoke_function. */
       stepType: string;
       /** Terminal status at snapshot time: "completed" or "failed". */
@@ -3127,7 +3101,7 @@ export class IronflowClient {
         name: s.name,
         output: decodeProtoBytes(s.output),
         injected: s.injected ?? false,
-        completedAt: s.completedAt ?? "",
+        completedAt: optionalTimestampFromWire("pausedStep.completedAt", s.completedAt),
         // Without these a caller cannot tell a failed step from a completed one,
         // which is the whole reason failed steps are exposed here (#1919).
         stepType: s.stepType ?? "",

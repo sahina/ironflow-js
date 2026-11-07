@@ -29,6 +29,7 @@ import type {
 import { webSocketProtocols } from "../websocket-auth.js";
 
 interface PendingSubscription {
+  lookupKey?: string;
   options?: SubscribeOptions;
   sent: boolean;
   accepted: boolean;
@@ -123,7 +124,6 @@ export class WebSocketTransport implements Transport {
           clearTimeout(timeoutId);
           this._connectionState = "connected";
           this.reconnectAttempt = 0;
-          this.callbacks?.onConnectionChange("connected");
 
           // Re-subscribe all pending subscriptions
           for (const [pattern, subscriptions] of this.pendingSubscriptions) {
@@ -138,6 +138,7 @@ export class WebSocketTransport implements Transport {
             }
           }
 
+          this.callbacks?.onConnectionChange("connected");
           resolve();
         };
 
@@ -201,9 +202,10 @@ export class WebSocketTransport implements Transport {
     this.subscriptionPatterns.clear();
   }
 
-  subscribe(pattern: string, options?: SubscribeOptions): void {
+  subscribe(pattern: string, options?: SubscribeOptions, lookupKey?: string): void {
     const storedOptions = options ? { ...options } : undefined;
     const subscription: PendingSubscription = {
+      lookupKey,
       options: storedOptions,
       sent: false,
       accepted: false,
@@ -353,15 +355,12 @@ export class WebSocketTransport implements Transport {
               this.subscriptionPatterns.delete(previousSubscriptionId);
             }
             this.subscriptionPatterns.set(sub.subscriptionId, sub.pattern);
-            if (previousSubscriptionId) {
-              this.callbacks?.onSubscribed(
-                sub.pattern,
-                sub.subscriptionId,
-                previousSubscriptionId,
-              );
-            } else {
-              this.callbacks?.onSubscribed(sub.pattern, sub.subscriptionId);
-            }
+            this.callbacks?.onSubscribed(
+              sub.pattern,
+              sub.subscriptionId,
+              previousSubscriptionId,
+              subscription?.lookupKey,
+            );
           } else {
             // A status a newer server added reads as a failure, but the server may
             // have issued an id for it; release that id so the server drops it.
@@ -391,6 +390,7 @@ export class WebSocketTransport implements Transport {
                 sub.message ?? `Subscription failed: ${sub.code ?? sub.status}`,
               ),
               rejected?.subscriptionId,
+              rejected?.lookupKey,
             );
           }
         }

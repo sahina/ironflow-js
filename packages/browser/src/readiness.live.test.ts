@@ -66,6 +66,7 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const seeded = await client.getRunSteps(seed.runId);
     expect(seeded.count).toBe(1);
     expect(seeded.steps[0]).toMatchObject({ stepId: seed.stepId, runId: seed.runId, status: "completed", output: seed.stepOutput });
+    expect(seeded.steps[0]?.createdAt).toBeInstanceOf(Date);
     const held = await client.getRunSteps(hold.runId);
     expect(held.steps).toHaveLength(2);
     expect(held.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", output: { sdk: "browser" } });
@@ -87,7 +88,7 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const state = await client.getPausedState(hold.runId);
     expect(state.pauseReason).toBe("injection");
     expect(state.steps).toHaveLength(1);
-    expect(state.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", injected: false, completedAt: expect.stringMatching(/^\d{4}-/), output: { sdk: "browser" } });
+    expect(state.steps[0]).toMatchObject({ id: hold.noteStepId, status: "completed", injected: false, completedAt: expect.any(Date), output: { sdk: "browser" } });
   });
 
   // The wait step is still open, so resume puts the run back on its wait.
@@ -159,7 +160,8 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     for (const e of trail.events) {
       expect(e.runId).toBe(seed.runId);
       expect(e.functionId).toBe(seed.functionId);
-      expect(e.createdAt).toBeTruthy();
+      expect(e.createdAt).toBeInstanceOf(Date);
+      expect(e.createdAt.getUTCFullYear()).toBeGreaterThan(2000);
       if (e.eventType.startsWith("step.")) expect(e.stepId).toBe(seed.stepId);
     }
 
@@ -218,7 +220,8 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
     const list = await client.listProjections();
     expect(list.find((p) => p.name === name)?.status).toBe("active");
     const status = await client.getProjectionStatus(name);
-    expect(status).toMatchObject({ name, mode: "managed", status: "active", lastEventSeq: got.lastEventSeq });
+    expect(status).toMatchObject({ name, mode: "managed", status: "active", lastEventSeq: got.lastEventSeq, updatedAt: expect.any(Date) });
+    expect(list.find((p) => p.name === name)?.updatedAt).toBeInstanceOf(Date);
   });
 
   it("proj-wait-for-event", async () => {

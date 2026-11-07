@@ -17,8 +17,8 @@ export interface FileBucketInfo {
   allowedContentTypes: string[];
   emitEvents: boolean;
   allowSignedUrls: boolean;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface FileInfo {
@@ -29,8 +29,8 @@ export interface FileInfo {
   sha256: string;
   etag: string;
   metadata: Record<string, string>;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export interface ListFilesOptions {
@@ -87,5 +87,5 @@ export interface SignUploadOptions {
 
 export interface SignedUrl {
   url: string;
-  expiresAt: string;
+  expiresAt: Date;
 }
