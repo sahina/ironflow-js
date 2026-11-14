@@ -1,0 +1,13 @@
+version: 2
+updates:
+  # pnpm workspace with a single root lockfile. Dependabot's npm ecosystem
+  # covers npm, Yarn, and pnpm, and updates every workspace package from here.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
