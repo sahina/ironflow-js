@@ -74,10 +74,7 @@ describe("WebSocketTransport resume cursor", () => {
       replay: 25,
       includeMetadata: true,
       filter: "data.total > 100",
-      namespace: "production",
       consumerGroup: "processors",
-      ackMode: "manual",
-      backpressure: "block",
     });
 
     const connecting = transport.connect();
@@ -92,10 +89,7 @@ describe("WebSocketTransport resume cursor", () => {
       replay: 25,
       includeMetadata: true,
       filter: "data.total > 100",
-      namespace: "production",
       consumerGroup: "processors",
-      ackMode: "manual",
-      backpressure: "block",
     });
     firstSocket.message({
       type: "subscription_result",
@@ -113,10 +107,7 @@ describe("WebSocketTransport resume cursor", () => {
     expect(reconnect.subscription.options).toMatchObject({
       includeMetadata: true,
       filter: "data.total > 100",
-      namespace: "production",
       consumerGroup: "processors",
-      ackMode: "manual",
-      backpressure: "block",
     });
     expect(reconnect.subscription.options.replay).toBeUndefined();
   });

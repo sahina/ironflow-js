@@ -992,7 +992,6 @@ export class IronflowClient {
         {
           name: config.name,
           pattern: config.pattern,
-          namespace: config.namespace ?? "default",
           ...(config.filterExpr !== undefined ? { filterExpr: config.filterExpr } : {}),
           ...(config.ackMode ? { ackMode: `ACK_MODE_${config.ackMode.toUpperCase()}` } : {}),
           ...(config.backpressure
@@ -1011,15 +1010,15 @@ export class IronflowClient {
       );
       return consumerGroupFromWire(response);
     },
-    get: async (name: string, namespace = "default"): Promise<ConsumerGroup> => {
+    get: async (name: string): Promise<ConsumerGroup> => {
       const response = await this.request<Record<string, unknown>>(
         "/ironflow.v1.PubSubService/GetConsumerGroup",
-        { name, namespace },
+        { name },
         "consumerGroups.get"
       );
       return consumerGroupFromWire(response);
     },
-    list: async (namespace?: string): Promise<ConsumerGroup[]> => {
+    list: async (): Promise<ConsumerGroup[]> => {
       const groups: ConsumerGroup[] = [];
       let cursor: string | undefined;
       do {
@@ -1030,7 +1029,6 @@ export class IronflowClient {
         }>(
           "/ironflow.v1.PubSubService/ListConsumerGroups",
           {
-            ...(namespace ? { namespace } : {}),
             limit: 100,
             ...(cursor ? { cursor } : {}),
           },
@@ -1043,10 +1041,9 @@ export class IronflowClient {
     },
     update: async (
       name: string,
-      input: UpdateConsumerGroupInput,
-      namespace = "default"
+      input: UpdateConsumerGroupInput
     ): Promise<ConsumerGroup> => {
-      const group: Record<string, unknown> = { name, namespace };
+      const group: Record<string, unknown> = { name };
       const paths: string[] = [];
       const set = (path: string, value: unknown) => {
         if (value !== undefined) {
@@ -1085,10 +1082,10 @@ export class IronflowClient {
       );
       return consumerGroupFromWire(response);
     },
-    delete: async (name: string, namespace = "default"): Promise<void> => {
+    delete: async (name: string): Promise<void> => {
       await this.request<Record<string, never>>(
         "/ironflow.v1.PubSubService/DeleteConsumerGroup",
-        { name, namespace },
+        { name },
         "consumerGroups.delete"
       );
     },
@@ -3018,10 +3015,11 @@ export class IronflowClient {
    * On the Connect RPC since #1963, alongside getRun/listRuns/cancelRun. It
    * used to POST the REST route with its own hand-rolled fetch, which meant a
    * second decode path (mapRestRunResponse, deleted) and a 409 that arrived as
-   * an untyped Error. It now shares request()'s typed errors, so a
-   * deduplicated resume throws ConflictError, and carries X-Ironflow-Run-ID
-   * when called from inside a run like every other RPC. A resume that loses a
-   * CAS race throws ContendedError instead — same 409, opposite advice (#2074).
+   * an untyped Error. It now shares request()'s typed errors, so a 409 throws
+   * ConflictError, and carries X-Ironflow-Run-ID when called from inside a run
+   * like every other RPC. A resume that loses a CAS race throws ContendedError
+   * instead — same 409, opposite advice (#2074). A run that is already running
+   * answers failed_precondition.
    */
   async resumeRun(runId: string, fromStep?: string): Promise<Run> {
     const response = await this.request<RunWireResponse>(
@@ -3311,8 +3309,8 @@ export class IronflowClient {
         // Two Connect codes land on 409 and want opposite things (#2074).
         // `aborted` is a lost CAS race: nothing was applied, retry. Anything
         // else — `already_exists`, `failed_precondition` or a body with no code —
-        // is a deduplicated resumeRun (#1963) or a failed precondition: wait or
-        // fix the state, do not retry. Without
+        // is a conflict or a failed precondition: fix the state, do not retry.
+        // Without
         // this case a 409 arrived as a bare IronflowError carrying no status,
         // so the only way to tell either from a real failure was to match the
         // message.

@@ -126,12 +126,10 @@ describe("SubscriptionManager WebSocket reconnect", () => {
 
     const subPromise1 = manager.subscribe("orders.>", {
       consumerGroup,
-      ackMode: "manual",
       onEvent: onEvent1,
     });
     const subPromise2 = manager.subscribe("orders.>", {
       consumerGroup,
-      ackMode: "manual",
       onEvent: onEvent2,
     });
     const firstSocket = MockWebSocket.instances[0]!;
@@ -180,10 +178,13 @@ describe("SubscriptionManager WebSocket reconnect", () => {
     expect(sub1.id).toBe("sub-3");
     expect(sub2.id).toBe("sub-4");
 
-    if (!("ack" in sub1) || !("ack" in sub2)) throw new Error("expected ackable handles");
-    await sub1.ack("event-1");
-    await sub2.ack("event-2");
-    expect(secondSocket.send.mock.calls.slice(-2).map(([raw]) => JSON.parse(raw).subscriptionId)).toEqual(["sub-3", "sub-4"]);
+    // Only a consumer-group member acknowledges through its handle.
+    expect("ack" in sub1).toBe(consumerGroup !== undefined);
+    if ("ack" in sub1 && "ack" in sub2) {
+      await sub1.ack("event-1");
+      await sub2.ack("event-2");
+      expect(secondSocket.send.mock.calls.slice(-2).map(([raw]) => JSON.parse(raw).subscriptionId)).toEqual(["sub-3", "sub-4"]);
+    }
 
     sub1.unsubscribe();
     sub2.unsubscribe();

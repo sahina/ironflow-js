@@ -1089,11 +1089,11 @@ describe("SubscriptionManager (real module)", () => {
 
   // ---------- Manual ack mode ----------
 
-  describe("manual ack mode", () => {
+  describe("consumer-group ack handles", () => {
     it("should return AckableSubscription with ack/nak/term methods", async () => {
       const p = manager.subscribe("ack.>", {
         onEvent: vi.fn(),
-        ackMode: "manual",
+        consumerGroup: "ack-group",
       });
       transport._confirm("ack.>", "sub-ack");
       const sub = (await p) as AckableSubscription;
@@ -1106,7 +1106,7 @@ describe("SubscriptionManager (real module)", () => {
     it("should delegate ack to transport.ack", async () => {
       const p = manager.subscribe("ack2.>", {
         onEvent: vi.fn(),
-        ackMode: "manual",
+        consumerGroup: "ack-group",
       });
       transport._confirm("ack2.>", "sub-ack2");
       const sub = (await p) as AckableSubscription;
@@ -1118,7 +1118,7 @@ describe("SubscriptionManager (real module)", () => {
     it("should delegate nak with optional delay to transport.ack", async () => {
       const p = manager.subscribe("nak.>", {
         onEvent: vi.fn(),
-        ackMode: "manual",
+        consumerGroup: "ack-group",
       });
       transport._confirm("nak.>", "sub-nak");
       const sub = (await p) as AckableSubscription;
@@ -1130,7 +1130,7 @@ describe("SubscriptionManager (real module)", () => {
     it("should delegate term to transport.ack", async () => {
       const p = manager.subscribe("term.>", {
         onEvent: vi.fn(),
-        ackMode: "manual",
+        consumerGroup: "ack-group",
       });
       transport._confirm("term.>", "sub-term");
       const sub = (await p) as AckableSubscription;

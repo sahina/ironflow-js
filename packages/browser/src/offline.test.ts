@@ -241,7 +241,9 @@ describe("emit through the queue", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const c = await make();
-    await c.emit("order.placed", { id: 1 }, { namespace: "shop" });
+    const stale = { namespace: "shop" };
+    // `metadata` keeps the literal from being a weak type with nothing in common with EmitOptions.
+    await c.emit("order.placed", { id: 1 }, { metadata: { src: "t" }, ...stale });
     await settle();
 
     expect(fetchMock.mock.calls.at(-1)![0]).toBe(
@@ -250,8 +252,8 @@ describe("emit through the queue", () => {
     expect(lastBody(fetchMock)).toMatchObject({
       event: "order.placed",
       data: { id: 1 },
-      namespace: "shop",
     });
+    expect(lastBody(fetchMock)).not.toHaveProperty("namespace");
   });
 
   it("sends the same idempotency key it returned at enqueue", async () => {

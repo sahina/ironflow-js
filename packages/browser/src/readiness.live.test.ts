@@ -65,7 +65,7 @@ describe.skipIf(!SEED_PATH)("readiness — live server", () => {
   it("run-steps", async () => {
     const seeded = await client.getRunSteps(seed.runId);
     expect(seeded.count).toBe(1);
-    expect(seeded.steps[0]).toMatchObject({ stepId: seed.stepId, runId: seed.runId, status: "completed", output: seed.stepOutput });
+    expect(seeded.steps[0]).toMatchObject({ id: seed.stepId, runId: seed.runId, status: "completed", output: seed.stepOutput });
     expect(seeded.steps[0]?.createdAt).toBeInstanceOf(Date);
     const held = await client.getRunSteps(hold.runId);
     expect(held.steps).toHaveLength(2);

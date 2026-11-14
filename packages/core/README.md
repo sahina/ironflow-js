@@ -489,8 +489,6 @@ interface EmitOptions {
   idempotencyKey?: string;
   /** Optional metadata (headers, etc.) */
   metadata?: Record<string, unknown>;
-  /** Namespace (default: "default") */
-  namespace?: string;
 }
 
 interface EmitResult {
@@ -938,14 +936,8 @@ interface SubscribeOptions {
   includeMetadata?: boolean;
   /** CEL expression for content-based filtering */
   filter?: string;
-  /** Namespace for the subscription (default: "default") */
-  namespace?: string;
   /** Consumer group to join for load-balanced delivery */
   consumerGroup?: string;
-  /** Acknowledgment mode for consumer group (default: "auto") */
-  ackMode?: AckMode;
-  /** Backpressure handling mode (default: "buffer") */
-  backpressure?: BackpressureMode;
 }
 ```
 
@@ -1065,7 +1057,6 @@ interface BufferConfig {
 interface ConsumerGroupConfig {
   name: string;
   pattern: string;
-  namespace?: string;           // default: "default"
   filterExpr?: string;          // CEL expression
   ackMode?: AckMode;            // default: "auto"
   backpressure?: BackpressureMode; // default: "buffer"
@@ -1077,7 +1068,6 @@ interface ConsumerGroupConfig {
 
 interface ConsumerGroup {
   id: string;
-  namespace: string;
   name: string;
   pattern: string;
   filterExpr?: string;
@@ -1981,7 +1971,7 @@ class IronflowError extends Error {
 | `UnauthenticatedError` | `unauthenticated` | false | No/invalid API key (HTTP 401) |
 | `EnterpriseRequiredError` | `ENTERPRISE_REQUIRED` | false | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility |
 | `UnauthorizedError` | `permission_denied` | false | Insufficient permissions (HTTP 403) |
-| `ConflictError` | `already_exists` | false | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun`. Wait, do not retry |
+| `ConflictError` | `already_exists` | false | HTTP 409 that is not a lost race — e.g. an idempotency key reused with a different request. Do not resend the same body |
 | `ContendedError` | `CONTENDED` | false | HTTP 409 from a lost CAS race (Connect `aborted`). Nothing was applied — re-read and reissue |
 | `InjectionUnverifiedError` | `INJECTION_UNVERIFIED` | false | Connect `aborted` + `Ironflow-Error-Reason: injection_unverified`. `injectStepOutput` wrote the step but could not confirm the run stood still. Unlike `ContendedError` the write **did** land — read the step and decide, do not reissue |
 | `QueueFullError` | `QUEUE_FULL` | false | `@ironflow/browser`'s offline write queue hit its 500-write / 5 MB cap |
@@ -2208,8 +2198,7 @@ interface WSSubscribeRequest {
     options?: {
       replay?: number; startAfterSequence?: number | bigint;
       includeMetadata?: boolean; filter?: string;
-      consumerGroup?: string; ackMode?: AckMode;
-      backpressure?: BackpressureMode; namespace?: string;
+      consumerGroup?: string;
     };
   };
 }

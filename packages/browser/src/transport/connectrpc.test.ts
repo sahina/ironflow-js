@@ -35,10 +35,8 @@ interface SubscribeOptions {
   replay?: number;
   includeMetadata?: boolean;
   filter?: string;
-  namespace?: string;
   consumerGroup?: string;
   ackMode?: string;
-  backpressure?: string;
 }
 
 // Mock stream event

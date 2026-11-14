@@ -1073,7 +1073,6 @@ describe("ConsumerGroupResponseSchema", () => {
   it("validates a full consumer group response", () => {
     const result = ConsumerGroupResponseSchema.parse({
       id: "cg_1",
-      namespace: "default",
       name: "my-group",
       pattern: "orders.*",
       ackMode: "ACK_MODE_MANUAL",
@@ -1091,7 +1090,6 @@ describe("ConsumerGroupResponseSchema", () => {
   it("validates with only required fields", () => {
     const result = ConsumerGroupResponseSchema.parse({
       id: "cg_1",
-      namespace: "default",
       name: "my-group",
       pattern: "orders.*",
     });
@@ -1103,7 +1101,7 @@ describe("ConsumerGroupResponseSchema", () => {
 describe("ListConsumerGroupsResponseSchema", () => {
   it("validates response with groups", () => {
     const result = ListConsumerGroupsResponseSchema.parse({
-      groups: [{ id: "cg_1", namespace: "default", name: "g1", pattern: "*" }],
+      groups: [{ id: "cg_1", name: "g1", pattern: "*" }],
       totalCount: 1,
       nextCursor: "cursor_abc",
     });

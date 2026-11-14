@@ -998,8 +998,6 @@ export interface EmitOptions {
   idempotencyKey?: string;
   /** Optional metadata (headers, etc.) */
   metadata?: Record<string, unknown>;
-  /** Namespace (default: "default") */
-  namespace?: string;
 }
 
 /**
@@ -1146,14 +1144,8 @@ export interface SubscribeOptions {
   includeMetadata?: boolean;
   /** CEL expression for content-based filtering */
   filter?: string;
-  /** Namespace for the subscription (default: "default") */
-  namespace?: string;
   /** Consumer group to join for load-balanced delivery */
   consumerGroup?: string;
-  /** Acknowledgment mode for consumer group (default: "auto") */
-  ackMode?: AckMode;
-  /** Backpressure handling mode (default: "buffer") */
-  backpressure?: BackpressureMode;
 }
 
 /**
@@ -1287,12 +1279,10 @@ export type ConsumerGroupStatus = "active" | "paused" | "deleted";
  * Configuration for creating a consumer group
  */
 export interface ConsumerGroupConfig {
-  /** Unique name within namespace */
+  /** Unique name within the environment */
   name: string;
   /** Event pattern to subscribe to */
   pattern: string;
-  /** Namespace (default: "default") */
-  namespace?: string;
   /** Optional CEL filter expression */
   filterExpr?: string;
   /** Acknowledgment mode (default: "auto") */
@@ -1328,8 +1318,6 @@ export interface UpdateConsumerGroupInput {
 export interface ConsumerGroup {
   /** Consumer group ID */
   id: string;
-  /** Namespace */
-  namespace: string;
   /** Human-readable name */
   name: string;
   /** Event pattern */
@@ -2689,7 +2677,6 @@ export function consumerGroupFromWire(
     .replace(/^unspecified$/, "active") as ConsumerGroupStatus;
   return {
     id: String(r.id ?? ""),
-    namespace: String(r.namespace ?? ""),
     name: String(r.name ?? ""),
     pattern: String(r.pattern ?? ""),
     filterExpr: r.filterExpr ? String(r.filterExpr) : undefined,

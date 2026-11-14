@@ -358,9 +358,8 @@ export class SubscriptionClient {
    *   onEvent: (event) => console.log(event),
    * });
    *
-   * // Ackable subscription
+   * // Consumer-group member: acknowledge through the subscription
    * const sub = await client.subscribe("order.*", {
-   *   ackMode: "manual",
    *   consumerGroup: "processors",
    *   onEvent: (event) => {
    *     processOrder(event);
@@ -462,7 +461,7 @@ export class SubscriptionClient {
     return sub as Subscription;
   }
 
-  /** Join a durable consumer group with manual acknowledgements. */
+  /** Join a durable consumer group; acknowledge through the returned subscription. */
   async joinConsumerGroup<T = unknown>(
     groupName: string,
     pattern: string,
@@ -471,7 +470,6 @@ export class SubscriptionClient {
     const subscription = await this.subscribe<T>(pattern, {
       ...callbacksAndOptions,
       consumerGroup: groupName,
-      ackMode: "manual",
     });
     return subscription as AckableSubscription;
   }
@@ -613,13 +611,18 @@ export class SubscriptionClient {
           retrying: message.retrying,
         };
 
+        const active = this.subscriptions.get(message.subscriptionId);
+        if (active && message.code === "not_found" && !message.retrying) {
+          this.subscriptions.delete(message.subscriptionId);
+          this.patternToId.delete(active.pattern);
+        }
+
         // Call global error handlers
         for (const cb of this.errorCallbacks) {
           cb(errorInfo);
         }
 
         // Call subscription-specific handler
-        const active = this.subscriptions.get(message.subscriptionId);
         active?.callbacks.onError?.(errorInfo);
         break;
       }
@@ -707,7 +710,8 @@ export class SubscriptionClient {
     this.subscriptions.set(subscriptionId, active);
     this.patternToId.set(pattern, subscriptionId);
 
-    const isManualAck = pending.options?.ackMode === "manual";
+    // A group member acknowledges through its subscription; the group's own ack mode decides whether it must.
+    const isManualAck = !!pending.options?.consumerGroup;
     const currentSubscriptionId = () =>
       this.patternToId.get(pattern) ?? subscriptionId;
 

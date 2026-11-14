@@ -8,6 +8,7 @@ import type { EventMetadata } from "@ironflow/core";
 import { IronflowClient } from "./client.js";
 import { createSubscriptionClient } from "./subscribe.js";
 import { joinConsumerGroupStream } from "./consumer-group-stream.js";
+import { startCutProxy } from "../tests/cut-proxy.js";
 
 const SERVER = process.env["IRONFLOW_TEST_SERVER"];
 const API_KEY = process.env["IRONFLOW_TEST_API_KEY"];
@@ -123,4 +124,79 @@ describe.skipIf(!SERVER)("manual ack — live server", () => {
       sub.unsubscribe(); // a failed assertion must not leave the member in the group
     }
   }, 40000);
+
+  it.each(["websocket", "stream"] as const)(
+    "a worker resumes after a lost connection over the %s join",
+    async (transport) => {
+      const suffix = `${transport}-${Date.now()}`;
+      const topic = `nodesdk.cut.${suffix}`;
+      const group = `cut-group-${suffix}`;
+      const client = new IronflowClient({ serverUrl: SERVER!, apiKey: API_KEY });
+      await client.consumerGroups.create({
+        name: group,
+        pattern: `topic:${topic}`,
+        ackMode: "manual",
+        redeliverDelayMs: 60000,
+        maxRedeliveries: 5,
+      });
+
+      const proxy = await startCutProxy(SERVER!);
+      const seen = new Set<string>();
+      const errors: unknown[] = [];
+      const onEvent = (event: { eventId?: string }) => void seen.add(event.eventId!);
+      const onError = (e: unknown) => void errors.push(e);
+
+      let stop: () => void;
+      if (transport === "stream") {
+        const sub = await joinConsumerGroupStream(
+          { serverUrl: proxy.url, apiKey: API_KEY, logger: false },
+          group,
+          { onEvent, onError },
+        );
+        stop = () => sub.unsubscribe();
+      } else {
+        const subClient = createSubscriptionClient({ serverUrl: proxy.url, apiKey: API_KEY });
+        await subClient.connect();
+        const sub = await subClient.joinConsumerGroup(group, `topic:${topic}`, { onEvent, onError });
+        stop = () => {
+          sub.unsubscribe();
+          subClient.close();
+        };
+      }
+
+      const awaitNewEvent = async (step: string) => {
+        const published = new Set<string>();
+        const timer = setInterval(() => {
+          void client
+            .publish(topic, { step })
+            .then((r) => void published.add(r.eventId))
+            .catch(() => {});
+        }, 300);
+        try {
+          await waitFor(
+            () => {
+              expect(errors).toEqual([]);
+              return [...published].some((id) => seen.has(id));
+            },
+            25000,
+            `an event ${step}`,
+          );
+        } finally {
+          clearInterval(timer);
+        }
+      };
+
+      try {
+        await awaitNewEvent("before any cut");
+        proxy.reset();
+        await awaitNewEvent("after RST");
+        proxy.halfClose();
+        await awaitNewEvent("after FIN");
+      } finally {
+        stop();
+        await proxy.close();
+      }
+    },
+    90000,
+  );
 });

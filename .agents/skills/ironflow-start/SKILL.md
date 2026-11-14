@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.55.0
+version: 0.56.0
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",
@@ -278,8 +278,8 @@ Walk the user through the relevant decision. Don't dump all matrices at once —
 ### CRUD or CQRS first
 
 Before choosing primitives, decide whether the user is building **CRUD-style** or
-**CQRS-style**. For a domain-rich app, read "The Mapping" and "When to Introduce CQRS"
-on https://docs.ironflow.run/explanation/ddd/cqrs.md (invariants and read lag are on
+**CQRS-style**. For a domain-rich app, read "CQRS with projections"
+on https://docs.ironflow.run/explanation/ddd/why-ddd.md (invariants and read lag are on
 https://docs.ironflow.run/explanation/patterns.md, in "Invariants live in the decider"
 and "Read-Your-Own-Writes & Projection Lag").
 
@@ -294,12 +294,12 @@ https://docs.ironflow.run/explanation/patterns.md unless the row says otherwise.
 | Decision | Section |
 |---|---|
 | Push vs Pull | "Push vs Pull Mode" |
-| CRUD vs CQRS for an entity | "When to Introduce CQRS" on https://docs.ironflow.run/explanation/ddd/cqrs.md |
+| CRUD vs CQRS for an entity | "CQRS with projections" on https://docs.ironflow.run/explanation/ddd/why-ddd.md |
 | Plain Events vs Entity Streams | "Plain Events vs Entity Streams" |
 | Command Event vs Direct Append | "Commands vs Events (CQRS foundational)" |
 | Aggregate size | "Sizing rules" |
 | Managed vs External Projection | "Managed vs External Projections" |
-| Single vs multiple projections | "When to Introduce CQRS" on https://docs.ironflow.run/explanation/ddd/cqrs.md |
+| Single vs multiple projections | "CQRS with projections" on https://docs.ironflow.run/explanation/ddd/why-ddd.md |
 | Step Compensation vs Saga | "Saga Patterns" |
 | Concurrency limit vs key | "Concurrency Control" |
 | `step.parallel` vs `step.map` | "`step.parallel(name, branches)` — Execute branches concurrently" and "`step.map(name, items, fn)` — Fan-out/fan-in pattern" on https://docs.ironflow.run/how-to-guides/workflows/steps.md |

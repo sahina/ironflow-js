@@ -75,10 +75,7 @@ describe("ConnectRPCTransport resume cursor", () => {
       replay: 25,
       includeMetadata: true,
       filter: "data.total > 100",
-      namespace: "production",
       consumerGroup: "processors",
-      ackMode: "manual",
-      backpressure: "block",
     });
 
     await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(1));
@@ -92,10 +89,7 @@ describe("ConnectRPCTransport resume cursor", () => {
     expect(reconnect.options).toMatchObject({
       includeMetadata: initial.options.includeMetadata,
       filter: initial.options.filter,
-      namespace: initial.options.namespace,
       consumerGroup: initial.options.consumerGroup,
-      ackMode: initial.options.ackMode,
-      backpressure: initial.options.backpressure,
     });
     expect(reconnect.options.replay).toBe(0);
   });
@@ -362,5 +356,25 @@ describe("ConnectRPCTransport resume cursor", () => {
     expect(mocks.subscribe.mock.calls[1]![0].options.startAfterSequence).toBe(
       sequence,
     );
+  });
+});
+
+describe("ConnectRPCTransport subscribe request", () => {
+  it("does not send the removed namespace, ack mode or backpressure (#4114)", async () => {
+    mocks.subscribe.mockImplementation(() => (async function* () {})());
+    const transport = new ConnectRPCTransport("http://localhost:9123", options);
+    transport.setCallbacks(callbacks);
+    await transport.connect();
+    // Spread, so a JS caller's leftover options reach subscribe() untyped.
+    const stale = { namespace: "team-a", backpressure: "drop", ackMode: "manual" };
+    transport.subscribe("orders.*", { ...stale, filter: "true" });
+
+    await vi.waitFor(() => expect(mocks.subscribe).toHaveBeenCalledTimes(1));
+    const request = assertDefined(mocks.subscribe.mock.calls[0])[0];
+    expect(request.options.filter).toBe("true");
+    for (const field of ["namespace", "ackMode", "backpressure"]) {
+      expect(request.options).not.toHaveProperty(field);
+    }
+    transport.disconnect();
   });
 });

@@ -145,8 +145,8 @@ describe("broadcast subscription ownership", () => {
 
   it.each([
     { replay: 10 }, { startAfterSequence: 400 },
-    { filter: "data.total > 100" }, { namespace: "tenant-b" },
-    { ackMode: "manual" as const },
+    { filter: "data.total > 100" },
+    { consumerGroup: "g" },
   ])("preserves each duplicate's options %j", async (options) => {
     await subscribeAccepted("orders.*", "sub-1", {});
     const pending = ironflow.subscribe("orders.*", options);
@@ -258,8 +258,8 @@ describe("broadcast subscription ownership", () => {
 });
 
 it("routes manual acknowledgments to each duplicate handle's subscription", async () => {
-  const one = await subscribeAccepted("orders.*", "sub-1", { consumerGroup: "g", ackMode: "manual" });
-  const two = await subscribeAccepted("orders.*", "sub-2", { consumerGroup: "g", ackMode: "manual" });
+  const one = await subscribeAccepted("orders.*", "sub-1", { consumerGroup: "g" });
+  const two = await subscribeAccepted("orders.*", "sub-2", { consumerGroup: "g" });
   if (!("ack" in one) || !("ack" in two)) throw new Error("expected ackable handles");
   await one.ack("event-1"); await two.ack("event-2");
   expect(frames().filter((frame) => frame.type === "ack").map((frame) => frame.subscriptionId)).toEqual(["sub-1", "sub-2"]);

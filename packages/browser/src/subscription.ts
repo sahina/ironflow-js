@@ -181,10 +181,7 @@ export class SubscriptionManager {
       startAfterSequence,
       includeMetadata,
       filter,
-      namespace,
       consumerGroup,
-      ackMode,
-      backpressure,
       trackState,
       ...callbacks
     } = callbacksAndOptions;
@@ -194,10 +191,7 @@ export class SubscriptionManager {
       startAfterSequence,
       includeMetadata,
       filter,
-      namespace,
       consumerGroup,
-      ackMode,
-      backpressure,
       trackState,
     };
 
@@ -542,7 +536,8 @@ export class SubscriptionManager {
     this.lookupKeyToId.set(pending.lookupKey, subscriptionId);
 
     // Create subscription object
-    const isManualAck = pending.options?.ackMode === "manual";
+    // A group member acknowledges through its subscription; the group's own ack mode decides whether it must.
+    const isManualAck = !!pending.options?.consumerGroup;
     const currentSubscriptionId = () =>
       this.lookupKeyToId.get(pending.lookupKey) ?? subscriptionId;
 

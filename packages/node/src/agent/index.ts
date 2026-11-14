@@ -23,7 +23,7 @@
  *     // ...
  *   });
  *
- * See docs/explanation/comparison-agents.md for the layering model.
+ * See docs/explanation/agentic-fit.md for the layering model.
  */
 
 export type {

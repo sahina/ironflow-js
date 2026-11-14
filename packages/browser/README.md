@@ -177,17 +177,8 @@ const sub = await ironflow.subscribe('events:order.*', {
   // CEL expression for server-side content-based filtering
   filter: 'data.amount > 100',
 
-  // Namespace for the subscription (default: "default")
-  namespace: 'production',
-
   // Consumer group for load-balanced delivery (see Consumer Groups below)
   consumerGroup: 'order-processors',
-
-  // Acknowledgment mode: 'auto' (default) | 'manual'
-  ackMode: 'manual',
-
-  // Backpressure handling: 'buffer' (default) | 'drop' | 'block'
-  backpressure: 'buffer',
 
   // Browser-specific: track last event for state access
   trackState: true,
@@ -203,7 +194,7 @@ after each delivered event and uses it on reconnect. Delivery remains
 at-least-once, so handlers must tolerate a repeated in-flight event.
 
 `replay` applies only to the initial subscribe request. Reconnects preserve the
-filter, consumer group, metadata, acknowledgment, backpressure, and namespace
+filter, consumer group, metadata, and acknowledgment
 options but omit the original replay count. A fan-out subscription without a
 cursor reconnects at the current tail and can miss events published while it
 was offline. Use `startAfterSequence` or a consumer group when that gap matters.
@@ -365,16 +356,15 @@ await ironflow.consumerGroups.update(group.name, { maxInflight: 50 });
 await ironflow.consumerGroups.delete(group.name);
 ```
 
-Alternatively, use `subscribe` directly with `consumerGroup` and `ackMode` options:
+Alternatively, use `subscribe` directly with the `consumerGroup` option. The group's own `ackMode` decides whether events need acknowledging:
 
 ```typescript
 const sub = await ironflow.subscribe('events:order.created', {
   onEvent: (event) => { /* ... */ },
   consumerGroup: 'order-processors',
-  ackMode: 'manual',
 });
 
-// sub is AckableSubscription when ackMode is 'manual'
+// sub is an AckableSubscription when consumerGroup is set
 const ackableSub = sub as AckableSubscription;
 await ackableSub.ack(eventId);
 ```
@@ -401,7 +391,6 @@ const result = await ironflow.emit(
     version: 2,                               // Event schema version (default: 1)
     idempotencyKey: 'order-123-approval',     // Deduplication key
     metadata: { source: 'dashboard' },        // Arbitrary metadata
-    namespace: 'production',                  // Namespace (default: "default")
   }
 );
 ```

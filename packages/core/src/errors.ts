@@ -525,10 +525,10 @@ export class UnauthorizedError extends IronflowError {
  * Thrown when the request conflicts with state already in flight (HTTP 409 /
  * Connect `already_exists`).
  *
- * `resumeRun` throws it when an identical resume is already inside the
- * server's dedupe window (#1963): the run is left exactly as it was found, so
- * the caller should wait for the first resume to land. Deliberately not
- * retryable — retrying is the thing this error reports against.
+ * An idempotency key reused with a different request is one source. The
+ * server left its state as it was found, so the caller should not resend the
+ * same body. Deliberately not retryable — retrying is the thing this error
+ * reports against.
  *
  * Two Connect codes serialize to 409 with opposite retry advice, so the status
  * alone cannot pick between them (#2074). `already_exists` lands here;

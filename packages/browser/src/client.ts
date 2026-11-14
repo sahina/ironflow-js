@@ -497,7 +497,6 @@ class IronflowClient {
    *   onEvent: (e) => { ... },
    *   replay: 10,
    *   trackState: true,
-   *   ackMode: 'manual',
    * });
    * ```
    */
@@ -717,8 +716,8 @@ class IronflowClient {
    * On the Connect RPC since #1963, alongside getRun/cancelRun. It used to POST
    * the REST route with its own hand-rolled fetch, which meant a second decode
    * path (mapRestRunResponse, deleted) and an IronflowError carrying no HTTP
-   * status. It now shares request(), so a deduplicated resume surfaces as
-   * status 409 with retryable false.
+   * status. It now shares request(), so a 409 surfaces with its status and
+   * retryable false.
    *
    * Deliberately NOT given `@ironflow/core`'s ConflictError/ContendedError split
    * (#2074). Two Connect codes share that 409 — `already_exists` (wait) and
@@ -1417,7 +1416,6 @@ class IronflowClient {
         ...(options?.version !== undefined ? { version: options.version } : {}),
         idempotency_key: options?.idempotencyKey,
         metadata: options?.metadata,
-        namespace: options?.namespace,
       }
     );
 
@@ -1640,7 +1638,6 @@ class IronflowClient {
     const sub = await this.subscribe<T>(pattern, {
       ...callbacksAndOptions,
       consumerGroup: groupName,
-      ackMode: "manual",
     });
 
     return sub as AckableSubscription;
@@ -1655,7 +1652,6 @@ class IronflowClient {
         {
           name: config.name,
           pattern: config.pattern,
-          namespace: config.namespace ?? "default",
           ...(config.filterExpr !== undefined ? { filter_expr: config.filterExpr } : {}),
           ...(config.ackMode ? { ack_mode: `ACK_MODE_${config.ackMode.toUpperCase()}` } : {}),
           ...(config.backpressure
@@ -1673,15 +1669,15 @@ class IronflowClient {
       );
       return consumerGroupFromWire(response);
     },
-    get: async (name: string, namespace = "default"): Promise<ConsumerGroup> => {
+    get: async (name: string): Promise<ConsumerGroup> => {
       this.ensureConfigured();
       const response = await this.streamRequest<Record<string, unknown>>(
         "/ironflow.v1.PubSubService/GetConsumerGroup",
-        { name, namespace }
+        { name }
       );
       return consumerGroupFromWire(response);
     },
-    list: async (namespace?: string): Promise<ConsumerGroup[]> => {
+    list: async (): Promise<ConsumerGroup[]> => {
       this.ensureConfigured();
       const groups: ConsumerGroup[] = [];
       let cursor: string | undefined;
@@ -1691,7 +1687,6 @@ class IronflowClient {
           nextCursor?: string;
           next_cursor?: string;
         }>("/ironflow.v1.PubSubService/ListConsumerGroups", {
-          ...(namespace ? { namespace } : {}),
           limit: 100,
           ...(cursor ? { cursor } : {}),
         });
@@ -1702,11 +1697,10 @@ class IronflowClient {
     },
     update: async (
       name: string,
-      input: UpdateConsumerGroupInput,
-      namespace = "default"
+      input: UpdateConsumerGroupInput
     ): Promise<ConsumerGroup> => {
       this.ensureConfigured();
-      const group: Record<string, unknown> = { name, namespace };
+      const group: Record<string, unknown> = { name };
       const paths: string[] = [];
       const set = (path: string, value: unknown) => {
         if (value !== undefined) {
@@ -1744,11 +1738,11 @@ class IronflowClient {
       );
       return consumerGroupFromWire(response);
     },
-    delete: async (name: string, namespace = "default"): Promise<void> => {
+    delete: async (name: string): Promise<void> => {
       this.ensureConfigured();
       await this.streamRequest<Record<string, never>>(
         "/ironflow.v1.PubSubService/DeleteConsumerGroup",
-        { name, namespace }
+        { name }
       );
     },
   };

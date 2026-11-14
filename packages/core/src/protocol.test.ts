@@ -22,12 +22,17 @@ describe("subscription reconnect protocol", () => {
           includeMetadata: true,
           filter: undefined,
           consumerGroup: undefined,
-          ackMode: undefined,
-          backpressure: undefined,
-          namespace: undefined,
         },
       },
     });
+  });
+
+  it("does not send the removed namespace, backpressure or ackMode options (#4114)", () => {
+    const stale = { namespace: "team-a", backpressure: "drop", ackMode: "manual" };
+    const request = createWSSubscribeRequest("orders.*", { ...stale, filter: "true" });
+    expect(request.subscription.options).not.toHaveProperty("namespace");
+    expect(request.subscription.options).not.toHaveProperty("backpressure");
+    expect(request.subscription.options).not.toHaveProperty("ackMode");
   });
 
   it("removes replay without changing identifying options", () => {

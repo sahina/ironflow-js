@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as http2 from "node:http2";
+import * as net from "node:net";
 import type { AddressInfo } from "node:net";
+import { gzipSync } from "node:zlib";
 import { randomBytes } from "node:crypto";
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { Code, ConnectError, type HandlerContext } from "@connectrpc/connect";
@@ -28,6 +31,7 @@ import {
   type ConsumerGroupStreamConfig,
 } from "./consumer-group-stream.js";
 import { deliveryMaxAge } from "./consumer-group-stream-conn.js";
+import { startCutProxy, type CutProxy } from "../tests/cut-proxy.js";
 
 // Node twins of sdk/go/ironflow/consumer_group_stream_test.go. An in-process h2c
 // server plays PubSubService.SubscribeBidirectional from a per-stream script.
@@ -173,7 +177,7 @@ afterEach(async () => {
   for (const stop of stops.splice(0)) await stop();
 });
 
-async function startFake(script: Script): Promise<Fake> {
+async function startFake(script: Script, gatewayStatus?: () => number | undefined): Promise<Fake> {
   const streams: FakeStream[] = [];
   const handler = connectNodeAdapter({
     routes(router) {
@@ -190,7 +194,15 @@ async function startFake(script: Script): Promise<Fake> {
       } as never);
     },
   });
-  const server = http2.createServer(handler);
+  const server = http2.createServer((req, res) => {
+    const status = gatewayStatus?.();
+    if (status === undefined) {
+      handler(req, res);
+      return;
+    }
+    res.writeHead(status);
+    res.end("refused by the gateway");
+  });
   const sessions = new Set<http2.ServerHttp2Session>();
   server.on("session", (sess) => {
     sessions.add(sess);
@@ -243,6 +255,41 @@ const rejection = (p: Promise<unknown>) =>
     (e: unknown) => e,
   );
 
+const oneEventPerStream: Script = async (s) => {
+  await s.join(`member-${s.n}`);
+  await s.event(`member-${s.n}`, `evt-${s.n}`);
+  await s.recv();
+};
+
+async function joinBehindProxy(script: Script, gatewayStatus?: () => number | undefined) {
+  const fake = await startFake(script, gatewayStatus);
+  const proxy = await startCutProxy(fake.url);
+  stops.push(proxy.close);
+  const seen = { events: [] as string[], errors: [] as { code: string }[], states: [] as string[] };
+  const sub = await join(
+    { url: proxy.url, streams: fake.streams },
+    {
+      onEvent: (e) => void seen.events.push(e.eventId!),
+      onError: (e) => void seen.errors.push(e),
+      onStateChange: (state) => void seen.states.push(state),
+    },
+  );
+  await vi.waitFor(() => expect(seen.events).toHaveLength(1));
+  return { fake, proxy, sub, seen };
+}
+
+function startKillableServer(port: number, generation: number): Promise<ChildProcess> {
+  const helper = new URL("../tests/consumer-group-killed-server.mjs", import.meta.url).pathname;
+  const child = spawn(process.execPath, [helper, String(port), String(generation)], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  stops.push(async () => void child.kill("SIGKILL"));
+  return new Promise((resolve, reject) => {
+    child.once("exit", (code) => reject(new Error(`the helper server exited with ${code}`)));
+    child.stdout!.once("data", () => resolve(child));
+  });
+}
+
 describe("consumer-group stream", () => {
   it("ack resolves on its result", async () => {
     const fake = await startFake(async (s) => {
@@ -286,6 +333,20 @@ describe("consumer-group stream", () => {
     });
     const { sub, eventId } = await joinForFirstEvent(fake);
     expect(await rejection(sub.ack(eventId))).toMatchObject({ code: "not_found" });
+  });
+
+  it("UNAVAILABLE result rejects with AckError code unavailable", async () => {
+    const fake = await startFake(async (s) => {
+      await s.join("member-1");
+      await s.event("member-1", "evt-1");
+      const r = await s.recv();
+      if (r?.payload.case === "ack") {
+        await s.result(r.payload.value.ackId, "evt-1", AckResultCode.UNAVAILABLE, "nats down");
+      }
+      await s.recv();
+    });
+    const { sub, eventId } = await joinForFirstEvent(fake);
+    expect(await rejection(sub.ack(eventId))).toMatchObject({ code: "unavailable" });
   });
 
   it("results correlate by ackId", async () => {
@@ -536,6 +597,327 @@ describe("consumer-group stream", () => {
     await new Promise((r) => setTimeout(r, 120));
     expect(fake.streams).toHaveLength(2); // no third attempt
     expect(await rejection(sub.ack(eventId))).toBeInstanceOf(SubscriptionClosedError);
+  });
+
+  describe("a lost connection", () => {
+    it.each<[string, (p: CutProxy) => void]>([
+      ["RST", (p) => p.reset()],
+      ["FIN", (p) => p.halfClose()],
+      ["a destroyed socket", (p) => p.destroy()],
+    ])("resumes after %s", { timeout: 10000 }, async (_, cut) => {
+      const { sub, proxy, seen } = await joinBehindProxy(oneEventPerStream);
+
+      cut(proxy);
+
+      await vi.waitFor(() => {
+        expect(seen.errors).toEqual([]);
+        expect(seen.events).toEqual(["evt-1", "evt-2"]);
+      }, 5000);
+      expect(seen.states.slice(-2)).toEqual(["reconnecting", "connected"]);
+      expect(await rejection(sub.ack("evt-1"))).toBeInstanceOf(StaleAckError);
+    });
+
+    it("resumes after the server is killed", async () => {
+      const port = await new Promise<number>((resolve) => {
+        const probe = net.createServer().listen(0, "127.0.0.1", () => {
+          const { port } = probe.address() as AddressInfo;
+          probe.close(() => resolve(port));
+        });
+      });
+      const first = await startKillableServer(port, 1);
+      const events: string[] = [];
+      const errors: { code: string }[] = [];
+      await join(
+        { url: `http://127.0.0.1:${port}`, streams: [] },
+        { onEvent: (e) => void events.push(e.eventId!), onError: (e) => void errors.push(e) },
+      );
+      await vi.waitFor(() => expect(events).toEqual(["evt-gen-1"]), 5000);
+
+      first.removeAllListeners("exit");
+      const exited = new Promise((r) => first.once("exit", r));
+      first.kill("SIGKILL");
+      await exited;
+      await startKillableServer(port, 2);
+
+      await vi.waitFor(() => {
+        expect(errors).toEqual([]);
+        expect(events).toEqual(["evt-gen-1", "evt-gen-2"]);
+      }, 10000);
+    }, 20000);
+
+    it.each([
+      [Code.InvalidArgument, "invalid_argument"],
+      [Code.NotFound, "not_found"],
+      [Code.Unauthenticated, "unauthenticated"],
+      [Code.PermissionDenied, "permission_denied"],
+      [Code.FailedPrecondition, "failed_precondition"],
+    ])("a server refusal on the rejoin ends the subscription: %s", async (code, name) => {
+      const { fake, proxy, seen } = await joinBehindProxy(async (s) => {
+        if (s.n > 1) {
+          await s.recv();
+          s.fail(code, "no");
+          return;
+        }
+        await oneEventPerStream(s);
+      });
+
+      proxy.reset();
+
+      await vi.waitFor(() => expect(seen.errors).toHaveLength(1), 5000);
+      expect(seen.errors[0]).toMatchObject({ code: name });
+      await new Promise((r) => setTimeout(r, 120));
+      expect(fake.streams).toHaveLength(2);
+      expect(seen.states.at(-1)).toBe("disconnected");
+    });
+
+    it("a server InvalidArgument on a live stream ends the subscription", async () => {
+      const fake = await startFake(async (s) => {
+        await s.join("member-1");
+        s.fail(Code.InvalidArgument, "join is allowed once");
+      });
+      const errors: { code: string }[] = [];
+      await join(fake, { onError: (e) => void errors.push(e) });
+      await vi.waitFor(() => expect(errors).toHaveLength(1));
+      expect(errors[0]).toMatchObject({ code: "invalid_argument" });
+      await new Promise((r) => setTimeout(r, 120));
+      expect(fake.streams).toHaveLength(1);
+    });
+
+    it.each([
+      [401, "unauthenticated"],
+      [403, "permission_denied"],
+      [404, "unimplemented"],
+    ])("a gateway's HTTP %i on the rejoin ends the subscription", async (status, name) => {
+      let refused = false;
+      let refusals = 0;
+      const { proxy, seen } = await joinBehindProxy(oneEventPerStream, () => {
+        if (!refused) return undefined;
+        refusals++;
+        return status;
+      });
+
+      refused = true;
+      proxy.reset();
+
+      await vi.waitFor(() => expect(seen.errors).toHaveLength(1), 5000);
+      expect(seen.errors[0]).toMatchObject({ code: name });
+      await new Promise((r) => setTimeout(r, 120));
+      expect(refusals).toBe(1);
+    });
+
+    it.each([Code.Canceled, Code.Internal])("a server error with retryable code %s reconnects", async (code) => {
+      const fake = await startFake(async (s) => {
+        await s.join(`member-${s.n}`);
+        await s.event(`member-${s.n}`, `evt-${s.n}`);
+        if (s.n === 1) s.fail(code, "server failure");
+        else await s.recv();
+      });
+      const events: string[] = [];
+      const errors: { code: string }[] = [];
+      await join(fake, { onEvent: (e) => void events.push(e.eventId!), onError: (e) => void errors.push(e) });
+      await vi.waitFor(() => expect(events).toContain("evt-2"));
+      expect(errors).toEqual([]);
+    });
+
+    it.each([
+      { message: "parse binary: premature EOF", rejoin: false },
+      { message: "parse binary: premature EOF", rejoin: true },
+      { message: "decompression failed", rejoin: false },
+      { message: "decompression failed", rejoin: true },
+    ])("a server decode-like error retries (message=$message, rejoin=$rejoin)", async ({ message, rejoin }) => {
+      const fake = await startFake(async (s) => {
+        if (rejoin && s.n === 2) {
+          s.fail(Code.Internal, message);
+          return;
+        }
+        await s.join(`member-${s.n}`);
+        await s.event(`member-${s.n}`, `evt-${s.n}`);
+        if (s.n === 1) s.fail(Code.Internal, rejoin ? "retry join" : message);
+        else await s.recv();
+      });
+      const events: string[] = [];
+      const errors: { code: string }[] = [];
+      await join(fake, { onEvent: (e) => void events.push(e.eventId!), onError: (e) => void errors.push(e) });
+      await vi.waitFor(() => expect(events).toContain(rejoin ? "evt-3" : "evt-2"));
+      expect(errors).toEqual([]);
+    });
+
+    it("unsubscribe still stops a stream whose reset surfaces as Canceled", async () => {
+      const fake = await startFake(async (s) => {
+        await s.join("member-1");
+      });
+      const errors: { code: string }[] = [];
+      const states: string[] = [];
+      const sub = await join(fake, {
+        onError: (e) => void errors.push(e),
+        onStateChange: (state) => void states.push(state),
+      });
+
+      sub.unsubscribe();
+
+      await fake.streams[0]!.closed;
+      await vi.waitFor(() => expect(states.at(-1)).toBe("disconnected"), 5000);
+      await new Promise((r) => setTimeout(r, 120));
+      expect(fake.streams).toHaveLength(1);
+      expect(states).not.toContain("reconnecting");
+      expect(errors).toEqual([]);
+    }, 8000);
+
+    it("unsubscribe stops a worker that is reconnecting after a cut", async () => {
+      const { fake, proxy, sub, seen } = await joinBehindProxy(async (s) => {
+        if (s.n > 1) {
+          await s.recv();
+          s.fail(Code.Unavailable, "still down");
+          return;
+        }
+        await oneEventPerStream(s);
+      });
+
+      proxy.reset();
+      await vi.waitFor(() => expect(fake.streams.length).toBeGreaterThanOrEqual(2), 5000);
+
+      sub.unsubscribe();
+
+      await vi.waitFor(() => expect(seen.states.at(-1)).toBe("disconnected"), 5000);
+      const streams = fake.streams.length;
+      await new Promise((r) => setTimeout(r, 150));
+      expect(fake.streams).toHaveLength(streams);
+      expect(seen.errors).toEqual([]);
+    });
+
+    it("a rejoin to a host that accepts and never answers re-dials after idleTimeoutMs", async () => {
+      const fake = await startFake(oneEventPerStream);
+      const proxy = await startCutProxy(fake.url);
+      stops.push(proxy.close);
+      const events: string[] = [];
+      const errors: { code: string }[] = [];
+      await join(
+        { url: proxy.url, streams: fake.streams },
+        { onEvent: (e) => void events.push(e.eventId!), onError: (e) => void errors.push(e) },
+        { idleTimeoutMs: 300 },
+      );
+      await vi.waitFor(() => expect(events).toHaveLength(1));
+
+      proxy.setSilent(true);
+      proxy.reset();
+      await vi.waitFor(() => expect(proxy.silentAccepts()).toBeGreaterThanOrEqual(2), 5000);
+      proxy.setSilent(false);
+
+      await vi.waitFor(() => expect(events.length).toBeGreaterThanOrEqual(2), 5000);
+      expect(errors).toEqual([]);
+    }, 12000);
+
+    it("the first join to a host that never answers rejects with Unavailable", async () => {
+      const proxy = await startCutProxy("http://127.0.0.1:1");
+      stops.push(proxy.close);
+      proxy.setSilent(true);
+      const err = await rejection(
+        joinConsumerGroupStream({ serverUrl: proxy.url, logger: false, idleTimeoutMs: 300 }, "workers"),
+      );
+      expect(ConnectError.from(err).code).toBe(Code.Unavailable);
+    });
+
+    it.each([
+      {
+        name: "incomplete envelope", body: new Uint8Array(10), flags: 0, cut: true,
+        code: "invalid_argument", message: "incomplete envelope",
+      },
+      {
+        name: "invalid protobuf", body: new Uint8Array([0x0a, 0x80]), flags: 0, cut: false,
+        code: "internal", message: "parse binary:",
+      },
+      {
+        name: "truncated gzip", body: gzipSync(new Uint8Array([0])).subarray(0, 10), flags: 1, cut: false,
+        code: "internal", message: "decompression failed",
+      },
+    ].flatMap((fixture) => [false, true].map((rejoin) => ({ ...fixture, rejoin }))))(
+      "$name ends the subscription (rejoin=$rejoin)",
+      async ({ body, flags, cut, code, message, rejoin }) => {
+        let streams = 0;
+        const joined = toBinary(
+          SubscribeBidirectionalResponseSchema,
+          create(SubscribeBidirectionalResponseSchema, {
+            payload: {
+              case: "joined",
+              value: create(ConsumerGroupJoinedSchema, { subscriptionId: "member", ackMode: AckMode.MANUAL }),
+            },
+          }),
+        );
+        const frame = (body: Uint8Array, flags = 0) => {
+          const out = Buffer.alloc(5 + body.length);
+          out[0] = flags;
+          out.writeUInt32BE(body.length, 1);
+          out.set(body, 5);
+          return out;
+        };
+        const malformed = frame(body, flags);
+        const server = http2.createServer((_req, res) => {
+          streams++;
+          res.writeHead(200, { "content-type": "application/connect+proto", "connect-content-encoding": "gzip" });
+          if (!rejoin || streams === 1) res.write(frame(joined));
+          if (rejoin && streams === 1) {
+            res.end(frame(new TextEncoder().encode("{}"), 2));
+            return;
+          }
+          res.end(cut ? malformed.subarray(0, 8) : malformed);
+        });
+        const sessions = new Set<http2.ServerHttp2Session>();
+        server.on("session", (sess) => {
+          sessions.add(sess);
+          sess.on("close", () => sessions.delete(sess));
+        });
+        await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+        stops.push(
+          () =>
+            new Promise<void>((r) => {
+              for (const s of sessions) s.destroy();
+              server.close(() => r());
+            }),
+        );
+        const errors: { code: string; message: string; retrying?: boolean }[] = [];
+        const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        await join({ url, streams: [] }, { onError: (e) => void errors.push(e) });
+
+        await vi.waitFor(() => expect(errors).toHaveLength(1));
+        expect(errors[0]).toMatchObject({ code, retrying: false });
+        expect(errors[0]!.message).toContain(message);
+        await new Promise((r) => setTimeout(r, 120));
+        expect(streams).toBe(rejoin ? 2 : 1);
+      },
+    );
+
+    it("each failed attempt logs a warning while the worker keeps retrying", async () => {
+      const warnings: string[] = [];
+      const logger = {
+        debug() {},
+        info() {},
+        error() {},
+        warn: (message: string, data?: Record<string, unknown>) => void warnings.push(`${message} ${JSON.stringify(data)}`),
+      };
+      const fake = await startFake(async (s) => {
+        if (s.n === 2 || s.n === 3) {
+          await s.recv();
+          s.fail(Code.Unavailable, `still down ${s.n}`);
+          return;
+        }
+        await oneEventPerStream(s);
+      });
+      const proxy = await startCutProxy(fake.url);
+      stops.push(proxy.close);
+      const events: string[] = [];
+      await join(
+        { url: proxy.url, streams: fake.streams },
+        { onEvent: (e) => void events.push(e.eventId!) },
+        { logger },
+      );
+      await vi.waitFor(() => expect(events).toHaveLength(1));
+
+      proxy.reset();
+
+      await vi.waitFor(() => expect(events).toEqual(["evt-1", "evt-4"]), 5000);
+      expect(warnings.filter((w) => w.includes("still down"))).toHaveLength(2);
+      expect(warnings.filter((w) => w.includes("reconnect")).length).toBeGreaterThanOrEqual(3);
+    });
   });
 
   it("Unimplemented on rejoin names the minimum server version", async () => {

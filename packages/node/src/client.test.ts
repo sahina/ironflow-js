@@ -579,7 +579,6 @@ describe("IronflowClient", () => {
     it("wraps create, get, list, partial update, and delete", async () => {
       const group = {
         id: "cg-1",
-        namespace: "default",
         name: "orders",
         pattern: "order.*",
         ackMode: "ACK_MODE_MANUAL",
@@ -605,7 +604,9 @@ describe("IronflowClient", () => {
       vi.stubGlobal("fetch", mockFetch);
       const client = createClient({ serverUrl: "http://localhost:9123" });
 
-      expect((await client.consumerGroups.create({ name: "orders", pattern: "order.*", ackMode: "manual" })).ackMode).toBe("manual");
+      // A caller still passing the removed namespace (#4114) must not put it on the wire.
+      const stale = { namespace: "team-a" };
+      expect((await client.consumerGroups.create({ ...stale, name: "orders", pattern: "order.*", ackMode: "manual" })).ackMode).toBe("manual");
       expect((await client.consumerGroups.get("orders")).name).toBe("orders");
       expect(await client.consumerGroups.list()).toHaveLength(1);
       expect((await client.consumerGroups.update("orders", { status: "paused", maxInflight: 0 })).status).toBe("paused");
@@ -614,10 +615,14 @@ describe("IronflowClient", () => {
       const bodies = mockFetch.mock.calls.map(([, init]) =>
         JSON.parse((init as RequestInit).body as string)
       );
+      for (const body of bodies) {
+        expect(body).not.toHaveProperty("namespace");
+      }
+      expect(bodies[1]).toEqual({ name: "orders" });
+      expect(bodies[4]).toEqual({ name: "orders" });
       expect(bodies[3]).toEqual({
         group: {
           name: "orders",
-          namespace: "default",
           maxInflight: 0,
           status: "CONSUMER_GROUP_STATUS_PAUSED",
         },
@@ -637,7 +642,6 @@ describe("IronflowClient", () => {
         id: "cg-1",
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-        namespace: "default",
         name: "orders",
         pattern: "order.*",
       };
@@ -645,7 +649,6 @@ describe("IronflowClient", () => {
         id: "cg-2",
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
-        namespace: "default",
         name: "payments",
         pattern: "payment.*",
       };
@@ -1259,11 +1262,12 @@ describe("IronflowClient", () => {
       );
     });
 
-    // #1963: the reason resumeRun moved onto Connect at all. A resume that is
-    // already in flight inside the server's dedupe window comes back 409, and
-    // request()'s typed-error table turns that into ConflictError. Before the
-    // migration this route bypassed request() entirely and threw a bare Error.
-    it("should throw ConflictError when the resume is already in flight", async () => {
+    // #1963: the reason resumeRun moved onto Connect at all. A 409 with the
+    // already_exists code goes through request()'s typed-error table and
+    // becomes ConflictError. Before the migration this route bypassed request()
+    // entirely and threw a bare Error. The server no longer answers a repeated
+    // resume this way (#3869); the mapping stays for every other 409.
+    it("should throw ConflictError when the server answers 409 already_exists", async () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: false,
         status: 409,

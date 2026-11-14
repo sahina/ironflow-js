@@ -9,7 +9,7 @@
  */
 
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
-import { createConnectTransport } from "@connectrpc/connect-node";
+import { Http2SessionManager, createConnectTransport } from "@connectrpc/connect-node";
 import { create, toJson } from "@bufbuild/protobuf";
 import { ValueSchema, timestampDate } from "@bufbuild/protobuf/wkt";
 import type {
@@ -51,8 +51,6 @@ export interface ConsumerGroupStreamConfig {
   /** Falls back to the IRONFLOW_API_KEY env var. */
   apiKey?: string;
   environment?: string;
-  /** Consumer group namespace (default: "default"). */
-  namespace?: string;
   /** First reconnect delay in ms (default: 1000). */
   reconnectDelay?: number;
   /** Largest reconnect delay in ms (default: 30000). */
@@ -96,8 +94,11 @@ const INT32_MAX = 2 ** 31 - 1;
 // before the client resets it.
 const UNSUBSCRIBE_GRACE_MS = 2000;
 
+// A lost connection reads as Canceled: an HTTP/2 stream whose session died closes
+// with error code CANCEL.
 const RETRYABLE = new Set<Code>([
   Code.Unknown,
+  Code.Canceled,
   Code.DeadlineExceeded,
   Code.ResourceExhausted,
   Code.Aborted,
@@ -105,7 +106,19 @@ const RETRYABLE = new Set<Code>([
   Code.Unavailable,
 ]);
 
-const isRetryable = (err: unknown) => RETRYABLE.has(ConnectError.from(err).code);
+function isRetryable(err: unknown): boolean {
+  const error = ConnectError.from(err);
+  // Connect reports binary parsing and some decompression failures as Internal,
+  // the same code it uses for retryable HTTP/2 failures. Its binary parser
+  // drops the cause; isWireError separates server errors with the same message.
+  if (
+    !error.isWireError &&
+    error.code === Code.Internal &&
+    (error.rawMessage.startsWith("parse binary:") ||
+      (error.rawMessage === "decompression failed" && error.cause instanceof Error))
+  ) return false;
+  return RETRYABLE.has(error.code);
+}
 
 interface BidiClient {
   subscribeBidirectional(
@@ -147,6 +160,7 @@ class GroupSubscription<T> implements AckableSubscription {
   private readonly delays: { first: number; max: number; backoff: number };
   private readonly ackTimeout: number;
   private readonly idleTimeout: number;
+  private readonly sessions: Http2SessionManager;
 
   private cur?: GroupConn; // the last joined stream; stays after it ends
   private opening?: GroupConn; // a join in flight
@@ -192,7 +206,6 @@ class GroupSubscription<T> implements AckableSubscription {
       payload: {
         case: "join",
         value: create(JoinConsumerGroupRequestSchema, {
-          namespace: config.namespace ?? "",
           groupName,
         }),
       },
@@ -200,9 +213,11 @@ class GroupSubscription<T> implements AckableSubscription {
 
     const apiKey = config.apiKey || process.env.IRONFLOW_API_KEY;
     const environment = resolveEnvironment(config.environment);
+    this.sessions = new Http2SessionManager(config.serverUrl);
     const transport = createConnectTransport({
       baseUrl: config.serverUrl,
       httpVersion: "2",
+      sessionManager: this.sessions,
       interceptors: [
         (next) => async (req) => {
           if (apiKey) req.header.set("Authorization", `Bearer ${apiKey}`);
@@ -296,7 +311,7 @@ class GroupSubscription<T> implements AckableSubscription {
       // sdkcoverage: POST /ironflow.v1.PubSubService/SubscribeBidirectional
       const responses = this.client.subscribeBidirectional(conn.requests(), { signal: conn.abort.signal });
       conn.responses = responses[Symbol.asyncIterator]();
-      const first = await conn.responses.next();
+      const first = await this.nextFrame(conn);
       if (first.done) throw new ConnectError("stream ended before joined", Code.Unavailable);
       const payload = first.value.payload;
       if (payload.case !== "joined") throw new ConnectError("first frame was not joined", Code.Internal);
@@ -331,8 +346,16 @@ class GroupSubscription<T> implements AckableSubscription {
         // joins and hangs up must not be retried at the base rate forever.
         if (accepted) attempt = 1;
         this.setState("reconnecting");
+        let failure = err;
         for (;;) {
           const wait = calculateBackoff(attempt++, this.delays.first, this.delays.max, this.delays.backoff);
+          if (failure !== undefined) {
+            this.logger.warn("consumer group stream failed; reconnecting", {
+              group: this.groupName,
+              error: ConnectError.from(failure).message,
+              retryInMs: wait,
+            });
+          }
           if (!(await this.sleep(wait))) return;
           try {
             conn = await this.open();
@@ -343,6 +366,7 @@ class GroupSubscription<T> implements AckableSubscription {
               this.report(openErr);
               return;
             }
+            failure = openErr;
           }
         }
         this.setState("connected");
@@ -409,10 +433,13 @@ class GroupSubscription<T> implements AckableSubscription {
   private nextFrame(conn: GroupConn): Promise<IteratorResult<SubscribeBidirectionalResponse>> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const idle = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new ConnectError(`no frame from the server within ${this.idleTimeout}ms`, Code.Unavailable)),
-        this.idleTimeout,
-      );
+      timer = setTimeout(() => {
+        const err = new ConnectError(`no frame from the server within ${this.idleTimeout}ms`, Code.Unavailable);
+        reject(err);
+        // Http2SessionManager reuses its session until it closes, so the next
+        // join would land on this silent connection; abort makes it dial again.
+        this.sessions.abort(err);
+      }, this.idleTimeout);
     });
     return Promise.race([conn.responses.next(), idle]).finally(() => clearTimeout(timer));
   }

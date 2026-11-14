@@ -223,7 +223,6 @@ export class OfflineClient {
         ...(options?.version !== undefined ? { version: options.version } : {}),
         idempotency_key: key,
         metadata: options?.metadata,
-        namespace: options?.namespace,
       },
       idempotencyKey: key,
     });

@@ -157,9 +157,6 @@ export interface WSSubscribeRequest {
       includeMetadata?: boolean;
       filter?: string;
       consumerGroup?: string;
-      ackMode?: AckMode;
-      backpressure?: BackpressureMode;
-      namespace?: string;
     };
   };
 }
@@ -181,9 +178,6 @@ export function createWSSubscribeRequest(
               options.includeMetadata || options.startAfterSequence !== undefined,
             filter: options.filter,
             consumerGroup: options.consumerGroup,
-            ackMode: options.ackMode,
-            backpressure: options.backpressure,
-            namespace: options.namespace,
           }
         : undefined,
     },

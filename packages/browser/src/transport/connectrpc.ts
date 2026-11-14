@@ -25,8 +25,6 @@ import { SDK_HEADER } from "../sdk-fetch.js";
 import {
   SubscribeRequestSchema,
   SubscribeOptionsSchema,
-  AckMode as ProtoAckMode,
-  BackpressureMode as ProtoBackpressureMode,
   type SubscriptionEvent as ProtoSubscriptionEvent,
 } from "@ironflow/core/gen";
 
@@ -54,34 +52,6 @@ interface ActiveSubscription {
   abortController: AbortController;
   subscriptionId?: string;
   accepted: boolean;
-}
-
-/**
- * Convert SDK ack mode to protobuf enum
- */
-function toProtoAckMode(mode?: string): ProtoAckMode {
-  switch (mode) {
-    case "manual":
-      return ProtoAckMode.MANUAL;
-    case "auto":
-    default:
-      return ProtoAckMode.AUTO;
-  }
-}
-
-/**
- * Convert SDK backpressure mode to protobuf enum
- */
-function toProtoBackpressureMode(mode?: string): ProtoBackpressureMode {
-  switch (mode) {
-    case "drop":
-      return ProtoBackpressureMode.DROP;
-    case "block":
-      return ProtoBackpressureMode.BLOCK;
-    case "buffer":
-    default:
-      return ProtoBackpressureMode.BUFFER;
-  }
 }
 
 /**
@@ -305,7 +275,7 @@ export class ConnectRPCTransport implements Transport {
     throw new Error(
       `Manual acknowledgments are not yet supported in the browser transport. ` +
         `Cannot send ${type} for event ${eventId}. ` +
-        `Use ackMode: "auto" (default) or use WebSocket transport for manual acks.`,
+        `Use a consumer group with ack mode "auto" or the WebSocket transport.`,
     );
   }
 
@@ -356,10 +326,7 @@ export class ConnectRPCTransport implements Transport {
               : undefined,
           includeMetadata: options?.includeMetadata ?? false,
           filter: options?.filter ?? "",
-          namespace: options?.namespace ?? "default",
           consumerGroup: options?.consumerGroup ?? "",
-          ackMode: toProtoAckMode(options?.ackMode),
-          backpressure: toProtoBackpressureMode(options?.backpressure),
         }),
       });
 

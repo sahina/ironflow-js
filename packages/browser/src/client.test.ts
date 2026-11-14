@@ -394,171 +394,6 @@ describe("getCapabilities behavior", () => {
   });
 });
 
-describe("emit behavior", () => {
-  it("should POST to ConnectRPC Emit endpoint with correct body", async () => {
-    const originalFetch = global.fetch;
-    const mockResponse = { runIds: ["run-1"], eventId: "evt-1" };
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(JSON.stringify(mockResponse)),
-    });
-    global.fetch = mockFetch;
-
-    type EmitOptions = {
-      version?: number;
-      idempotencyKey?: string;
-      metadata?: Record<string, string>;
-      namespace?: string;
-    };
-
-    async function emit(
-      serverUrl: string,
-      eventName: string,
-      data: unknown,
-      options?: EmitOptions
-    ): Promise<{ runIds: string[]; eventId: string }> {
-      const url = `${serverUrl}/ironflow.v1.PubSubService/Emit`;
-      const body: Record<string, unknown> = {
-        event: eventName,
-        data,
-        ...(options?.version ? { version: options.version } : {}),
-        idempotency_key: options?.idempotencyKey,
-        metadata: options?.metadata,
-        namespace: options?.namespace,
-      };
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        throw new Error(`Emit failed: ${response.status}`);
-      }
-      const text = await response.text();
-      const parsed = JSON.parse(text);
-      return { runIds: parsed.runIds ?? [], eventId: parsed.eventId };
-    }
-
-    const result = await emit("http://localhost:9123", "order.created", { orderId: "123" });
-
-    expect(mockFetch).toHaveBeenCalledOnce();
-    const [url, options] = assertDefined(mockFetch.mock.calls[0]);
-    expect(url).toBe("http://localhost:9123/ironflow.v1.PubSubService/Emit");
-    expect(options.method).toBe("POST");
-    const body = JSON.parse(options.body);
-    expect(body.event).toBe("order.created");
-    expect(body.data).toEqual({ orderId: "123" });
-    expect(body.version).toBeUndefined();
-    expect(result).toEqual(mockResponse);
-
-    global.fetch = originalFetch;
-  });
-
-  it("should include version in body when provided in options", async () => {
-    const originalFetch = global.fetch;
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(JSON.stringify({ runIds: ["run-2"], eventId: "evt-2" })),
-    });
-    global.fetch = mockFetch;
-
-    type EmitOptions = {
-      version?: number;
-      idempotencyKey?: string;
-      metadata?: Record<string, string>;
-      namespace?: string;
-    };
-
-    async function emit(
-      serverUrl: string,
-      eventName: string,
-      data: unknown,
-      options?: EmitOptions
-    ): Promise<{ runIds: string[]; eventId: string }> {
-      const url = `${serverUrl}/ironflow.v1.PubSubService/Emit`;
-      const body: Record<string, unknown> = {
-        event: eventName,
-        data,
-        ...(options?.version ? { version: options.version } : {}),
-        idempotency_key: options?.idempotencyKey,
-        metadata: options?.metadata,
-        namespace: options?.namespace,
-      };
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        throw new Error(`Emit failed: ${response.status}`);
-      }
-      const text = await response.text();
-      const parsed = JSON.parse(text);
-      return { runIds: parsed.runIds ?? [], eventId: parsed.eventId };
-    }
-
-    await emit("http://localhost:9123", "order.updated", { orderId: "456" }, { version: 2 });
-
-    const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
-    expect(body.version).toBe(2);
-    expect(body.event).toBe("order.updated");
-
-    global.fetch = originalFetch;
-  });
-
-  it("should not include version in body when not provided", async () => {
-    const originalFetch = global.fetch;
-    const mockFetch = vi.fn().mockResolvedValue({
-      ok: true,
-      text: () => Promise.resolve(JSON.stringify({ runIds: [], eventId: "evt-3" })),
-    });
-    global.fetch = mockFetch;
-
-    type EmitOptions = {
-      version?: number;
-      idempotencyKey?: string;
-      metadata?: Record<string, string>;
-      namespace?: string;
-    };
-
-    async function emit(
-      serverUrl: string,
-      eventName: string,
-      data: unknown,
-      options?: EmitOptions
-    ): Promise<{ runIds: string[]; eventId: string }> {
-      const url = `${serverUrl}/ironflow.v1.PubSubService/Emit`;
-      const body: Record<string, unknown> = {
-        event: eventName,
-        data,
-        ...(options?.version ? { version: options.version } : {}),
-        idempotency_key: options?.idempotencyKey,
-        metadata: options?.metadata,
-        namespace: options?.namespace,
-      };
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        throw new Error(`Emit failed: ${response.status}`);
-      }
-      const text = await response.text();
-      const parsed = JSON.parse(text);
-      return { runIds: parsed.runIds ?? [], eventId: parsed.eventId };
-    }
-
-    await emit("http://localhost:9123", "order.deleted", {}, { idempotencyKey: "key-1" });
-
-    const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
-    expect(body.version).toBeUndefined();
-    expect(body.idempotency_key).toBe("key-1");
-
-    global.fetch = originalFetch;
-  });
-});
-
 describe("streams.append behavior", () => {
   it("should POST to /ironflow.v1.EntityStreamService/AppendEvent with correct body", async () => {
     const originalFetch = global.fetch;
@@ -2205,16 +2040,18 @@ describe("IronflowClient (real module)", () => {
       });
       vi.stubGlobal("fetch", mockFetch);
 
+      // Spread, so a JS caller's leftover `namespace` reaches emit() untyped.
+      const stale = { namespace: "payments" };
       await ironflow.emit("payment.processed", { amount: 99 }, {
         idempotencyKey: "idem-1",
         metadata: { source: "checkout" },
-        namespace: "payments",
+        ...stale,
       });
 
       const body = JSON.parse(assertDefined(mockFetch.mock.calls[0]?.[1]).body as string);
       expect(body.idempotency_key).toBe("idem-1");
       expect(body.metadata).toEqual({ source: "checkout" });
-      expect(body.namespace).toBe("payments");
+      expect(body).not.toHaveProperty("namespace");
     });
   });
 
@@ -2867,11 +2704,12 @@ describe("IronflowClient (real module)", () => {
       );
     });
 
-    // #1963: the whole point of the migration. A resume already inside the
-    // server's dedupe window is 409 -> already_exists, and going through
-    // request() means it now carries the status and a non-retryable flag
+    // #1963: the whole point of the migration. A 409 -> already_exists answer
+    // going through request() carries the status and a non-retryable flag
     // instead of the bare code:"RESUME_FAILED" the hand-rolled fetch invented.
-    it("surfaces a deduplicated resume as a non-retryable 409", async () => {
+    // The server no longer answers a repeated resume this way (#3869); the
+    // mapping stays for every other 409.
+    it("surfaces a 409 already_exists on resumeRun as non-retryable", async () => {
       ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
       vi.stubGlobal(
         "fetch",
@@ -5114,7 +4952,7 @@ describe("IronflowClient (real module)", () => {
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
         status: 200,
-        json: () => Promise.resolve({ name: "orders", namespace: "default", pattern: "order.*", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }),
+        json: () => Promise.resolve({ name: "orders", pattern: "order.*", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }),
       });
       vi.stubGlobal("fetch", mockFetch);
 
@@ -5126,6 +4964,26 @@ describe("IronflowClient (real module)", () => {
       await ironflow.consumerGroups.update("orders", { pattern: "order.>" });
       const updateBody = JSON.parse(mockFetch.mock.calls.at(-1)?.[1]?.body as string);
       expect(updateBody.update_mask).toBe("pattern");
+      expect(updateBody.group).not.toHaveProperty("namespace");
+    });
+
+    it("does not send the removed consumer-group namespace (#4114)", async () => {
+      ironflow.configure({ serverUrl: "http://localhost:9123", logger: false });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ name: "orders", pattern: "order.*", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }),
+      });
+      vi.stubGlobal("fetch", mockFetch);
+
+      // Spread, so a JS caller's leftover `namespace` reaches create() untyped.
+      const stale = { namespace: "team-a" };
+      await ironflow.consumerGroups.create({ ...stale, name: "orders", pattern: "order.*" });
+      await ironflow.consumerGroups.get("orders");
+      await ironflow.consumerGroups.delete("orders");
+      for (const [, init] of mockFetch.mock.calls) {
+        expect(JSON.parse(init.body as string)).not.toHaveProperty("namespace");
+      }
     });
 
     it("queries environment audit events", async () => {

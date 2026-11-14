@@ -846,10 +846,7 @@ describe("SubscriptionClient", () => {
           replay: 25,
           includeMetadata: true,
           filter: "data.total > 100",
-          namespace: "production",
           consumerGroup: "processors",
-          ackMode: "manual",
-          backpressure: "block",
           onEvent: () => {},
         });
         firstSocket.simulateMessage({
@@ -874,10 +871,7 @@ describe("SubscriptionClient", () => {
         expect(reconnect.subscription.options).toMatchObject({
           includeMetadata: true,
           filter: "data.total > 100",
-          namespace: "production",
           consumerGroup: "processors",
-          ackMode: "manual",
-          backpressure: "block",
         });
         expect(reconnect.subscription.options.replay).toBeUndefined();
 
@@ -1008,6 +1002,22 @@ describe("SubscriptionClient", () => {
       client.close();
     });
 
+    it("removes a deleted group membership before reporting not_found", async () => {
+      const { createSubscriptionClient } = await importModule();
+      const client = createSubscriptionClient({ serverUrl: "http://localhost:9123" });
+      await client.connect();
+      const onError = vi.fn();
+      const joined = client.subscribe("orders.*", { onError });
+      mockWs.simulateMessage({ type: "subscription_result", results: [{ pattern: "orders.*", status: "ok", subscriptionId: "member" }] });
+      await joined;
+      mockWs.simulateMessage({ type: "subscription_error", subscriptionId: "member", code: "not_found", message: "Consumer group membership closed", retrying: false });
+      expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: "not_found", retrying: false }));
+      const replacement = client.subscribe("orders.*", {});
+      mockWs.simulateMessage({ type: "subscription_result", results: [{ pattern: "orders.*", status: "ok", subscriptionId: "replacement" }] });
+      await expect(replacement).resolves.toBeDefined();
+      client.close();
+    });
+
     it("delivers subscription errors to callback", async () => {
       const { createSubscriptionClient } = await importModule();
       const client = createSubscriptionClient({
@@ -1121,7 +1131,7 @@ describe("SubscriptionClient", () => {
   // ============================================================================
 
   describe("ackable subscriptions", () => {
-    it("returns ackable subscription for manual ack mode", async () => {
+    it("returns ackable subscription for a consumer-group member", async () => {
       const { createSubscriptionClient } = await importModule();
       const client = createSubscriptionClient({
         serverUrl: "http://localhost:9123",
@@ -1130,7 +1140,6 @@ describe("SubscriptionClient", () => {
       await client.connect();
 
       const subPromise = client.subscribe("order.*", {
-        ackMode: "manual",
         consumerGroup: "processors",
         onEvent: () => {},
       });
@@ -1196,7 +1205,7 @@ describe("SubscriptionClient", () => {
   // ============================================================================
 
   describe("joinConsumerGroup", () => {
-    it("subscribes with the requested group and manual acknowledgements", async () => {
+    it("subscribes with the requested group and no ackMode", async () => {
       const { createSubscriptionClient } = await importModule();
       const client = createSubscriptionClient({ serverUrl: "http://localhost:9123" });
       await client.connect();
@@ -1204,7 +1213,7 @@ describe("SubscriptionClient", () => {
       const subPromise = client.joinConsumerGroup("processors", "order.*");
       const sent = JSON.parse(mockWs.send.mock.calls.at(-1)?.[0] as string);
       expect(sent.subscription.options.consumerGroup).toBe("processors");
-      expect(sent.subscription.options.ackMode).toBe("manual");
+      expect(sent.subscription.options).not.toHaveProperty("ackMode");
 
       mockWs.simulateMessage({
         type: "subscription_result",

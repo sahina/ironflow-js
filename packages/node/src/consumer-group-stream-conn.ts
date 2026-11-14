@@ -19,7 +19,9 @@ import {
 
 /**
  * The server rejected an ack, nak or term. `not_found`: the group or this
- * member is gone, so a retry cannot succeed. `internal`: a retry may succeed.
+ * member is gone, so a retry cannot succeed. `unavailable`: NATS cannot take
+ * the ack now; retry it, or let the event redeliver. `internal`: a retry may
+ * succeed.
  */
 export class AckError extends IronflowError {
   readonly eventId: string;
@@ -32,11 +34,12 @@ export class AckError extends IronflowError {
   }
 }
 
-export type AckErrorCode = "invalid_argument" | "not_found" | "internal";
+export type AckErrorCode = "invalid_argument" | "not_found" | "unavailable" | "internal";
 
 const ACK_ERROR_CODES: Partial<Record<AckResultCode, AckErrorCode>> = {
   [AckResultCode.INVALID_ARGUMENT]: "invalid_argument",
   [AckResultCode.NOT_FOUND]: "not_found",
+  [AckResultCode.UNAVAILABLE]: "unavailable",
 };
 
 /**

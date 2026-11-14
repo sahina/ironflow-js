@@ -1892,7 +1892,6 @@ For load-balanced processing with manual acknowledgment.
 ```typescript
 const subscription = await sub.subscribe('events:order.*', {
   consumerGroup: 'order-processors',
-  ackMode: 'manual',
   onEvent: async (event) => {
     try {
       await processOrder(event.data);
@@ -1908,7 +1907,7 @@ const subscription = await sub.subscribe('events:order.*', {
 await subscription.term(eventId);
 ```
 
-`sub.joinConsumerGroup(groupName, pattern, options)` is shorthand for `subscribe` with `consumerGroup` set to `groupName` and `ackMode: 'manual'`. It returns an ackable subscription.
+`sub.joinConsumerGroup(groupName, pattern, options)` is shorthand for `subscribe` with `consumerGroup` set to `groupName`. It returns an ackable subscription. The group's own `ackMode` decides whether events need acknowledging; a subscribe has no ack mode of its own.
 
 ### Connection monitoring
 
@@ -1955,8 +1954,8 @@ const sub = await joinConsumerGroupStream(
 - The stream needs a server that includes this change (released after v0.47.0). Against an older server the join fails with a `ServerTooOldError` (code `SERVER_TOO_OLD`) that names the first server version with the stream (0.48.0). The SDK does not retry it. Use the WebSocket transport there.
 - `onEvent` may return a Promise and the SDK awaits it, so events are handled in order. A handler that rejects goes to `onError`, and the SDK does not ack the event. In an `AUTO` group a slow handler slows the server through HTTP/2 flow control.
 - `ack`, `nak` and `term` reject with `AckError` (the server refused), `StaleAckError` (the stream reconnected, so the server redelivers the event, or the event was settled already) or `SubscriptionClosedError` (after `unsubscribe()` or a terminal error). In an `AUTO` group they do nothing.
-- A retryable disconnect reconnects with backoff. `Unauthenticated`, `PermissionDenied`, `NotFound` and `InvalidArgument` end the subscription and go to `onError`.
-- Config: `serverUrl`, `apiKey?`, `environment?`, `namespace?`, `logger?`, `reconnectDelay?` (1000 ms), `maxReconnectDelay?` (30000 ms), `reconnectBackoff?` (1.5), `ackTimeoutMs?` (30000), `idleTimeoutMs?` (90000: no frame for this long reconnects).
+- A lost connection (a reset, a half-close or a killed server), another retryable disconnect, or `idleTimeoutMs` with no frame reconnects with backoff. The idle rule covers the join and each rejoin too: a host that accepts the connection and never answers rejects the join with `Unavailable`, and a rejoin to it dials again. Each failed attempt logs a warning on `logger`; `onError` gets only the error that ends the subscription. `Unauthenticated`, `PermissionDenied`, `NotFound` and `InvalidArgument` from the server end the subscription and go to `onError`, as does a frame that a clean end of the stream cut short.
+- Config: `serverUrl`, `apiKey?`, `environment?`, `logger?`, `reconnectDelay?` (1000 ms), `maxReconnectDelay?` (30000 ms), `reconnectBackoff?` (1.5), `ackTimeoutMs?` (30000), `idleTimeoutMs?` (90000: no frame for this long reconnects).
 
 ---
 
@@ -2205,7 +2204,7 @@ These error classes are re-exported from `@ironflow/core` by `@ironflow/node`. C
 | `UnauthenticatedError` | Missing or invalid authentication (HTTP 401). |
 | `UnauthorizedError` | Insufficient permissions (HTTP 403). |
 | `EnterpriseRequiredError` | HTTP 402. Legacy — Ironflow ships a single tier (ADR 0015) and the server no longer returns 402; retained for compatibility. |
-| `ConflictError` | HTTP 409 that is not a lost race — e.g. a deduplicated `resumeRun()`. Wait, do not retry. |
+| `ConflictError` | HTTP 409 that is not a lost race — e.g. an idempotency key reused with a different request. Do not resend the same body. |
 | `ContendedError` | HTTP 409 from a lost compare-and-set race; nothing was applied, so re-read and reissue. |
 | `PreconditionFailedError` | HTTP 412. An `If-Match` or `If-None-Match` precondition failed (file storage). |
 | `PreconditionRequiredError` | HTTP 428. The write needs `If-Match` with the version you read (policy set). |

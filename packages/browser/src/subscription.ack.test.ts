@@ -30,7 +30,6 @@ describe("SubscriptionManager ackable subscription", () => {
 
     const sub = await manager.subscribe("orders.*", {
       consumerGroup: "processors",
-      ackMode: "manual",
       onEvent: vi.fn(),
     });
     const ackable = sub as AckableSubscription;

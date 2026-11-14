@@ -316,7 +316,6 @@ export const ConsumerGroupStatusSchema = withFutureValues(
 
 export const ConsumerGroupResponseSchema = z.object({
   id: z.string(),
-  namespace: z.string(),
   name: z.string(),
   pattern: z.string(),
   filterExpr: z.string().optional(),
