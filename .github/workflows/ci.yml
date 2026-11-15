@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     name: Smoke build (Node ${{ matrix.node }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     strategy:
       fail-fast: false

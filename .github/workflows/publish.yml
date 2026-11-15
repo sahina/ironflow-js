@@ -17,7 +17,7 @@ permissions:
 jobs:
   build:
     name: Build and pack SDK artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     outputs:
       version: ${{ steps.resolve.outputs.version }}
@@ -111,7 +111,8 @@ jobs:
 
   publish:
     name: Publish prepared packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
     needs: build
     permissions:
       contents: read
