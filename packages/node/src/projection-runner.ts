@@ -208,6 +208,9 @@ export class ProjectionRunner {
   private streamAbort: AbortController | null = null;
   /** Set by a failed flush; later flushes are dropped until the reconnect, which replays from the delivery position. */
   private flushFailed = false;
+  // A save the server refused with failed_precondition. A stream flush runs off the
+  // read loop, so it records the refusal here for the loop to stop on.
+  private refused: ProjectionRefusedError | null = null;
   /** A failed save may still have landed (only its response was lost): reload the state before the next stream (#2977). */
   private reloadState = false;
   /** A batch with events succeeded on the current stream. */
@@ -319,6 +322,7 @@ export class ProjectionRunner {
   private async runStreaming(pollFallback: boolean): Promise<void> {
     const { projection, logger } = this.config;
     await this.config.after;
+    this.refused = null; // a refusal belongs to the run it stopped
     this.resetManagedState();
     if (!(await this.retryUntilStopped("register", () => this.register()))) return;
     logger.info(`Projection runner started (streaming): ${projection.config.name}`);
@@ -553,6 +557,7 @@ export class ProjectionRunner {
     this.pendingMark = 0;
     this.position = 0;
     this.flushFailed = false;
+    this.refused = null;
     this.reloadState = false; // the next grant loads the state before it streams
     this.resetManagedState();
     this.lease = null;
@@ -746,6 +751,7 @@ export class ProjectionRunner {
         }
       } catch (err) {
         if (this.intakeSignal.aborted) break;
+        if (this.refused) throw this.refused;
 
         // A lost lease goes to standby: no reconnect ladder and no poll fallback. A lost lease
         // that Renew found closes the stream, so the error here can be an AbortError.
@@ -846,6 +852,7 @@ export class ProjectionRunner {
       this.pendingMark = 0;
       // A lost lease closes the stream too, and goes to standby instead of the reconnect.
       if (this.lost(err)) return;
+      if (err instanceof ProjectionRefusedError) this.refused = err;
       this.config.logger.warn(`Projection flush failed, reconnecting: ${err}`);
       this.streamAbort?.abort();
     });
@@ -1224,6 +1231,7 @@ export class ProjectionRunner {
     if (!resp.ok) {
       await throwIfLeaseLost(resp, `Projection ${projection.config.name} save`);
       throwIfAuthError(resp.status, `Projection ${projection.config.name} save`);
+      await throwIfRefused(resp, `Projection ${projection.config.name} save`);
       // Include the server's message, not just the status. The commonest cause
       // is a managed handler that does not `return state`: the handler's result
       // is `undefined`, JSON.stringify drops the key entirely, and the server

@@ -207,4 +207,67 @@ describe("projection delivery position (ADR 0164)", () => {
     expect(polls).toBe(1);
     await runner.stop();
   }, 20_000);
+
+  for (const transport of ["poll", "stream"] as const) {
+    it(`stops when a state save is refused (${transport}), without a retry`, async () => {
+      // The server refuses state PostgreSQL cannot store with failed_precondition (ADR 0175).
+      const refused = { code: "failed_precondition", message: "state holds text PostgreSQL cannot store" };
+      let saves = 0;
+      vi.stubGlobal("fetch", vi.fn(async (url: string, opts: RequestInit) => {
+        if (url.endsWith("ProjectionLease")) return Response.json(LEASE);
+        if (url.endsWith("/GetProjection")) return Response.json({});
+        if (url.endsWith("SaveProjectionState")) {
+          saves++;
+          return Response.json(refused, { status: 400 });
+        }
+        if (url.endsWith("PollProjectionEvents")) {
+          return Response.json({ position: "0", lastEventSeq: "1", events: [{ id: "e1", name: "order.created", seq: "1" }] });
+        }
+        if (url.endsWith("StreamProjectionEvents")) {
+          return streamOf([OPEN, { id: "e1", name: "order.created", seq: "1" }], false, opts.signal);
+        }
+        return Response.json({});
+      }));
+      const managed = {
+        config: { name: "orders", events: ["order.created"], mode: "managed", batchSize: 1, handler: async () => ({ n: 1 }) },
+      } as unknown as IronflowProjection;
+      const runner = createProjectionRunner({ projection: managed, baseUrl: "http://x", headers: {}, logger: logger() });
+      const run = transport === "poll" ? runner.start() : runner.startStreaming();
+      await expect(run).rejects.toThrow(/PostgreSQL cannot store/);
+      expect(saves).toBe(1);
+      await runner.stop();
+    }, 20_000);
+  }
+
+  it("does not stop a later run on the refusal that stopped the earlier one", async () => {
+    const refused = { code: "failed_precondition", message: "state holds text PostgreSQL cannot store" };
+    let saves = 0;
+    let streams = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url.endsWith("ProjectionLease")) return Response.json(LEASE);
+      if (url.endsWith("/GetProjection")) return Response.json({});
+      if (url.endsWith("SaveProjectionState")) {
+        saves++;
+        return saves === 1 ? Response.json(refused, { status: 400 }) : Response.json({});
+      }
+      if (url.endsWith("StreamProjectionEvents")) {
+        streams++;
+        // Each stream ends after one event: an ordinary disconnect the runner reconnects from.
+        return streamOf([OPEN, { id: `e${streams}`, name: "order.created", seq: String(streams) }], true);
+      }
+      return Response.json({});
+    }));
+    const managed = {
+      config: { name: "orders", events: ["order.created"], mode: "managed", batchSize: 1, handler: async () => ({ n: 1 }) },
+    } as unknown as IronflowProjection;
+    const runner = createProjectionRunner({ projection: managed, baseUrl: "http://x", headers: {}, logger: logger() });
+    await expect(runner.startStreaming()).rejects.toThrow(/PostgreSQL cannot store/);
+    const second = runner.startStreaming();
+    let rejected: unknown = null;
+    second.catch((e) => { rejected = e; });
+    await vi.waitFor(() => expect(streams).toBeGreaterThanOrEqual(3), { timeout: 15_000 });
+    expect(rejected).toBeNull();
+    await runner.stop();
+    await second.catch(() => {});
+  }, 20_000);
 });

@@ -1,6 +1,6 @@
 ---
 name: ironflow-ops
-version: 0.56.2
+version: 0.57.0
 description: |
   Operate Ironflow — debug failed/stuck runs, migrate SDK versions with upcasters,
   run/scale/troubleshoot a self-hosted Docker Compose stack, package an app with the engine
