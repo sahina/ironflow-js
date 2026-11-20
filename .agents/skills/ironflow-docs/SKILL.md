@@ -1,6 +1,6 @@
 ---
 name: ironflow-docs
-version: 1.0.0-rc.1
+version: 0.60.0
 description: |
   Ironflow reference documentation — SDK syntax, CLI commands, MCP tools, and patterns.
   Use when looking up specific API signatures, CLI flags, MCP tool names, or canonical
