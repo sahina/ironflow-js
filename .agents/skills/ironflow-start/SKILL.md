@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.59.0
+version: 1.0.0-rc.1
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",
@@ -61,7 +61,7 @@ If no row matches, fetch https://docs.ironflow.run/llms.txt and pick the page fr
 
 Asked whether Ironflow *fits* — "should I use ironflow", "where can we use it",
 "fit my app", "analyze my codebase" — that is `ironflow-fit`, not this skill.
-Read `~/.agents/skills/ironflow-fit/SKILL.md` and follow it.
+Activate the `ironflow-fit` skill (or read `ironflow-fit/SKILL.md`, a sibling of this skill's directory) and follow it.
 
 If ambiguous, ask once.
 
@@ -266,7 +266,7 @@ one line: `@ironflow/agent` puts these skills in the editor's agent panel. Setup
 ## Mode 2: Fit Analysis — moved
 
 Codebase fit analysis lives in the `ironflow-fit` skill.
-Read and follow `~/.agents/skills/ironflow-fit/SKILL.md`.
+Activate and follow the `ironflow-fit` skill (or read its sibling `ironflow-fit/SKILL.md`).
 
 ---
 
