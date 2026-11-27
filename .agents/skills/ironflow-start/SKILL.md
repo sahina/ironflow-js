@@ -1,6 +1,6 @@
 ---
 name: ironflow-start
-version: 0.60.0
+version: 0.61.0
 description: |
   Adopt Ironflow — set up in a new or existing project and make architectural
   decisions. Triggers on: "set up ironflow", "install ironflow", "add ironflow to",
@@ -98,7 +98,11 @@ dynamic manifests before deciding what to install.
 binary on PATH. They move independently — a project can have the SDK with no engine, or
 an engine with no project.
 
-If `ironflow_installed=true`, present what was found and ask:
+If `ironflow init` created this project in the current session, it is new, not already
+set up: skip the menu below, do Step 2 (engine), skip Steps 3-7 (init already chose
+pull mode, installed the SDK and wrote the worker), then go to Step 8.
+
+If `ironflow_installed=true` otherwise, present what was found and ask:
 
 > "Ironflow is already set up. Want to:
 > 1. Switch execution mode (push ↔ pull)
@@ -171,9 +175,10 @@ project's package manager and, for Python, its existing environment.
 
 **Fresh project** — run `ironflow init` and take the flags and templates from the
 `init` page. Do not promise the user a directory tree: read the files it creates before
-you describe them. There is no Python template; the "2. Create Your Project" section
-of the getting-started page shows the manual route. If the user passes `--skip-install`,
-follow the monorepo-file note in that section.
+you describe them. The generated `README.md` and `AGENTS.md` are part of what you hand
+over: every command and path in them must work in this project. There is no Python template; the "2. Create Your Project" section
+of the getting-started page shows the manual route. With `--skip-install`, install the
+dependencies yourself as the generated README shows.
 
 **Existing project** — no layout is required; the SDK imports from wherever you put
 things. If the user wants a convention, offer this one and say it's a suggestion:
@@ -221,7 +226,7 @@ Two terminals:
 ironflow serve --dev
 
 # Terminal 2 (push mode)
-pnpm dev
+npm run dev   # or the project's own package manager
 # then register the functions the way you set it up in Step 6:
 # run the registration script, or call the GET registration route
 
@@ -242,6 +247,13 @@ ironflow run list --json
 
 Use a unique marker for the sample invocation and check that invocation's run and
 expected output with a bounded wait; another completed run does not verify setup.
+
+Before you hand off, check every file you created or `ironflow init` generated that
+tells the user what to run (`README.md`, `AGENTS.md`, `.env.example`). Each command
+must name a script, file, target or binary that exists in this project or on PATH, and
+match the docs pages above. Run the ones Step 8 did not. A command that refers to
+something absent, such as a `make` target with no Makefile, is a defect: fix the file
+and tell the user what you changed.
 
 An empty array after an emit usually means the function never registered (push: did the
 GET run? pull: is the worker connected?), not that it failed.
@@ -304,7 +316,7 @@ https://docs.ironflow.run/explanation/patterns.md unless the row says otherwise.
 | Concurrency limit vs key | "Concurrency Control" |
 | `step.parallel` vs `step.map` | "`step.parallel(name, branches)` — Execute branches concurrently" and "`step.map(name, items, fn)` — Fan-out/fan-in pattern" on https://docs.ironflow.run/how-to-guides/workflows/steps.md |
 | KV Store vs External DB | "KV Store vs External DB" |
-| Config vs KV Store, Config vs Secrets | "Config vs KV vs Secrets" |
+| Config vs KV Store, Config vs Secrets | "Choosing a store" on https://docs.ironflow.run/explanation/kv-store.md |
 | Optimistic UI vs wait-for-projection | "Three ways to handle it" |
 | Snapshots | "When to add snapshots" |
 

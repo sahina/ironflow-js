@@ -891,7 +891,7 @@ for (const event of events) {
   console.log(event.data);           // { total: 99.99 }
   console.log(event.entityVersion);  // Version number
   console.log(event.version);        // Schema version
-  console.log(event.timestamp);      // ISO 8601 timestamp
+  console.log(event.timestamp);      // Date
   console.log(event.source);         // Optional source identifier
   console.log(event.metadata);       // Optional metadata
 }
@@ -910,8 +910,8 @@ if (info) {
   console.log(info.entityType);  // 'order'
   console.log(info.version);     // Current version number
   console.log(info.eventCount);  // Total events in stream
-  console.log(info.createdAt);   // ISO 8601 timestamp
-  console.log(info.updatedAt);   // ISO 8601 timestamp
+  console.log(info.createdAt);   // Date
+  console.log(info.updatedAt);   // Date
 }
 ```
 
@@ -1527,7 +1527,7 @@ const current = await ironflow.webhooks.getSource(source.id);
 await ironflow.webhooks.updateSource({
   id: current.id,
   name: 'Stripe production (EU)',
-  expectedUpdatedAt: current.updatedAt,
+  expectedUpdatedAt: current.updatedAtExact,
 });
 
 // graceSeconds is tri-state: omit = server default, 0 = instant cutover, N = seconds.
@@ -1554,7 +1554,7 @@ const workers = await ironflow.listWorkers();
 // Health check
 const health = await ironflow.health();
 console.log(health.status);     // 'healthy'
-console.log(health.timestamp);  // ISO 8601
+console.log(health.timestamp);  // Date
 console.log(health.version);    // Server version
 
 // Readiness probe (GET /ready: database, NATS and engine streams). health() is liveness only.

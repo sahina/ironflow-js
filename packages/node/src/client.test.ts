@@ -1543,6 +1543,24 @@ describe("IronflowClient", () => {
         ).rejects.toThrow("version conflict");
       });
 
+      it("marks a busy append retryable and does not resend it", async () => {
+        const mockFetch = vi.fn().mockResolvedValue({
+          ok: false,
+          status: 503,
+          headers: new Headers({ "Retry-After": "1" }),
+          text: () =>
+            Promise.resolve(
+              JSON.stringify({ code: "unavailable", message: "entity stream append met a busy outbox; nothing was written, retry" })
+            ),
+        });
+        vi.stubGlobal("fetch", mockFetch);
+
+        await expect(
+          createClient().streams.append("order-123", { name: "order.created", data: {}, entityType: "order" })
+        ).rejects.toMatchObject({ status: 503, code: "unavailable", retryable: true });
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+      });
+
       it("should include raw error body when response is not JSON", async () => {
         const mockFetch = vi.fn().mockResolvedValue({
           ok: false,

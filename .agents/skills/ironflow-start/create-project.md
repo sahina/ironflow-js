@@ -48,7 +48,7 @@ is for; explicit preferences override these defaults:
 | Go | `github.com/sahina/ironflow-go/ironflow` | `net/http` and the same SDK |
 
 A worker-only project needs no web framework. Reuse the project's package manager;
-for a fresh destination recommend an available one and include it in the proposal.
+for a fresh TypeScript destination use pnpm when it is installed and npm otherwise, as `ironflow init` does, and include it in the proposal.
 Use a Python virtual environment. Resolve compatible published dependency versions
 and record them with the ecosystem's manifest/lock conventions. Honor frameworks
 such as FastAPI or Next.js by consulting their current docs and the relevant SDK
@@ -88,9 +88,8 @@ Use `ironflow init` only when its quickstart matches the proposal and the destin
 is absent. It rejects even an empty existing directory. In Desktop, generate files
 in the selected workspace using SDK references instead. Preserve `.ironflow/` and
 its ignore file; do not nest the application or erase metadata to make init work.
-With `init --skip-install`, remove its monorepo workspace/lock files as
-https://docs.ironflow.run/tutorials/getting-started.md describes (section "2. Create
-Your Project") before installing external dependencies.
+With `init --skip-install`, install the dependencies yourself as the generated README
+shows.
 
 Create only what the accepted starter requires:
 
@@ -141,7 +140,9 @@ report the failed command and preserve files so work can continue.
 Fix errors within the accepted scope and repeat the failing check. Stop only temporary
 processes you started; retain the user's engine and data. Verify that README commands
 can reproduce the same result, including Python environment activation or explicit
-`.venv/bin/python` and the real engine connection.
+`.venv/bin/python` and the real engine connection. Every command, script, target and
+path in the README, `AGENTS.md` and `.env.example` must exist in this project or on
+PATH; when `ironflow init` generated a file, check it too. Fix any that does not.
 
 ## 6. Hand off
 

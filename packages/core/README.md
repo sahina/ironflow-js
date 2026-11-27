@@ -366,6 +366,8 @@ interface RegisteredFunction {
   timeoutMs: number;
   concurrency?: ConcurrencyConfig;
   debounce?: DebounceConfig;
+  circuitBreaker?: CircuitBreakerConfig;
+  throttle?: ThrottleConfig;
   preferredMode?: ExecutionMode;
   endpointUrl: string;
   actorKey: string;
@@ -466,6 +468,8 @@ Used with `step.waitForEvent()`.
 
 ```typescript
 interface EventFilter {
+  /** "fail" (default) fails the run at the deadline; "return-null" resumes with a memoized null. */
+  onTimeout?: "fail" | "return-null";
   /** Request payload stored as the waiting step input, visible via getRunSteps and the dashboard. */
   payload?: unknown;
   /** Event name to wait for */
@@ -527,6 +531,7 @@ interface EmitSyncResult {
 
 ```typescript
 interface StoredEvent {
+  emittedBy?: string;       // Authenticated emitter recorded by the engine
   id: string;
   name: string;
   timestamp: Date;
@@ -546,8 +551,8 @@ interface ListEventsOptions {
   names?: string[];
   sources?: string[];
   search?: string;
-  since?: string;
-  until?: string;
+  since?: Date | string;
+  until?: Date | string;
   limit?: number;
   cursor?: string;
   before?: string;
@@ -567,8 +572,8 @@ interface ListEventsResult {
 
 interface ListEventNamesOptions {
   sources?: string[];
-  since?: string;
-  until?: string;
+  since?: Date | string;
+  until?: Date | string;
 }
 
 interface ListEventNamesResult {
@@ -860,10 +865,10 @@ interface RunStep {
   durationMs?: number;
   startedAt?: Date;
   endedAt?: Date;
-  sleepUntil?: string;
+  sleepUntil?: Date;
   waitEventName?: string;
-  waitTimeout?: string;
-  patchedAt?: string;
+  waitTimeout?: Date;
+  patchedAt?: Date;
   patchedBy?: string;
   compensationFor?: string;
   createdAt: Date;
@@ -1172,6 +1177,7 @@ interface ReadStreamOptions {
 
 ```typescript
 interface StreamEvent {
+  emittedBy?: string;       // Authenticated emitter recorded by the engine
   id: string;
   name: string;
   data: Record<string, unknown>;
@@ -1839,7 +1845,7 @@ interface RebuildJob {
   name: string;
   status: string;
   progress: number;
-  startedAt: Date;
+  startedAt?: Date;
 }
 
 interface ListProjectionPartitionsOptions {
@@ -2132,10 +2138,12 @@ interface PushRequest {
   run_id: string;
   function_id: string;
   attempt: number;
+  max_attempts?: number;
+  on_exhausted?: string;
   event: {
     id: string; name: string; data: unknown; timestamp: string;
-    version?: number; idempotency_key?: string; source?: string;
-    metadata?: Record<string, unknown>;
+    version?: number; idempotency_key?: string; emitted_by?: string;
+    source?: string; metadata?: Record<string, unknown>;
   };
   steps: CompletedStep[];
   resume?: ResumeContext;
@@ -2147,7 +2155,7 @@ interface PushResponse {
   result?: unknown;
   error?: {
     message: string; code?: string; step_id?: string;
-    retryable: boolean; stack?: string;
+    retryable: boolean; stack?: string; retry_after_ms?: number;
   };
   yield?: YieldInfo;
 }
@@ -2296,6 +2304,37 @@ import {
   schemaFromWire,
   auditEventFromWire,                // reads camelCase and snake_case
   waitResultFromWire,
+  apiKeyFromWire,
+  apiKeyWithSecretFromWire,
+  organizationFromWire,
+  roleFromWire,
+  policySetFromWire,
+  policySetVersionsFromWire,
+  secretFromWire,
+  secretListEntryFromWire,
+  projectFromWire,
+  environmentFromWire,
+  kvBucketInfoFromWire,
+  kvBucketsFromWire,
+  kvEntryFromWire,
+  configResponseFromWire,
+  configEntriesFromWire,
+  configWatchEventFromWire,
+  fileBucketInfoFromWire,
+  fileBucketsFromWire,
+  fileInfoFromWire,
+  listFilesResultFromWire,
+  signedUrlFromWire,
+  capacityLaneFromWire,
+  capacityQueueEntryFromWire,
+  capacityLeaseFromWire,
+  capacityBucketFromWire,
+  capacityWorkerSessionFromWire,
+  capacityWorkerCreditFromWire,
+  debounceEntryFromWire,
+  timestampFromWire,                // (field, value) => Date; an unreadable value throws SchemaValidationError
+  optionalTimestampFromWire,        // (field, value) => Date | undefined; undefined, null and "" are unset
+  timestampFilterToWire,            // (Date | string) => string; a string passes unchanged, keeping full precision
   runStatusFromWire,                // protobuf JSON status -> public status; a status a newer
                                     // server added passes through, UNSPECIFIED and PENDING throw
   runStatusToWire,                  // public status -> protobuf JSON status;
@@ -2697,8 +2736,8 @@ interface PausedStepInfo {
   output: unknown;
   /** Whether this step's output was injected via the inject API */
   injected: boolean;
-  /** When the step completed (ISO 8601) */
-  completedAt: Date;
+  /** When the step completed */
+  completedAt?: Date;
 }
 
 interface PausedState {
@@ -2854,6 +2893,7 @@ interface EntityHistoryEntry {
   data: unknown;
   version: number;
   timestamp: Date;
+  timestampExact: string; // timestamp as the server sent it; pass this as a from/to bound
 }
 
 interface EntityHistoryOptions {
@@ -2965,12 +3005,13 @@ interface WebhookSource {
   metadata?: Record<string, unknown>;
   verifySecretSet?: boolean;        // a current secret is configured
   verifySecretPrevSet?: boolean;    // a previous secret is still held
-  verifySecretPrevExpiresAt?: string; // grace window ends; active only if also prevSet
+  verifySecretPrevExpiresAt?: Date; // grace window ends; active only if also prevSet
   ingestTokenPrefix?: string;       // display fragment (ifwh_ + 8 chars)
   ingestToken?: string;             // raw token — returned ONLY on create/rotate (ADR 0048); without it the source cannot receive deliveries
   verifyConfig?: WebhookVerifyConfig; // signature descriptor (ADR 0049); absent means legacy verification
   createdAt?: Date;
   updatedAt?: Date;
+  updatedAtExact?: string;          // updatedAt as the server sent it; pass this as expectedUpdatedAt
 }
 
 interface CreateWebhookSourceInput {
@@ -3039,8 +3080,8 @@ interface User {
   email: string;
   name?: string;
   roles?: string[];
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface CreateUserInput {
@@ -3066,7 +3107,7 @@ interface Tenant {
   name: string;
   envCount: number;
   keyCount: number;
-  createdAt?: Date;
+  createdAt: Date;
 }
 
 interface ProvisionTenantInput {
@@ -3187,7 +3228,7 @@ encodeFilePath(path)                     // percent-encodes each segment, keeps 
 
 ## Admin Helpers
 
-Types and wire normalizers behind definition history, executable deployments, raw SQL and the capacity and debounce ops views (`admin-helpers.ts`, #2948). The `@ironflow/node` client's history, `deployments`, `executeSQL`, `capacity` and `debounce` methods use them; see the [Node package reference](../../../docs/reference/js-sdk/node.md).
+Types and wire normalizers behind definition history, executable deployments, raw SQL and the capacity and debounce ops views (`admin-helpers.ts`, #2948). The `@ironflow/node` client's history, `deployments`, `capacity` and `debounce` methods use them, and so does the `@ironflow/browser` client's `executeSQL`; see the [Node package reference](../../../docs/reference/js-sdk/node.md).
 
 The Connect routes answer in protobuf JSON: camelCase, int64 as a string, zero values (`false`, `0`, `""`) left out. The REST ops routes answer in snake_case with plain numbers, so the `Capacity*` and `DebounceEntry` types mirror the wire as is.
 

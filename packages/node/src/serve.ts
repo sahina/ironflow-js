@@ -259,18 +259,23 @@ export function serve(config: ServeConfig): UniversalHandler {
               emitHeaders["Authorization"] =
                 `Bearer ${process.env.IRONFLOW_API_KEY}`;
             }
-            const emitResp = await sdkFetch(
-              `${emitUrl}/ironflow.v1.IronflowService/Emit`,
-              {
-                method: "POST",
-                headers: emitHeaders,
-                body: JSON.stringify(emitBody),
-              },
-            );
-            if (!emitResp.ok) {
-              const errText = await emitResp.text();
+            // Encoded outside the try below: an event that will not encode is transform()'s fault.
+            const emitJSON = JSON.stringify(emitBody);
+            let emitError: string | undefined;
+            try {
+              const emitResp = await sdkFetch(
+                `${emitUrl}/ironflow.v1.IronflowService/Emit`,
+                { method: "POST", headers: emitHeaders, body: emitJSON },
+              );
+              if (!emitResp.ok) emitError = await emitResp.text();
+            } catch (err) {
+              emitError = err instanceof Error ? err.message : String(err);
+            }
+            // 502 for a permanent refusal too: the engine keeps no record of this delivery, and the
+            // provider's retry succeeds once the transform or policy is fixed (ADR 0184).
+            if (emitError !== undefined) {
               return sendResponse(502, {
-                error: { message: `Failed to emit event: ${errText}`, code: "EMIT_FAILED" },
+                error: { message: `Failed to emit event: ${emitError}`, code: "EMIT_FAILED" },
               });
             }
           }

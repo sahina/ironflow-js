@@ -1322,7 +1322,7 @@ await client.webhooks.updateSource({
   verifyHeader: current.verifyHeader,
   verifyAlgorithm: current.verifyAlgorithm,
   metadata: current.metadata,
-  expectedUpdatedAt: current.updatedAt,
+  expectedUpdatedAt: current.updatedAtExact,
 });
 
 // graceSeconds is tri-state: omit = server default, 0 = instant cutover, N = seconds.
@@ -1507,8 +1507,8 @@ if (info) {
   console.log(info.entityType);  // "order"
   console.log(info.version);     // current version number
   console.log(info.eventCount);  // total events
-  console.log(info.createdAt);   // ISO string
-  console.log(info.updatedAt);   // ISO string
+  console.log(info.createdAt);   // Date
+  console.log(info.updatedAt);   // Date
 }
 ```
 
@@ -2238,7 +2238,7 @@ throw new NonRetryableError('Payment declined - do not retry');
 
 ## Environment Variables
 
-A nonempty explicit `serverUrl` overrides both URL variables. Empty URL values are treated as unset.
+A nonempty explicit `serverUrl` overrides `IRONFLOW_SERVER_URL`. An empty value is treated as unset.
 
 | Variable | Description | Default |
 |----------|-------------|---------|

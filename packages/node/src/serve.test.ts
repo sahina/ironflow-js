@@ -1326,6 +1326,77 @@ describe("webhook routing", () => {
     expect(body.error.code).toBe("TRANSFORM_FAILED");
   });
 
+  // A permanent refusal answers 502 on purpose: see the SDK webhook handlers in ADR 0184.
+  describe("failed emit", () => {
+    const deliver = async (reply: () => Promise<unknown>) => {
+      vi.stubGlobal("fetch", vi.fn().mockImplementation(reply));
+      const handler = realServe({
+        functions: [testFn],
+        webhooks: [testWebhook],
+        skipVerification: true,
+        logger: false,
+        serverUrl: "http://localhost:9123",
+      });
+      const response = (await handler(
+        new Request("http://localhost/webhooks/test-provider", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-test-sig": "valid" },
+          body: JSON.stringify({ type: "payment.completed", data: { amount: 100 }, id: "evt-1" }),
+        }),
+      )) as Response;
+      return { status: response.status, body: (await response.json()) as Record<string, any> };
+    };
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it.each([
+      [409, "already_exists"],
+      [400, "invalid_argument"],
+      [403, "permission_denied"],
+    ])("answers 502 when the engine answers %i %s", async (status, code) => {
+      const answer = await deliver(async () => new Response(JSON.stringify({ code }), { status }));
+      expect(answer.status).toBe(502);
+      expect(answer.body.error.code).toBe("EMIT_FAILED");
+      expect(answer.body.error.message).toContain(code);
+    });
+
+    it("answers 502 when the engine is unreachable", async () => {
+      const answer = await deliver(async () => {
+        throw new TypeError("fetch failed");
+      });
+      expect(answer.status).toBe(502);
+      expect(answer.body.error.code).toBe("EMIT_FAILED");
+      expect(answer.body.error.message).toContain("fetch failed");
+    });
+
+    it("answers 502 when the engine's reply breaks off", async () => {
+      const answer = await deliver(async () => ({
+        ok: false,
+        text: () => Promise.reject(new TypeError("terminated")),
+      }));
+      expect(answer.status).toBe(502);
+      expect(answer.body.error.code).toBe("EMIT_FAILED");
+    });
+  });
+
+  it("should return 400 when the transform result cannot be encoded", async () => {
+    const handler = realServe({
+      functions: [testFn],
+      webhooks: [createWebhook({ id: "big", verify: () => {}, transform: () => ({ name: "test.event", data: { n: 1n } }) })],
+      skipVerification: true,
+      logger: false,
+      serverUrl: "http://localhost:9123",
+    });
+    const response = (await handler(
+      new Request("http://localhost/webhooks/big", { method: "POST", body: "{}" }),
+    )) as Response;
+
+    expect(response.status).toBe(400);
+    expect(((await response.json()) as Record<string, any>).error.code).toBe("TRANSFORM_FAILED");
+  });
+
   it("should route non-webhook URLs to function handler", async () => {
     const handler = realServe({ functions: [testFn], webhooks: [testWebhook], skipVerification: true, logger: false });
     const request = new Request("http://localhost/api/ironflow", {

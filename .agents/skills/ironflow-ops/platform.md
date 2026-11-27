@@ -48,7 +48,7 @@ Each URL returns one page as Markdown. Read the section named in the last column
 | Scale: move to a larger size | https://docs.ironflow.run/how-to-guides/deployment/docker-compose.md | "Move to a larger size" |
 | Run on several hosts | https://docs.ironflow.run/how-to-guides/deployment/docker-compose.md | "Production on your own infrastructure", "Production Considerations" |
 | Monitoring and Grafana | https://docs.ironflow.run/how-to-guides/deployment/docker-compose.md | "Monitoring" |
-| Metrics, health endpoints, dashboards | https://docs.ironflow.run/how-to-guides/observability.md | "Health Endpoints", "Grafana Dashboards", "Alerting" |
+| Metrics, health endpoints, dashboards | https://docs.ironflow.run/how-to-guides/observability.md | "Health endpoints", "Grafana dashboards", "Alerting" |
 | Error messages at startup | https://docs.ironflow.run/how-to-guides/deployment/docker-compose.md | "Troubleshooting" |
 | `/ready` answers 503 with `stream:<name>`, `JetStreamStreamFault` | https://docs.ironflow.run/how-to-guides/deployment/recover-a-stuck-stream.md | the whole page; never run `nats stream rm` before reading it |
 | Run alongside an app | https://docs.ironflow.run/how-to-guides/deployment/alongside-your-app.md | "Docker Compose", "Health checks" |

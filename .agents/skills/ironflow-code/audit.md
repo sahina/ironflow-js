@@ -8,7 +8,7 @@ scripts/audit-scan.sh <directory>
 
 Relative to this skill's own directory, which your harness names when it loads the skill.
 Output is `file:line:severity:rule:message` format. The script greps for known
-anti-patterns: 18 TypeScript rules and 4 Go rules (`missing-recording`, `hardcoded-url`,
+anti-patterns: 17 TypeScript rules and 4 Go rules (`missing-recording`, `hardcoded-url`,
 `PROJ-DET-002`, `PROJ-DET-003`) — Go code gets no coverage for side-effects, yielding
 steps, `expectedVersion`, idempotency, webhooks or upcasters; review those by hand.
 
