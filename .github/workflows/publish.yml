@@ -116,6 +116,9 @@ jobs:
     needs: build
     permissions:
       contents: read
+      # Trusted Publishing: npm matches this repo and this file's name against
+      # the Trusted Publisher on each @ironflow package. There is no npm token;
+      # npm stopped taking tokens that bypass 2FA for publishing (v0.61.0).
       id-token: write
     steps:
       - uses: actions/download-artifact@v8
@@ -131,9 +134,19 @@ jobs:
       # Publish order matches dep graph: core first, then leaves.
       # Halt on first failure. "already in registry" treated as success
       # so manual re-runs are idempotent.
+      # OIDC publishing needs npm 11.5.1+. Fail here, not with a vague 404 on
+      # the first PUT, if the Node 24 image ever ships an older npm.
+      - name: Check npm supports Trusted Publishing
+        run: |
+          set -euo pipefail
+          v=$(npm --version)
+          if [ "$(printf '%s\n' 11.5.1 "$v" | sort -V | head -1)" != 11.5.1 ]; then
+            echo "Error: npm $v is older than 11.5.1 and cannot publish over OIDC"
+            exit 1
+          fi
+
       - name: Publish packages
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_TAG: ${{ needs.build.outputs.npm_tag }}
           VERSION: ${{ needs.build.outputs.version }}
         run: |
